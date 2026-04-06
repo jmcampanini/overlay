@@ -57,25 +57,43 @@ func printResolved(w io.Writer, r Resolved) error {
 	}
 
 	s := r.Settings
+	p := r.Provenance
 	rows := []struct {
-		key   ConfigKey
+		key   string
 		value string
+		from  Provenance
 	}{
-		{KeySource, fmt.Sprintf("%q", s.SourceDir)},
-		{KeyTarget, fmt.Sprintf("%q", s.TargetDir)},
-		{KeyDotPrefix, fmt.Sprintf("%t", s.DotPrefix)},
-		{KeyProfiles, fmt.Sprintf("[%s]", quoteList(s.Profiles))},
-		{KeyContinueOnError, fmt.Sprintf("%t", r.ContinueOnError)},
-		{KeyTraverseHidden, fmt.Sprintf("%t", s.TraverseHidden)},
-		{KeyRespectGitignore, fmt.Sprintf("%t", s.RespectGitignore)},
+		{"source", fmt.Sprintf("%q", s.SourceDir), p.Source},
+		{"target", fmt.Sprintf("%q", s.TargetDir), p.Target},
+		{"dot_prefix", fmt.Sprintf("%t", s.DotPrefix), p.DotPrefix},
+		{"profiles", fmt.Sprintf("[%s]", quoteList(s.Profiles)), p.Profiles},
+		{"continue_on_error", fmt.Sprintf("%t", r.ContinueOnError), p.ContinueOnError},
+		{"traverse_hidden", fmt.Sprintf("%t", s.TraverseHidden), p.TraverseHidden},
+		{"respect_gitignore", fmt.Sprintf("%t", s.RespectGitignore), p.RespectGitignore},
+		{"ignore", fmt.Sprintf("[%s]", quoteList(ignorePatterns(r))), p.Ignore},
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	for _, row := range rows {
-		if _, err := fmt.Fprintf(tw, "%s\t= %s\t# from: %s\n", row.key, row.value, r.Provenance[row.key]); err != nil {
+		if _, err := fmt.Fprintf(tw, "%s\t= %s\t# from: %s\n", row.key, row.value, row.from); err != nil {
 			return err
 		}
 	}
 	return tw.Flush()
+}
+
+// ignorePatterns retrieves the configured ignore pattern list. The
+// resolver currently builds the Ignorer chain without retaining the raw
+// list on Settings, so we re-read the config file path here. Returns an
+// empty slice if no patterns are configured.
+func ignorePatterns(r Resolved) []string {
+	if !r.ConfigExists {
+		return nil
+	}
+	cfg, _, err := config.Load(r.ConfigPath)
+	if err != nil {
+		return nil
+	}
+	return cfg.Ignore
 }
 
 func quoteList(xs []string) string {

@@ -122,3 +122,40 @@ func TestExpandPathEmpty(t *testing.T) {
 		t.Errorf("got %q, want empty", got)
 	}
 }
+
+func TestExpandPathUndefinedEnvVarErrors(t *testing.T) {
+	_, err := ExpandPath("$DEFINITELY_NOT_SET_OVERLAY_TEST/x")
+	if err == nil {
+		t.Fatal("expected error for undefined env var")
+	}
+	if !strings.Contains(err.Error(), "DEFINITELY_NOT_SET_OVERLAY_TEST") {
+		t.Errorf("error should name the missing var: %v", err)
+	}
+	if !strings.Contains(err.Error(), "undefined") {
+		t.Errorf("error should mention 'undefined': %v", err)
+	}
+}
+
+func TestExpandPathReportsAllMissing(t *testing.T) {
+	_, err := ExpandPath("$OVL_MISS_A/$OVL_MISS_B")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "OVL_MISS_A") || !strings.Contains(err.Error(), "OVL_MISS_B") {
+		t.Errorf("error should name both missing vars: %v", err)
+	}
+}
+
+func TestExpandPathPartiallyDefinedErrors(t *testing.T) {
+	t.Setenv("OVL_DEF_A", "/x")
+	_, err := ExpandPath("$OVL_DEF_A/$OVL_MISS_C")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "OVL_MISS_C") {
+		t.Errorf("error should name the missing var: %v", err)
+	}
+	if strings.Contains(err.Error(), "OVL_DEF_A") {
+		t.Errorf("error should not mention defined var: %v", err)
+	}
+}

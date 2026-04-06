@@ -47,8 +47,8 @@ func TestResolveFlagsOnly(t *testing.T) {
 	if !reflect.DeepEqual(r.Settings.Profiles, []string{"a", "b", "c"}) {
 		t.Errorf("Profiles = %v", r.Settings.Profiles)
 	}
-	if r.Provenance[KeyProfiles] != ProvFlag {
-		t.Errorf("ProfilesFrom = %v", r.Provenance[KeyProfiles])
+	if r.Provenance.Profiles != ProvFlag {
+		t.Errorf("ProfilesFrom = %v", r.Provenance.Profiles)
 	}
 }
 
@@ -67,8 +67,8 @@ profiles = ["work"]
 	if !reflect.DeepEqual(r.Settings.Profiles, []string{"work"}) {
 		t.Errorf("Profiles = %v", r.Settings.Profiles)
 	}
-	if r.Provenance[KeyProfiles] != ProvConfigEnv {
-		t.Errorf("ProfilesFrom = %v", r.Provenance[KeyProfiles])
+	if r.Provenance.Profiles != ProvConfig {
+		t.Errorf("ProfilesFrom = %v, want config (no env contributed)", r.Provenance.Profiles)
 	}
 }
 
@@ -107,8 +107,8 @@ profiles = ["from_config"]
 	if !reflect.DeepEqual(r.Settings.Profiles, []string{"override"}) {
 		t.Errorf("Profiles = %v", r.Settings.Profiles)
 	}
-	if r.Provenance[KeyProfiles] != ProvFlag {
-		t.Errorf("ProfilesFrom = %v", r.Provenance[KeyProfiles])
+	if r.Provenance.Profiles != ProvFlag {
+		t.Errorf("ProfilesFrom = %v", r.Provenance.Profiles)
 	}
 }
 
@@ -124,8 +124,8 @@ func TestResolveDefaultEnvFallback(t *testing.T) {
 	if !reflect.DeepEqual(r.Settings.Profiles, []string{"auto1", "auto2"}) {
 		t.Errorf("Profiles = %v", r.Settings.Profiles)
 	}
-	if r.Provenance[KeyProfiles] != ProvEnv {
-		t.Errorf("ProfilesFrom = %v", r.Provenance[KeyProfiles])
+	if r.Provenance.Profiles != ProvEnv {
+		t.Errorf("ProfilesFrom = %v", r.Provenance.Profiles)
 	}
 }
 
@@ -181,8 +181,8 @@ target = "/tmp/out"
 	if r.Settings.SourceDir != want {
 		t.Errorf("SourceDir = %q, want %q", r.Settings.SourceDir, want)
 	}
-	if r.Provenance[KeySource] != ProvConfig {
-		t.Errorf("SourceFrom = %v, want config", r.Provenance[KeySource])
+	if r.Provenance.Source != ProvConfig {
+		t.Errorf("SourceFrom = %v, want config", r.Provenance.Source)
 	}
 }
 
@@ -204,8 +204,23 @@ target = "/tmp/out"
 	if r.Settings.SourceDir != "/absolute/override" {
 		t.Errorf("SourceDir = %q, want /absolute/override", r.Settings.SourceDir)
 	}
-	if r.Provenance[KeySource] != ProvFlag {
-		t.Errorf("SourceFrom = %v, want flag", r.Provenance[KeySource])
+	if r.Provenance.Source != ProvFlag {
+		t.Errorf("SourceFrom = %v, want flag", r.Provenance.Source)
+	}
+}
+
+func TestResolveRejectsEnvInjectedReservedProfile(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	cfgPath := filepath.Join(dir, ".overlay.toml")
+	writeFile(t, cfgPath, `
+target = "/tmp/out"
+env_profiles = "TEST_INJECT_RESERVED"
+`)
+	t.Setenv("TEST_INJECT_RESERVED", "local")
+	cmd, g := setupCmd(t, []string{"--config", cfgPath})
+	if _, err := Resolve(cmd, g); err == nil {
+		t.Error("expected error when env_profiles injects a reserved profile")
 	}
 }
 
@@ -234,8 +249,8 @@ continue_on_error = true
 	if r.ContinueOnError {
 		t.Error("--continue=false should override continue_on_error = true in config")
 	}
-	if r.Provenance[KeyContinueOnError] != ProvFlag {
-		t.Errorf("ContinueFrom = %v, want flag", r.Provenance[KeyContinueOnError])
+	if r.Provenance.ContinueOnError != ProvFlag {
+		t.Errorf("ContinueFrom = %v, want flag", r.Provenance.ContinueOnError)
 	}
 }
 

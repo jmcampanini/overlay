@@ -22,11 +22,12 @@ import (
 const DefaultEnvProfiles = "OVERLAY_PROFILES"
 
 // Provenance identifies which resolution path produced a setting's value.
+// The String() method returns the labels printed by `overlay config`
+// ("default", "env", "config", "config+env", "flag").
 type Provenance int
 
-// Provenance constants in order of increasing specificity. The String()
-// method returns the labels printed by `overlay config` ("default",
-// "env", "config", "config+env", "flag").
+// Provenance constants. The integer values are not compared anywhere;
+// the constants exist solely as discriminated tags.
 const (
 	ProvDefault   Provenance = iota // built-in default
 	ProvEnv                         // OVERLAY_PROFILES env var
@@ -50,33 +51,30 @@ func (p Provenance) String() string {
 	return "default"
 }
 
-// ConfigKey is a typed name for a top-level field in .overlay.toml. Each
-// constant matches the TOML key name exactly so it can be used as both
-// the Provenance map key and the printed label.
-type ConfigKey string
-
-// Recognized configuration keys.
-const (
-	KeySource           ConfigKey = "source"
-	KeyTarget           ConfigKey = "target"
-	KeyDotPrefix        ConfigKey = "dot_prefix"
-	KeyProfiles         ConfigKey = "profiles"
-	KeyContinueOnError  ConfigKey = "continue_on_error"
-	KeyTraverseHidden   ConfigKey = "traverse_hidden"
-	KeyRespectGitignore ConfigKey = "respect_gitignore"
-	KeyIgnore           ConfigKey = "ignore"
-)
+// Provenances records where each resolved setting's value came from.
+// Using a struct (rather than a map) means adding a new setting requires
+// updating both the writer and the printer at compile time, eliminating
+// silent drift between them.
+type Provenances struct {
+	Source           Provenance
+	Target           Provenance
+	DotPrefix        Provenance
+	Profiles         Provenance
+	ContinueOnError  Provenance
+	TraverseHidden   Provenance
+	RespectGitignore Provenance
+	Ignore           Provenance
+}
 
 // Resolved is the fully-resolved set of settings after applying the
-// config-file + env + flag precedence rules. Provenance records where
-// each setting's value came from so `overlay config` can annotate output.
+// config-file + env + flag precedence rules.
 type Resolved struct {
 	Settings        discover.Settings
 	ContinueOnError bool
 	Logger          *log.Logger
 	ConfigPath      string
 	ConfigExists    bool
-	Provenance      map[ConfigKey]Provenance
+	Provenance      Provenances
 }
 
 // Resolve merges config file, env vars, and CLI flags into a Resolved
@@ -84,8 +82,7 @@ type Resolved struct {
 // ends up empty or when reserved profile names slip through.
 func Resolve(cmd *cobra.Command, g *GlobalFlags) (Resolved, error) {
 	r := Resolved{
-		Logger:     logging.Setup(g.Quiet, g.Verbose),
-		Provenance: make(map[ConfigKey]Provenance, 8),
+		Logger: logging.Setup(g.Quiet, g.Verbose),
 	}
 
 	cfgPath := g.Config
@@ -122,25 +119,25 @@ func Resolve(cmd *cobra.Command, g *GlobalFlags) (Resolved, error) {
 	if err != nil {
 		return r, err
 	}
-	r.Provenance[KeySource] = sourceProv
+	r.Provenance.Source = sourceProv
 
 	target, targetProv, err := resolvePath(cmd, "target", cfg.Target, g.Target, configBase, setKeys["target"])
 	if err != nil {
 		return r, err
 	}
-	r.Provenance[KeyTarget] = targetProv
+	r.Provenance.Target = targetProv
 	if target == "" {
 		return r, fmt.Errorf("target is required (set in %s or pass --target)", cfgPath)
 	}
 
-	r.Provenance[KeyDotPrefix] = provenanceFromKey(setKeys["dot_prefix"])
-	r.Provenance[KeyIgnore] = provenanceFromKey(setKeys["ignore"])
-	r.Provenance[KeyTraverseHidden] = provenanceFromKey(setKeys["traverse_hidden"])
-	r.Provenance[KeyRespectGitignore] = provenanceFromKey(setKeys["respect_gitignore"])
-	r.Provenance[KeyContinueOnError] = provenanceFromKey(setKeys["continue_on_error"])
+	r.Provenance.DotPrefix = provenanceFromKey(setKeys["dot_prefix"])
+	r.Provenance.Ignore = provenanceFromKey(setKeys["ignore"])
+	r.Provenance.TraverseHidden = provenanceFromKey(setKeys["traverse_hidden"])
+	r.Provenance.RespectGitignore = provenanceFromKey(setKeys["respect_gitignore"])
+	r.Provenance.ContinueOnError = provenanceFromKey(setKeys["continue_on_error"])
 
 	profiles, profilesProv := resolveProfiles(cmd, g, cfg, exists)
-	r.Provenance[KeyProfiles] = profilesProv
+	r.Provenance.Profiles = profilesProv
 	if err := (config.Config{Profiles: profiles}).Validate(); err != nil {
 		return r, err
 	}
@@ -148,7 +145,7 @@ func Resolve(cmd *cobra.Command, g *GlobalFlags) (Resolved, error) {
 	continueOnError := cfg.ContinueOnError
 	if changed(cmd, "continue") {
 		continueOnError = g.Continue
-		r.Provenance[KeyContinueOnError] = ProvFlag
+		r.Provenance.ContinueOnError = ProvFlag
 	}
 	r.ContinueOnError = continueOnError
 
@@ -189,10 +186,18 @@ func resolveProfiles(cmd *cobra.Command, g *GlobalFlags, cfg config.Config, cfgE
 	}
 	if cfgExists {
 		out := append([]string{}, cfg.Profiles...)
+		envContributed := false
 		if cfg.EnvProfiles != "" {
-			out = append(out, splitCSV(os.Getenv(cfg.EnvProfiles))...)
+			extra := splitCSV(os.Getenv(cfg.EnvProfiles))
+			if len(extra) > 0 {
+				out = append(out, extra...)
+				envContributed = true
+			}
 		}
-		return dedupe(out), ProvConfigEnv
+		if envContributed {
+			return dedupe(out), ProvConfigEnv
+		}
+		return dedupe(out), ProvConfig
 	}
 	if envVal := os.Getenv(DefaultEnvProfiles); envVal != "" {
 		return dedupe(splitCSV(envVal)), ProvEnv

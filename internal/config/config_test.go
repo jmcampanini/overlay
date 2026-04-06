@@ -75,6 +75,22 @@ func TestLoadMalformed(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsReservedProfile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".overlay.toml")
+	writeFile(t, path, `
+target = "~/"
+profiles = ["base"]
+`)
+	_, _, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for reserved profile")
+	}
+	if !strings.Contains(err.Error(), "reserved") {
+		t.Errorf("error should mention 'reserved': %v", err)
+	}
+}
+
 func TestLoadRejectsUnknownKeys(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".overlay.toml")
