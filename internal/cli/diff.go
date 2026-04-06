@@ -24,7 +24,7 @@ func newDiffCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			r, err := Resolve(cmd, &globals)
 			if err != nil {
-				fmt.Fprintln(os.Stderr, "Error:", err)
+				fmt.Fprintln(os.Stderr, "overlay:", err)
 				return DiffExitCode(2)
 			}
 			differ, err := diff.Run(diff.Options{
