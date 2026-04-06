@@ -40,8 +40,8 @@ func Run(opts Options) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("discover: %w", err)
 	}
-	for _, g := range inactive {
-		opts.Logger.Infof("skipping %s (no active layers)", g.Stem)
+	for _, stem := range inactive {
+		opts.Logger.Infof("skipping %s (no active layers)", stem)
 	}
 	if len(groups) == 0 {
 		opts.Logger.Infof("no overlay files found in %s", opts.Settings.SourceDir)

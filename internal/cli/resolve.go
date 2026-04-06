@@ -1,3 +1,6 @@
+// Package cli wires the cobra commands for the overlay binary and
+// resolves config + env + flags into the Settings consumed by the
+// render, diff, and plan packages.
 package cli
 
 import (
@@ -18,57 +21,72 @@ import (
 // file is found and no --profiles flag is given.
 const DefaultEnvProfiles = "OVERLAY_PROFILES"
 
-// ProfileSource names where the active profile set came from.
-type ProfileSource int
+// Provenance identifies which resolution path produced a setting's value.
+type Provenance int
 
-// ProfileSource constants identify which resolution path produced the
-// active profile set.
+// Provenance constants in order of increasing specificity. The String()
+// method returns the labels printed by `overlay config` ("default",
+// "env", "config", "config+env", "flag").
 const (
-	ProfileSourceNone       ProfileSource = iota // no profiles configured
-	ProfileSourceFlag                            // --profiles CLI flag
-	ProfileSourceConfig                          // .overlay.toml (possibly + env_profiles)
-	ProfileSourceDefaultEnv                      // OVERLAY_PROFILES env var
+	ProvDefault   Provenance = iota // built-in default
+	ProvEnv                         // OVERLAY_PROFILES env var
+	ProvConfig                      // .overlay.toml only
+	ProvConfigEnv                   // .overlay.toml + env_profiles env var
+	ProvFlag                        // CLI flag override
 )
 
-func (p ProfileSource) String() string {
+// String returns the label printed by `overlay config`.
+func (p Provenance) String() string {
 	switch p {
-	case ProfileSourceFlag:
+	case ProvFlag:
 		return "flag"
-	case ProfileSourceConfig:
+	case ProvConfigEnv:
 		return "config+env"
-	case ProfileSourceDefaultEnv:
+	case ProvConfig:
+		return "config"
+	case ProvEnv:
 		return "env"
 	}
 	return "default"
 }
 
+// ConfigKey is a typed name for a top-level field in .overlay.toml. Each
+// constant matches the TOML key name exactly so it can be used as both
+// the Provenance map key and the printed label.
+type ConfigKey string
+
+// Recognized configuration keys.
+const (
+	KeySource           ConfigKey = "source"
+	KeyTarget           ConfigKey = "target"
+	KeyDotPrefix        ConfigKey = "dot_prefix"
+	KeyProfiles         ConfigKey = "profiles"
+	KeyContinueOnError  ConfigKey = "continue_on_error"
+	KeyTraverseHidden   ConfigKey = "traverse_hidden"
+	KeyRespectGitignore ConfigKey = "respect_gitignore"
+	KeyIgnore           ConfigKey = "ignore"
+)
+
 // Resolved is the fully-resolved set of settings after applying the
-// config-file + env + flag precedence rules.
+// config-file + env + flag precedence rules. Provenance records where
+// each setting's value came from so `overlay config` can annotate output.
 type Resolved struct {
 	Settings        discover.Settings
 	ContinueOnError bool
 	Logger          *log.Logger
-
-	// Provenance: which source each setting came from, used by
-	// `overlay config` to print "# from:" annotations.
-	ConfigPath           string
-	ConfigExists         bool
-	SourceFrom           string
-	TargetFrom           string
-	DotPrefixFrom        string
-	ProfilesFrom         ProfileSource
-	IgnoreFrom           string
-	TraverseHiddenFrom   string
-	RespectGitignoreFrom string
-	ContinueFrom         string
+	ConfigPath      string
+	ConfigExists    bool
+	Provenance      map[ConfigKey]Provenance
 }
 
 // Resolve merges config file, env vars, and CLI flags into a Resolved
 // settings bundle. It returns an error when a required field (target)
 // ends up empty or when reserved profile names slip through.
 func Resolve(cmd *cobra.Command, g *GlobalFlags) (Resolved, error) {
-	var r Resolved
-	r.Logger = logging.Setup(g.Quiet, g.Verbose)
+	r := Resolved{
+		Logger:     logging.Setup(g.Quiet, g.Verbose),
+		Provenance: make(map[ConfigKey]Provenance, 8),
+	}
 
 	cfgPath := g.Config
 	configExplicit := changed(cmd, "config")
@@ -93,44 +111,44 @@ func Resolve(cmd *cobra.Command, g *GlobalFlags) (Resolved, error) {
 	// config file's directory, not to CWD. Flag overrides use CWD.
 	configBase := "."
 	if exists {
-		if abs, err := filepath.Abs(cfgPath); err == nil {
-			configBase = filepath.Dir(abs)
+		abs, err := filepath.Abs(cfgPath)
+		if err != nil {
+			return r, fmt.Errorf("resolve config path: %w", err)
 		}
+		configBase = filepath.Dir(abs)
 	}
 
-	source, sourceFrom, err := resolvePath(cmd, "source", cfg.Source, g.Source, configBase, setKeys["source"])
+	source, sourceProv, err := resolvePath(cmd, "source", cfg.Source, g.Source, configBase, setKeys["source"])
 	if err != nil {
 		return r, err
 	}
-	r.SourceFrom = sourceFrom
+	r.Provenance[KeySource] = sourceProv
 
-	target, targetFrom, err := resolvePath(cmd, "target", cfg.Target, g.Target, configBase, setKeys["target"])
+	target, targetProv, err := resolvePath(cmd, "target", cfg.Target, g.Target, configBase, setKeys["target"])
 	if err != nil {
 		return r, err
 	}
-	r.TargetFrom = targetFrom
+	r.Provenance[KeyTarget] = targetProv
 	if target == "" {
 		return r, fmt.Errorf("target is required (set in %s or pass --target)", cfgPath)
 	}
 
-	r.DotPrefixFrom = fromSource(setKeys["dot_prefix"])
-	r.IgnoreFrom = fromSource(setKeys["ignore"])
-	r.TraverseHiddenFrom = fromSource(setKeys["traverse_hidden"])
-	r.RespectGitignoreFrom = fromSource(setKeys["respect_gitignore"])
-	r.ContinueFrom = fromSource(setKeys["continue_on_error"])
+	r.Provenance[KeyDotPrefix] = provenanceFromKey(setKeys["dot_prefix"])
+	r.Provenance[KeyIgnore] = provenanceFromKey(setKeys["ignore"])
+	r.Provenance[KeyTraverseHidden] = provenanceFromKey(setKeys["traverse_hidden"])
+	r.Provenance[KeyRespectGitignore] = provenanceFromKey(setKeys["respect_gitignore"])
+	r.Provenance[KeyContinueOnError] = provenanceFromKey(setKeys["continue_on_error"])
 
-	profiles, profilesFrom := resolveProfiles(cmd, g, cfg, exists)
-	r.ProfilesFrom = profilesFrom
-	for _, p := range profiles {
-		if p == discover.ProfileBase || p == discover.ProfileLocal {
-			return r, fmt.Errorf("profile name %q is reserved", p)
-		}
+	profiles, profilesProv := resolveProfiles(cmd, g, cfg, exists)
+	r.Provenance[KeyProfiles] = profilesProv
+	if err := (config.Config{Profiles: profiles}).Validate(); err != nil {
+		return r, err
 	}
 
 	continueOnError := cfg.ContinueOnError
 	if changed(cmd, "continue") {
 		continueOnError = g.Continue
-		r.ContinueFrom = "flag"
+		r.Provenance[KeyContinueOnError] = ProvFlag
 	}
 	r.ContinueOnError = continueOnError
 
@@ -138,10 +156,11 @@ func Resolve(cmd *cobra.Command, g *GlobalFlags) (Resolved, error) {
 	if err != nil {
 		return r, err
 	}
-	ignorer := discover.NewChain(
-		discover.NewGlobIgnorer(cfg.Ignore),
-		gitignoreIgn,
-	)
+	globIgn, err := discover.NewGlobIgnorer(cfg.Ignore)
+	if err != nil {
+		return r, err
+	}
+	ignorer := discover.NewChain(globIgn, gitignoreIgn)
 
 	r.Settings = discover.Settings{
 		SourceDir:        source,
@@ -155,30 +174,30 @@ func Resolve(cmd *cobra.Command, g *GlobalFlags) (Resolved, error) {
 	return r, nil
 }
 
-// fromSource returns "config" if the key was explicitly set in the
-// loaded file, or "default" otherwise.
-func fromSource(set bool) string {
+// provenanceFromKey returns ProvConfig if the key was set in the loaded
+// file or ProvDefault otherwise.
+func provenanceFromKey(set bool) Provenance {
 	if set {
-		return "config"
+		return ProvConfig
 	}
-	return "default"
+	return ProvDefault
 }
 
-func resolveProfiles(cmd *cobra.Command, g *GlobalFlags, cfg config.Config, cfgExists bool) ([]string, ProfileSource) {
+func resolveProfiles(cmd *cobra.Command, g *GlobalFlags, cfg config.Config, cfgExists bool) ([]string, Provenance) {
 	if changed(cmd, "profiles") {
-		return dedupe(g.Profiles), ProfileSourceFlag
+		return dedupe(g.Profiles), ProvFlag
 	}
 	if cfgExists {
 		out := append([]string{}, cfg.Profiles...)
 		if cfg.EnvProfiles != "" {
 			out = append(out, splitCSV(os.Getenv(cfg.EnvProfiles))...)
 		}
-		return dedupe(out), ProfileSourceConfig
+		return dedupe(out), ProvConfigEnv
 	}
 	if envVal := os.Getenv(DefaultEnvProfiles); envVal != "" {
-		return dedupe(splitCSV(envVal)), ProfileSourceDefaultEnv
+		return dedupe(splitCSV(envVal)), ProvEnv
 	}
-	return nil, ProfileSourceNone
+	return nil, ProvDefault
 }
 
 func splitCSV(s string) []string {
@@ -228,16 +247,16 @@ func resolveRelative(p, base string) string {
 	return filepath.Join(base, p)
 }
 
-func resolvePath(cmd *cobra.Command, flag, cfgVal, flagVal, configBase string, cfgSet bool) (string, string, error) {
+func resolvePath(cmd *cobra.Command, flag, cfgVal, flagVal, configBase string, cfgSet bool) (string, Provenance, error) {
 	p := resolveRelative(cfgVal, configBase)
-	from := fromSource(cfgSet)
+	prov := provenanceFromKey(cfgSet)
 	if changed(cmd, flag) {
 		p = flagVal
-		from = "flag"
+		prov = ProvFlag
 	}
 	expanded, err := discover.ExpandPath(p)
 	if err != nil {
-		return "", "", fmt.Errorf("expand %s: %w", flag, err)
+		return "", prov, fmt.Errorf("expand %s: %w", flag, err)
 	}
-	return expanded, from, nil
+	return expanded, prov, nil
 }

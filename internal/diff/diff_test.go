@@ -94,6 +94,55 @@ func TestDiffMissingTarget(t *testing.T) {
 	}
 }
 
+func TestDiffFailFast(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "bad.olay.base.json"), `not valid json`)
+	writeFile(t, filepath.Join(src, "good.olay.base.json"), `{"ok":true}`)
+
+	var buf bytes.Buffer
+	_, err := Run(Options{
+		Settings: discover.Settings{
+			SourceDir: src,
+			TargetDir: target,
+			Ignore:    discover.NoopIgnorer(),
+		},
+		Logger: silentLogger(),
+		Out:    &buf,
+	})
+	if err == nil {
+		t.Error("expected error for invalid JSON")
+	}
+}
+
+func TestDiffContinueOnError(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "bad.olay.base.json"), `not valid json`)
+	writeFile(t, filepath.Join(src, "good.olay.base.json"), `{"ok":true}`)
+
+	var buf bytes.Buffer
+	differ, err := Run(Options{
+		Settings: discover.Settings{
+			SourceDir: src,
+			TargetDir: target,
+			Ignore:    discover.NoopIgnorer(),
+		},
+		ContinueOnError: true,
+		Logger:          silentLogger(),
+		Out:             &buf,
+	})
+	if err == nil {
+		t.Error("expected summary error for failed file")
+	}
+	if !differ {
+		t.Error("good file should have produced a diff against missing target")
+	}
+	if !strings.Contains(buf.String(), "+") {
+		t.Errorf("expected diff for good file:\n%s", buf.String())
+	}
+}
+
 func TestDiffChanged(t *testing.T) {
 	src := t.TempDir()
 	target := t.TempDir()

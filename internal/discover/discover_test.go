@@ -201,10 +201,14 @@ func TestWalkIgnorePattern(t *testing.T) {
 	writeTestFile(t, filepath.Join(vendor, "a.olay.base.json"), `{}`)
 	writeTestFile(t, filepath.Join(dir, "b.olay.base.json"), `{}`)
 
+	ign, err := NewGlobIgnorer([]string{"vendor"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	active, _, err := Walk(Settings{
 		SourceDir: dir,
 		TargetDir: "/tmp/out",
-		Ignore:    NewGlobIgnorer([]string{"vendor"}),
+		Ignore:    ign,
 	})
 	if err != nil {
 		t.Fatal(err)

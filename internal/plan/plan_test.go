@@ -2,6 +2,8 @@ package plan
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -65,9 +67,31 @@ func TestRenderEmpty(t *testing.T) {
 	}
 }
 
-func TestCollapseHome(t *testing.T) {
-	// Just make sure it doesn't crash on arbitrary input.
-	if got := collapseHome("/some/absolute/path"); got == "" {
-		t.Error("collapseHome should not return empty string")
+func TestCollapseHomeExactHome(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home dir")
+	}
+	if got := collapseHome(home); got != "~" {
+		t.Errorf("collapseHome(home) = %q, want %q", got, "~")
+	}
+}
+
+func TestCollapseHomeWithinHome(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home dir")
+	}
+	in := filepath.Join(home, "a", "b")
+	want := "~/" + filepath.Join("a", "b")
+	if got := collapseHome(in); got != want {
+		t.Errorf("collapseHome(%q) = %q, want %q", in, got, want)
+	}
+}
+
+func TestCollapseHomeOutsideHome(t *testing.T) {
+	in := "/tmp/x/y"
+	if got := collapseHome(in); got != in {
+		t.Errorf("collapseHome(%q) = %q, want unchanged", in, got)
 	}
 }

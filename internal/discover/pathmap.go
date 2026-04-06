@@ -42,7 +42,9 @@ func TargetPath(relDir, stem, ext, target string, dotPrefix bool) (string, error
 }
 
 // ExpandPath expands a leading ~ to the user's home directory and any
-// $VAR or ${VAR} sequences from the environment.
+// $VAR or ${VAR} sequences from the environment. Undefined environment
+// variables produce an error rather than silently expanding to "" — so
+// a typo in $XDG_CONIFG_HOME doesn't cause overlay to write to /foo.
 func ExpandPath(p string) (string, error) {
 	if p == "" {
 		return "", nil
@@ -54,7 +56,18 @@ func ExpandPath(p string) (string, error) {
 		}
 		p = filepath.Join(home, strings.TrimPrefix(p, "~"))
 	}
-	return os.ExpandEnv(p), nil
+	var missing []string
+	expanded := os.Expand(p, func(name string) string {
+		if v, ok := os.LookupEnv(name); ok {
+			return v
+		}
+		missing = append(missing, name)
+		return ""
+	})
+	if len(missing) > 0 {
+		return "", fmt.Errorf("undefined environment variable(s): %s", strings.Join(missing, ", "))
+	}
+	return expanded, nil
 }
 
 // transformDotPrefix rewrites a single path segment: "dot-claude" -> ".claude".

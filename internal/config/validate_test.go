@@ -22,7 +22,7 @@ source = "."
 target = "~/"
 profiles = ["work"]
 `)
-	if err := Validate(path); err != nil {
+	if err := ValidateFile(path); err != nil {
 		t.Errorf("expected valid, got: %v", err)
 	}
 }
@@ -31,7 +31,7 @@ func TestValidateMissingTarget(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".overlay.toml")
 	writeFile(t, path, `source = "."`)
-	err := Validate(path)
+	err := ValidateFile(path)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -47,7 +47,7 @@ func TestValidateReservedProfile(t *testing.T) {
 target = "~/"
 profiles = ["base"]
 `)
-	err := Validate(path)
+	err := ValidateFile(path)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -63,7 +63,7 @@ func TestValidateUnknownField(t *testing.T) {
 target = "~/"
 mystery_field = "hello"
 `)
-	err := Validate(path)
+	err := ValidateFile(path)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -73,7 +73,7 @@ mystery_field = "hello"
 }
 
 func TestValidateMissingFile(t *testing.T) {
-	err := Validate(filepath.Join(t.TempDir(), "missing.toml"))
+	err := ValidateFile(filepath.Join(t.TempDir(), "missing.toml"))
 	if err == nil {
 		t.Error("expected error for missing file")
 	}
@@ -83,7 +83,7 @@ func TestValidateMalformedTOML(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".overlay.toml")
 	writeFile(t, path, `not valid toml [[[`)
-	if err := Validate(path); err == nil {
+	if err := ValidateFile(path); err == nil {
 		t.Error("expected parse error")
 	}
 }

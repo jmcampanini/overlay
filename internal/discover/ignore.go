@@ -1,6 +1,9 @@
 package discover
 
 import (
+	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,22 +29,28 @@ type globIgnorer struct {
 }
 
 // NewGlobIgnorer returns an Ignorer backed by doublestar glob patterns.
-func NewGlobIgnorer(patterns []string) Ignorer {
+// Patterns are validated up front; a malformed pattern is returned as an
+// error rather than silently producing no matches at run time.
+func NewGlobIgnorer(patterns []string) (Ignorer, error) {
 	cleaned := make([]string, 0, len(patterns))
 	for _, p := range patterns {
-		if p = strings.TrimSpace(p); p != "" {
-			cleaned = append(cleaned, p)
+		if p = strings.TrimSpace(p); p == "" {
+			continue
 		}
+		check := strings.TrimSuffix(p, "/")
+		if _, err := doublestar.Match(check, ""); err != nil {
+			return nil, fmt.Errorf("invalid ignore pattern %q: %w", p, err)
+		}
+		cleaned = append(cleaned, p)
 	}
-	return globIgnorer{patterns: cleaned}
+	return globIgnorer{patterns: cleaned}, nil
 }
 
 func (g globIgnorer) Match(relPath string, isDir bool) bool {
 	rel := filepath.ToSlash(relPath)
 	base := filepath.Base(rel)
 	for _, pattern := range g.patterns {
-		dirOnly := strings.HasSuffix(pattern, "/")
-		if dirOnly {
+		if strings.HasSuffix(pattern, "/") {
 			if !isDir {
 				continue
 			}
@@ -62,15 +71,19 @@ type gitignoreIgnorer struct {
 }
 
 // NewGitignoreIgnorer loads .gitignore rules from the given root directory.
-// A missing .gitignore file yields an ignorer that never matches.
+// A missing .gitignore file yields an ignorer that never matches; any other
+// stat error is propagated so the caller can surface it.
 func NewGitignoreIgnorer(root string) (Ignorer, error) {
 	path := filepath.Join(root, ".gitignore")
 	if _, err := os.Stat(path); err != nil {
-		return NoopIgnorer(), nil
+		if errors.Is(err, fs.ErrNotExist) {
+			return NoopIgnorer(), nil
+		}
+		return nil, fmt.Errorf("stat %s: %w", path, err)
 	}
 	ign, err := gitignore.CompileIgnoreFile(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("compile %s: %w", path, err)
 	}
 	return gitignoreIgnorer{ign: ign}, nil
 }

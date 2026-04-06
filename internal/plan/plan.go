@@ -57,7 +57,8 @@ func Render(w io.Writer, groups []discover.Group, profiles []string, sourceDir, 
 }
 
 // collapseHome shortens an absolute path to start with ~/ when it begins
-// with the current user's home directory.
+// with the current user's home directory, or returns "~" when the path
+// is exactly the home directory.
 func collapseHome(p string) string {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {

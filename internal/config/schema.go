@@ -32,14 +32,14 @@ FIELDS
     leading "." (e.g. "dot-claude" -> ".claude") in the output path. This
     is a convenience for dotfiles layouts.
 
-  profiles = ["work"]
+  profiles = ["work"]                  # example
     type:    array of strings
     default: []
     Profiles to activate, in merge order. The layers are applied as
     base -> <profile_1> -> <profile_2> -> ... -> local. The names "base"
     and "local" are reserved and cannot appear here.
 
-  env_profiles = "DOTFILES_PROFILE"
+  env_profiles = "DOTFILES_PROFILE"    # example
     type:    string
     default: ""
     Optional environment variable name. If set, overlay reads that env var

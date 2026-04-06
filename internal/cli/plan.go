@@ -23,8 +23,8 @@ func newPlanCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			for _, g := range inactive {
-				r.Logger.Infof("skipping %s (no active layers)", g.Stem)
+			for _, stem := range inactive {
+				r.Logger.Infof("skipping %s (no active layers)", stem)
 			}
 			return plan.Render(os.Stdout, active, r.Settings.Profiles, r.Settings.SourceDir, r.Settings.TargetDir)
 		},

@@ -31,7 +31,7 @@ merging any flags or env vars. Exits 0 on success, 1 on any error.
 For the full schema reference with field descriptions, run: overlay docs`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if configValidate != "" {
-				return config.Validate(configValidate)
+				return config.ValidateFile(configValidate)
 			}
 			r, err := Resolve(cmd, &globals)
 			if err != nil {
@@ -57,20 +57,21 @@ func printResolved(w io.Writer, r Resolved) error {
 	}
 
 	s := r.Settings
-	lines := []struct {
-		key, value, from string
+	rows := []struct {
+		key   ConfigKey
+		value string
 	}{
-		{"source", fmt.Sprintf("%q", s.SourceDir), r.SourceFrom},
-		{"target", fmt.Sprintf("%q", s.TargetDir), r.TargetFrom},
-		{"dot_prefix", fmt.Sprintf("%t", s.DotPrefix), r.DotPrefixFrom},
-		{"profiles", fmt.Sprintf("[%s]", quoteList(s.Profiles)), r.ProfilesFrom.String()},
-		{"continue_on_error", fmt.Sprintf("%t", r.ContinueOnError), r.ContinueFrom},
-		{"traverse_hidden", fmt.Sprintf("%t", s.TraverseHidden), r.TraverseHiddenFrom},
-		{"respect_gitignore", fmt.Sprintf("%t", s.RespectGitignore), r.RespectGitignoreFrom},
+		{KeySource, fmt.Sprintf("%q", s.SourceDir)},
+		{KeyTarget, fmt.Sprintf("%q", s.TargetDir)},
+		{KeyDotPrefix, fmt.Sprintf("%t", s.DotPrefix)},
+		{KeyProfiles, fmt.Sprintf("[%s]", quoteList(s.Profiles))},
+		{KeyContinueOnError, fmt.Sprintf("%t", r.ContinueOnError)},
+		{KeyTraverseHidden, fmt.Sprintf("%t", s.TraverseHidden)},
+		{KeyRespectGitignore, fmt.Sprintf("%t", s.RespectGitignore)},
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	for _, l := range lines {
-		if _, err := fmt.Fprintf(tw, "%s\t= %s\t# from: %s\n", l.key, l.value, l.from); err != nil {
+	for _, row := range rows {
+		if _, err := fmt.Fprintf(tw, "%s\t= %s\t# from: %s\n", row.key, row.value, r.Provenance[row.key]); err != nil {
 			return err
 		}
 	}

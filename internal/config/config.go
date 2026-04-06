@@ -45,7 +45,8 @@ func Default() Config {
 // whether the file existed; a missing file yields Default() and no error.
 // When the file is present, Load starts from Default() and overlays the
 // file's settings so any field the user omits keeps its default.
-// Unknown keys are rejected so typos fail fast on every command path.
+// Unknown keys and reserved profile names are rejected so typos and
+// misuses fail fast on every command path.
 func Load(path string) (Config, bool, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -57,6 +58,9 @@ func Load(path string) (Config, bool, error) {
 	c := Default()
 	if err := decodeStrict(path, data, &c); err != nil {
 		return Config{}, true, err
+	}
+	if err := c.Validate(); err != nil {
+		return Config{}, true, fmt.Errorf("%s: %w", path, err)
 	}
 	return c, true, nil
 }

@@ -44,6 +44,9 @@ type Layer struct {
 
 // Group is one output file's worth of overlay sources: a stem, a format,
 // an ordered list of active layers, and the resolved target path.
+//
+// Group instances returned from Walk's active slice always have at least
+// one Layer. Construct Groups manually only in tests.
 type Group struct {
 	Stem       string
 	Format     document.Format
@@ -51,10 +54,28 @@ type Group struct {
 	Layers     []Layer
 }
 
-// Walk scans s.SourceDir for overlay groups and returns those whose
-// active layer list is non-empty. Groups with only inactive layers are
-// dropped so the caller can log them.
-func Walk(s Settings) ([]Group, []Group, error) {
+// newGroup constructs a Group with the active-group invariant: Layers
+// must be non-empty, Format must be a recognized format, and TargetPath
+// must be non-empty.
+func newGroup(stem string, format document.Format, targetPath string, layers []Layer) (Group, error) {
+	if len(layers) == 0 {
+		return Group{}, fmt.Errorf("group %q has no active layers", stem)
+	}
+	if format == document.FormatUnknown {
+		return Group{}, fmt.Errorf("group %q has unknown format", stem)
+	}
+	if targetPath == "" {
+		return Group{}, fmt.Errorf("group %q has empty target path", stem)
+	}
+	return Group{Stem: stem, Format: format, TargetPath: targetPath, Layers: layers}, nil
+}
+
+// Walk scans s.SourceDir for overlay groups. The active slice contains
+// only groups whose layer list is non-empty (the invariant pinned by
+// newGroup). The inactive slice contains the stems of groups that
+// matched the file convention but had no active profile layer; the
+// caller should log these for visibility.
+func Walk(s Settings) ([]Group, []string, error) {
 	if s.SourceDir == "" {
 		return nil, nil, fmt.Errorf("source directory is empty")
 	}
@@ -68,7 +89,12 @@ func Walk(s Settings) ([]Group, []Group, error) {
 		stem string
 		ext  string
 	}
-	groups := make(map[key]*Group)
+	type discovered struct {
+		stem       string
+		format     document.Format
+		targetPath string
+	}
+	groups := make(map[key]discovered)
 	layerSources := make(map[key]map[string]string) // all discovered layers, keyed by profile
 
 	walkErr := filepath.WalkDir(absSource, func(path string, d fs.DirEntry, err error) error {
@@ -109,7 +135,10 @@ func Walk(s Settings) ([]Group, []Group, error) {
 		layerSources[k][profile] = path
 
 		if _, exists := groups[k]; !exists {
-			relDir, _ := filepath.Rel(absSource, filepath.Dir(path))
+			relDir, relErr := filepath.Rel(absSource, filepath.Dir(path))
+			if relErr != nil {
+				return relErr
+			}
 			if relDir == "." {
 				relDir = ""
 			}
@@ -117,11 +146,7 @@ func Walk(s Settings) ([]Group, []Group, error) {
 			if terr != nil {
 				return terr
 			}
-			groups[k] = &Group{
-				Stem:       stem,
-				Format:     format,
-				TargetPath: target,
-			}
+			groups[k] = discovered{stem: stem, format: format, targetPath: target}
 		}
 		return nil
 	})
@@ -141,14 +166,19 @@ func Walk(s Settings) ([]Group, []Group, error) {
 		)
 	})
 
-	var active, inactive []Group
+	var active []Group
+	var inactive []string
 	seenTargets := make(map[string]string, len(keys))
 	for _, k := range keys {
-		g := *groups[k]
-		g.Layers = orderedLayers(layerSources[k], s.Profiles)
-		if len(g.Layers) == 0 {
-			inactive = append(inactive, g)
+		d := groups[k]
+		layers := orderedLayers(layerSources[k], s.Profiles)
+		if len(layers) == 0 {
+			inactive = append(inactive, d.stem)
 			continue
+		}
+		g, err := newGroup(d.stem, d.format, d.targetPath, layers)
+		if err != nil {
+			return nil, nil, err
 		}
 		source := g.Layers[0].Path
 		if prev, ok := seenTargets[g.TargetPath]; ok {

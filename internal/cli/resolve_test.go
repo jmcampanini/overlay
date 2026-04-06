@@ -47,8 +47,8 @@ func TestResolveFlagsOnly(t *testing.T) {
 	if !reflect.DeepEqual(r.Settings.Profiles, []string{"a", "b", "c"}) {
 		t.Errorf("Profiles = %v", r.Settings.Profiles)
 	}
-	if r.ProfilesFrom != ProfileSourceFlag {
-		t.Errorf("ProfilesFrom = %v", r.ProfilesFrom)
+	if r.Provenance[KeyProfiles] != ProvFlag {
+		t.Errorf("ProfilesFrom = %v", r.Provenance[KeyProfiles])
 	}
 }
 
@@ -67,8 +67,8 @@ profiles = ["work"]
 	if !reflect.DeepEqual(r.Settings.Profiles, []string{"work"}) {
 		t.Errorf("Profiles = %v", r.Settings.Profiles)
 	}
-	if r.ProfilesFrom != ProfileSourceConfig {
-		t.Errorf("ProfilesFrom = %v", r.ProfilesFrom)
+	if r.Provenance[KeyProfiles] != ProvConfigEnv {
+		t.Errorf("ProfilesFrom = %v", r.Provenance[KeyProfiles])
 	}
 }
 
@@ -107,8 +107,8 @@ profiles = ["from_config"]
 	if !reflect.DeepEqual(r.Settings.Profiles, []string{"override"}) {
 		t.Errorf("Profiles = %v", r.Settings.Profiles)
 	}
-	if r.ProfilesFrom != ProfileSourceFlag {
-		t.Errorf("ProfilesFrom = %v", r.ProfilesFrom)
+	if r.Provenance[KeyProfiles] != ProvFlag {
+		t.Errorf("ProfilesFrom = %v", r.Provenance[KeyProfiles])
 	}
 }
 
@@ -124,8 +124,8 @@ func TestResolveDefaultEnvFallback(t *testing.T) {
 	if !reflect.DeepEqual(r.Settings.Profiles, []string{"auto1", "auto2"}) {
 		t.Errorf("Profiles = %v", r.Settings.Profiles)
 	}
-	if r.ProfilesFrom != ProfileSourceDefaultEnv {
-		t.Errorf("ProfilesFrom = %v", r.ProfilesFrom)
+	if r.Provenance[KeyProfiles] != ProvEnv {
+		t.Errorf("ProfilesFrom = %v", r.Provenance[KeyProfiles])
 	}
 }
 
@@ -181,8 +181,8 @@ target = "/tmp/out"
 	if r.Settings.SourceDir != want {
 		t.Errorf("SourceDir = %q, want %q", r.Settings.SourceDir, want)
 	}
-	if r.SourceFrom != "config" {
-		t.Errorf("SourceFrom = %q, want config", r.SourceFrom)
+	if r.Provenance[KeySource] != ProvConfig {
+		t.Errorf("SourceFrom = %v, want config", r.Provenance[KeySource])
 	}
 }
 
@@ -204,8 +204,8 @@ target = "/tmp/out"
 	if r.Settings.SourceDir != "/absolute/override" {
 		t.Errorf("SourceDir = %q, want /absolute/override", r.Settings.SourceDir)
 	}
-	if r.SourceFrom != "flag" {
-		t.Errorf("SourceFrom = %q, want flag", r.SourceFrom)
+	if r.Provenance[KeySource] != ProvFlag {
+		t.Errorf("SourceFrom = %v, want flag", r.Provenance[KeySource])
 	}
 }
 
@@ -234,8 +234,8 @@ continue_on_error = true
 	if r.ContinueOnError {
 		t.Error("--continue=false should override continue_on_error = true in config")
 	}
-	if r.ContinueFrom != "flag" {
-		t.Errorf("ContinueFrom = %q, want flag", r.ContinueFrom)
+	if r.Provenance[KeyContinueOnError] != ProvFlag {
+		t.Errorf("ContinueFrom = %v, want flag", r.Provenance[KeyContinueOnError])
 	}
 }
 

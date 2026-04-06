@@ -20,7 +20,7 @@ func newRootCmd() *cobra.Command {
 		Use:           "overlay",
 		Short:         "Merge layered JSON/TOML configuration files by profile.",
 		SilenceUsage:  true,
-		SilenceErrors: false,
+		SilenceErrors: true,
 	}
 	globals.Bind(root)
 	root.AddCommand(newRenderCmd())

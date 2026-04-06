@@ -207,6 +207,19 @@ func TestMergeObjectListBecauseOfNestedMap(t *testing.T) {
 	}
 }
 
+func TestMergeDedupeCollapsesBaseInternalDuplicates(t *testing.T) {
+	// Pin the contract: even if base contains duplicates, dedupe collapses
+	// them. Override is empty so the only thing exercised is the seen-set
+	// handling on the base side.
+	base := []any{"a", "b", "a", "c"}
+	override := []any{"d"}
+	got := Merge(base, override)
+	want := []any{"a", "b", "c", "d"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
 func TestMergeDedupePreservesOrder(t *testing.T) {
 	base := []any{"a", "b", "c"}
 	override := []any{"b", "d", "a", "e"}

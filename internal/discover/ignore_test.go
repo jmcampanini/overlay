@@ -3,11 +3,21 @@ package discover
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
+func mustGlob(t *testing.T, patterns []string) Ignorer {
+	t.Helper()
+	ign, err := NewGlobIgnorer(patterns)
+	if err != nil {
+		t.Fatalf("NewGlobIgnorer: %v", err)
+	}
+	return ign
+}
+
 func TestGlobIgnorerMatchesBasename(t *testing.T) {
-	ign := NewGlobIgnorer([]string{"node_modules"})
+	ign := mustGlob(t, []string{"node_modules"})
 	if !ign.Match("a/b/node_modules", true) {
 		t.Error("should match path ending in node_modules")
 	}
@@ -20,31 +30,39 @@ func TestGlobIgnorerMatchesBasename(t *testing.T) {
 }
 
 func TestGlobIgnorerTrailingSlashDirOnly(t *testing.T) {
-	ign := NewGlobIgnorer([]string{"vendor/"})
-	// vendor/ should match a directory named "vendor"
+	ign := mustGlob(t, []string{"vendor/"})
 	if !ign.Match("vendor", true) {
 		t.Error("vendor/ should match vendor as a directory")
 	}
 	if !ign.Match("a/b/vendor", true) {
 		t.Error("vendor/ should match a/b/vendor as a directory")
 	}
-	// vendor/ should NOT match a file named "vendor"
 	if ign.Match("vendor", false) {
 		t.Error("vendor/ should not match vendor as a file")
 	}
 }
 
 func TestGlobIgnorerDoublestar(t *testing.T) {
-	ign := NewGlobIgnorer([]string{"**/vendor"})
+	ign := mustGlob(t, []string{"**/vendor"})
 	if !ign.Match("a/b/c/vendor", true) {
 		t.Error("**/vendor should match deep path")
 	}
 }
 
 func TestGlobIgnorerEmptyPatternsIgnored(t *testing.T) {
-	ign := NewGlobIgnorer([]string{"", "  "})
+	ign := mustGlob(t, []string{"", "  "})
 	if ign.Match("anything", false) {
 		t.Error("empty patterns should not match")
+	}
+}
+
+func TestGlobIgnorerInvalidPatternErrors(t *testing.T) {
+	_, err := NewGlobIgnorer([]string{"[unclosed"})
+	if err == nil {
+		t.Fatal("expected error for invalid glob pattern")
+	}
+	if !strings.Contains(err.Error(), "invalid ignore pattern") {
+		t.Errorf("error should mention 'invalid ignore pattern': %v", err)
 	}
 }
 
@@ -56,8 +74,8 @@ func TestNoopIgnorer(t *testing.T) {
 }
 
 func TestChainIgnorer(t *testing.T) {
-	a := NewGlobIgnorer([]string{"a"})
-	b := NewGlobIgnorer([]string{"b"})
+	a := mustGlob(t, []string{"a"})
+	b := mustGlob(t, []string{"b"})
 	ch := NewChain(a, b, nil)
 	if !ch.Match("a", false) {
 		t.Error("should match via first ignorer")
