@@ -90,6 +90,53 @@ env_profiles = "TEST_EXTRA_PROFILES"
 	if !reflect.DeepEqual(r.Settings.Profiles, want) {
 		t.Errorf("Profiles = %v, want %v", r.Settings.Profiles, want)
 	}
+	// The headline guarantee: ProvConfigEnv only when env actually contributed.
+	if r.Provenance.Profiles != ProvConfigEnv {
+		t.Errorf("ProfilesProv = %v, want config+env", r.Provenance.Profiles)
+	}
+}
+
+func TestResolveEnvProfilesDeclaredButUnsetIsConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+profiles = ["work"]
+env_profiles = "TEST_NEVER_SET_ENV"
+`)
+	// TEST_NEVER_SET_ENV is intentionally not set.
+	cmd, g := setupCmd(t, nil)
+	r, err := Resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(r.Settings.Profiles, []string{"work"}) {
+		t.Errorf("Profiles = %v", r.Settings.Profiles)
+	}
+	// env_profiles is declared but contributed nothing -> ProvConfig, not ProvConfigEnv.
+	if r.Provenance.Profiles != ProvConfig {
+		t.Errorf("ProfilesProv = %v, want config (env_profiles unset, no contribution)", r.Provenance.Profiles)
+	}
+}
+
+func TestResolveEnvProfilesDeclaredButEmptyIsConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+profiles = ["work"]
+env_profiles = "TEST_EMPTY_CSV"
+`)
+	t.Setenv("TEST_EMPTY_CSV", " , , ")
+	cmd, g := setupCmd(t, nil)
+	r, err := Resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// env var is set but splitCSV strips empties, so nothing was contributed.
+	if r.Provenance.Profiles != ProvConfig {
+		t.Errorf("ProfilesProv = %v, want config (env var stripped to nothing)", r.Provenance.Profiles)
+	}
 }
 
 func TestResolveFlagReplacesConfig(t *testing.T) {

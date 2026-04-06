@@ -52,9 +52,11 @@ func (p Provenance) String() string {
 }
 
 // Provenances records where each resolved setting's value came from.
-// Using a struct (rather than a map) means adding a new setting requires
-// updating both the writer and the printer at compile time, eliminating
-// silent drift between them.
+// The struct (rather than a map) makes the writer in Resolve and the
+// reader in printResolved symmetric named-field accesses, so any drift
+// between them is reviewable rather than invisible. Adding a new setting
+// here without wiring printResolved is a missed reference grep, not a
+// compile error — keep them in sync by convention.
 type Provenances struct {
 	Source           Provenance
 	Target           Provenance
@@ -74,6 +76,7 @@ type Resolved struct {
 	Logger          *log.Logger
 	ConfigPath      string
 	ConfigExists    bool
+	IgnorePatterns  []string
 	Provenance      Provenances
 }
 
@@ -159,6 +162,7 @@ func Resolve(cmd *cobra.Command, g *GlobalFlags) (Resolved, error) {
 	}
 	ignorer := discover.NewChain(globIgn, gitignoreIgn)
 
+	r.IgnorePatterns = cfg.Ignore
 	r.Settings = discover.Settings{
 		SourceDir:        source,
 		TargetDir:        target,

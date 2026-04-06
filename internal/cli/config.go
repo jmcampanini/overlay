@@ -70,7 +70,7 @@ func printResolved(w io.Writer, r Resolved) error {
 		{"continue_on_error", fmt.Sprintf("%t", r.ContinueOnError), p.ContinueOnError},
 		{"traverse_hidden", fmt.Sprintf("%t", s.TraverseHidden), p.TraverseHidden},
 		{"respect_gitignore", fmt.Sprintf("%t", s.RespectGitignore), p.RespectGitignore},
-		{"ignore", fmt.Sprintf("[%s]", quoteList(ignorePatterns(r))), p.Ignore},
+		{"ignore", fmt.Sprintf("[%s]", quoteList(r.IgnorePatterns)), p.Ignore},
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	for _, row := range rows {
@@ -79,21 +79,6 @@ func printResolved(w io.Writer, r Resolved) error {
 		}
 	}
 	return tw.Flush()
-}
-
-// ignorePatterns retrieves the configured ignore pattern list. The
-// resolver currently builds the Ignorer chain without retaining the raw
-// list on Settings, so we re-read the config file path here. Returns an
-// empty slice if no patterns are configured.
-func ignorePatterns(r Resolved) []string {
-	if !r.ConfigExists {
-		return nil
-	}
-	cfg, _, err := config.Load(r.ConfigPath)
-	if err != nil {
-		return nil
-	}
-	return cfg.Ignore
 }
 
 func quoteList(xs []string) string {
