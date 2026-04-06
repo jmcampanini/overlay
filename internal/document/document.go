@@ -1,0 +1,64 @@
+// Package document parses and serializes overlay source documents.
+// It isolates format-specific concerns (JSON, TOML) from the merge logic.
+package document
+
+import (
+	"fmt"
+	"strings"
+)
+
+// Format identifies a supported document format.
+type Format int
+
+// Format constants identify the supported document formats.
+const (
+	FormatUnknown Format = iota // unrecognized
+	FormatJSON                  // RFC 8259 JSON
+	FormatTOML                  // TOML 1.0
+)
+
+func (f Format) String() string {
+	switch f {
+	case FormatJSON:
+		return "json"
+	case FormatTOML:
+		return "toml"
+	}
+	return "unknown"
+}
+
+// DetectFormat returns the format for a filename based on its extension.
+func DetectFormat(filename string) (Format, error) {
+	lower := strings.ToLower(filename)
+	switch {
+	case strings.HasSuffix(lower, ".json"):
+		return FormatJSON, nil
+	case strings.HasSuffix(lower, ".toml"):
+		return FormatTOML, nil
+	}
+	return FormatUnknown, fmt.Errorf("unsupported document format for %q", filename)
+}
+
+// Parse decodes the bytes for the given format into a generic value tree
+// (map[string]any / []any / scalar leaves) ready for merging.
+func Parse(data []byte, f Format) (any, error) {
+	switch f {
+	case FormatJSON:
+		return parseJSON(data)
+	case FormatTOML:
+		return parseTOML(data)
+	}
+	return nil, fmt.Errorf("unsupported format: %s", f)
+}
+
+// Serialize encodes the value tree for the given format. Output is
+// deterministic (keys are alphabetized) for both JSON and TOML.
+func Serialize(v any, f Format) ([]byte, error) {
+	switch f {
+	case FormatJSON:
+		return serializeJSON(v)
+	case FormatTOML:
+		return serializeTOML(v)
+	}
+	return nil, fmt.Errorf("unsupported format: %s", f)
+}

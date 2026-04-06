@@ -1,0 +1,67 @@
+package discover
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// TargetPath resolves where a discovered overlay group should be written.
+//
+//	relDir:    path segment from source root to the group's directory
+//	stem:      base filename without any extension
+//	ext:       "json" or "toml"
+//	target:    configured target directory (may begin with ~ or $VAR)
+//	dotPrefix: if true, rewrite dot- prefixed path segments to leading dots
+func TargetPath(relDir, stem, ext, target string, dotPrefix bool) (string, error) {
+	if target == "" {
+		return "", fmt.Errorf("target directory is empty")
+	}
+	expanded, err := ExpandPath(target)
+	if err != nil {
+		return "", err
+	}
+	rawSegments := strings.Split(filepath.ToSlash(relDir), "/")
+	parts := make([]string, 0, len(rawSegments)+2)
+	parts = append(parts, expanded)
+	for _, seg := range rawSegments {
+		if seg == "" {
+			continue
+		}
+		if dotPrefix {
+			seg = transformDotPrefix(seg)
+		}
+		parts = append(parts, seg)
+	}
+	if dotPrefix {
+		stem = transformDotPrefix(stem)
+	}
+	parts = append(parts, stem+"."+ext)
+	return filepath.Join(parts...), nil
+}
+
+// ExpandPath expands a leading ~ to the user's home directory and any
+// $VAR or ${VAR} sequences from the environment.
+func ExpandPath(p string) (string, error) {
+	if p == "" {
+		return "", nil
+	}
+	if p == "~" || strings.HasPrefix(p, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve home: %w", err)
+		}
+		p = filepath.Join(home, strings.TrimPrefix(p, "~"))
+	}
+	return os.ExpandEnv(p), nil
+}
+
+// transformDotPrefix rewrites a single path segment: "dot-claude" -> ".claude".
+// Segments that don't start with "dot-" are returned unchanged.
+func transformDotPrefix(segment string) string {
+	if after, ok := strings.CutPrefix(segment, "dot-"); ok {
+		return "." + after
+	}
+	return segment
+}

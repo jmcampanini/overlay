@@ -1,0 +1,8 @@
+model = 'gpt-5.4'
+
+[behavior]
+  retries = 3
+
+[projects]
+  [projects.'/path/to/repo']
+    trust_level = 'trusted'

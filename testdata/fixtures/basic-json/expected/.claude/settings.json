@@ -1,0 +1,10 @@
+{
+  "model": "opus",
+  "permissions": {
+    "allow": [
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(git *)"
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+/build/
+/coverage.out
+/coverage.html
+.claude-sandbox/
+testdata/fixtures/*/.generated/

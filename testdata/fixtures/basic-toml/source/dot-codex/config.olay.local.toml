@@ -1,0 +1,2 @@
+[projects."/path/to/repo"]
+trust_level = "trusted"

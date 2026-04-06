@@ -1,0 +1,32 @@
+package cli
+
+import (
+	"os"
+
+	"github.com/spf13/cobra"
+
+	"github.com/jmcampanini/overlay/internal/discover"
+	"github.com/jmcampanini/overlay/internal/plan"
+)
+
+func newPlanCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "plan",
+		Short: "Show what files would be generated without writing anything.",
+		Long:  "Print an aligned table of target paths, formats, and active layers\nfor the current profile selection. Does not write any files.\n" + profilePrecedenceHelp,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			r, err := Resolve(cmd, &globals)
+			if err != nil {
+				return err
+			}
+			active, inactive, err := discover.Walk(r.Settings)
+			if err != nil {
+				return err
+			}
+			for _, g := range inactive {
+				r.Logger.Infof("skipping %s (no active layers)", g.Stem)
+			}
+			return plan.Render(os.Stdout, active, r.Settings.Profiles, r.Settings.SourceDir, r.Settings.TargetDir)
+		},
+	}
+}
