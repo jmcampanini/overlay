@@ -1,42 +1,45 @@
-.PHONY: build test test-race cover vet fmt fmt-check lint lint-fix check parity clean
+.PHONY: help build test lint lint-fix fmt fmt-check tidy tidy-check check clean
 
-BUILD_DIR := build
-BINARY    := $(BUILD_DIR)/overlay
-PKG       := ./...
+OUT_DIR := out
+BINARY  := $(OUT_DIR)/overlay
+PKG     := ./...
 
-build:
-	@mkdir -p $(BUILD_DIR)
+.DEFAULT_GOAL := help
+
+help: ## list tasks
+	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ \
+	     {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+build: ## compile binary to ./out/overlay
+	@mkdir -p $(OUT_DIR)
 	go build -o $(BINARY) ./cmd/overlay
 
-test:
-	go test $(PKG)
-
-test-race:
+test: ## run tests with -race
 	go test -race $(PKG)
 
-cover:
-	go test -cover $(PKG)
+lint: ## run golangci-lint
+	golangci-lint run $(PKG)
 
-vet:
-	go vet $(PKG)
+lint-fix: ## run golangci-lint with --fix
+	golangci-lint run --fix $(PKG)
 
-fmt:
+fmt: ## apply gofmt -w
 	gofmt -w .
 
-fmt-check:
+fmt-check: ## fail if gofmt would change files
 	@diff=$$(gofmt -l . | grep -v '^vendor/' || true); \
 	if [ -n "$$diff" ]; then echo "gofmt issues:"; echo "$$diff"; exit 1; fi
 
-lint:
-	golangci-lint run $(PKG)
+tidy: ## apply go mod tidy
+	go mod tidy
 
-lint-fix:
-	golangci-lint run --fix $(PKG)
+tidy-check: ## fail if go mod tidy would change go.mod/go.sum
+	@out=$$(go mod tidy -diff); rc=$$?; \
+	if [ -n "$$out" ]; then echo "$$out"; echo "go mod tidy would change go.mod/go.sum"; exit 1; fi; \
+	exit $$rc
 
-check: fmt-check vet lint test
+check: fmt-check tidy-check lint test ## CI gate: fmt + tidy + lint + test
 
-parity:
-	go test -tags=parity $(PKG) -run TestParity
-
-clean:
-	rm -rf $(BUILD_DIR) coverage.out coverage.html
+clean: ## remove build artifacts + test cache
+	rm -rf $(OUT_DIR) coverage.out coverage.html
+	go clean -testcache

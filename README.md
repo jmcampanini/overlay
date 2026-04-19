@@ -11,7 +11,7 @@ machine-local override to compose into a single rendered file.
 ## Quick start
 
 ```shell
-# Build (output goes to build/overlay)
+# Build (output goes to out/overlay)
 make build
 
 # Example layout
@@ -160,12 +160,11 @@ Run `overlay docs` for the full schema including `source`, `dot_prefix`,
 ## Development
 
 ```shell
-make build       # build ./build/overlay
-make test        # go test ./...
-make test-race   # go test -race ./...
-make vet         # go vet ./...
-make check       # vet + gofmt + test
-make clean       # remove ./build and coverage files
+make             # list tasks (help is the default)
+make build       # build ./out/overlay
+make test        # go test -race ./...
+make check       # fmt-check + tidy-check + lint + test
+make clean       # remove ./out, coverage files, and test cache
 ```
 
 The `.claude-sandbox/` directory is auto-created for local experiments
