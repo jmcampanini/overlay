@@ -1,42 +1,47 @@
-.PHONY: build test test-race cover vet fmt fmt-check lint lint-fix check parity clean
+.PHONY: help build test lint lint-fix fmt fmt-check tidy tidy-check check clean
 
-BUILD_DIR := build
-BINARY    := $(BUILD_DIR)/overlay
-PKG       := ./...
+OUT_DIR := out
+BINARY  := $(OUT_DIR)/overlay
+PKG     := ./...
 
-build:
-	@mkdir -p $(BUILD_DIR)
+.DEFAULT_GOAL := help
+
+help: ## list tasks
+	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ \
+	     {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+build: ## compile binary to ./out/overlay
+	@mkdir -p $(OUT_DIR)
 	go build -o $(BINARY) ./cmd/overlay
 
-test:
-	go test $(PKG)
-
-test-race:
+test: ## run tests with -race
 	go test -race $(PKG)
 
-cover:
-	go test -cover $(PKG)
-
-vet:
-	go vet $(PKG)
-
-fmt:
-	gofmt -w .
-
-fmt-check:
-	@diff=$$(gofmt -l . | grep -v '^vendor/' || true); \
-	if [ -n "$$diff" ]; then echo "gofmt issues:"; echo "$$diff"; exit 1; fi
-
-lint:
+lint: ## run golangci-lint
 	golangci-lint run $(PKG)
 
-lint-fix:
+lint-fix: ## run golangci-lint with --fix
 	golangci-lint run --fix $(PKG)
 
-check: fmt-check vet lint test
+fmt: ## apply gofmt -w
+	gofmt -w .
 
-parity:
-	go test -tags=parity $(PKG) -run TestParity
+fmt-check: ## fail if gofmt would change files
+	@diff=$$(gofmt -l . 2>&1); rc=$$?; \
+	if [ $$rc -ne 0 ]; then echo "gofmt failed (rc=$$rc):"; echo "$$diff"; exit $$rc; fi; \
+	if [ -n "$$diff" ]; then echo "gofmt issues:"; echo "$$diff"; exit 1; fi
 
-clean:
-	rm -rf $(BUILD_DIR) coverage.out coverage.html
+tidy: ## apply go mod tidy
+	go mod tidy
+
+tidy-check: ## fail if go mod tidy would change go.mod/go.sum
+	@out=$$(go mod tidy -diff); rc=$$?; \
+	if [ $$rc -eq 0 ]; then exit 0; fi; \
+	if [ -n "$$out" ]; then echo "$$out"; echo "go mod tidy would change go.mod/go.sum"; exit 1; fi; \
+	echo "go mod tidy failed (rc=$$rc)"; exit $$rc
+
+check: fmt-check tidy-check lint test ## CI gate: fmt-check + tidy-check + lint + test
+
+clean: ## remove build artifacts + test cache
+	rm -rf $(OUT_DIR) coverage.out coverage.html
+	go clean -testcache
