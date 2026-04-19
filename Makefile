@@ -27,7 +27,8 @@ fmt: ## apply gofmt -w
 	gofmt -w .
 
 fmt-check: ## fail if gofmt would change files
-	@diff=$$(gofmt -l . | grep -v '^vendor/' || true); \
+	@diff=$$(gofmt -l .); rc=$$?; \
+	if [ $$rc -ne 0 ]; then echo "gofmt failed (rc=$$rc)"; exit $$rc; fi; \
 	if [ -n "$$diff" ]; then echo "gofmt issues:"; echo "$$diff"; exit 1; fi
 
 tidy: ## apply go mod tidy
@@ -38,7 +39,7 @@ tidy-check: ## fail if go mod tidy would change go.mod/go.sum
 	if [ -n "$$out" ]; then echo "$$out"; echo "go mod tidy would change go.mod/go.sum"; exit 1; fi; \
 	exit $$rc
 
-check: fmt-check tidy-check lint test ## CI gate: fmt + tidy + lint + test
+check: fmt-check tidy-check lint test ## CI gate: fmt-check + tidy-check + lint + test
 
 clean: ## remove build artifacts + test cache
 	rm -rf $(OUT_DIR) coverage.out coverage.html
