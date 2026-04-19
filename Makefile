@@ -27,8 +27,8 @@ fmt: ## apply gofmt -w
 	gofmt -w .
 
 fmt-check: ## fail if gofmt would change files
-	@diff=$$(gofmt -l .); rc=$$?; \
-	if [ $$rc -ne 0 ]; then echo "gofmt failed (rc=$$rc)"; exit $$rc; fi; \
+	@diff=$$(gofmt -l . 2>&1); rc=$$?; \
+	if [ $$rc -ne 0 ]; then echo "gofmt failed (rc=$$rc):"; echo "$$diff"; exit $$rc; fi; \
 	if [ -n "$$diff" ]; then echo "gofmt issues:"; echo "$$diff"; exit 1; fi
 
 tidy: ## apply go mod tidy
@@ -36,8 +36,9 @@ tidy: ## apply go mod tidy
 
 tidy-check: ## fail if go mod tidy would change go.mod/go.sum
 	@out=$$(go mod tidy -diff); rc=$$?; \
+	if [ $$rc -eq 0 ]; then exit 0; fi; \
 	if [ -n "$$out" ]; then echo "$$out"; echo "go mod tidy would change go.mod/go.sum"; exit 1; fi; \
-	exit $$rc
+	echo "go mod tidy failed (rc=$$rc)"; exit $$rc
 
 check: fmt-check tidy-check lint test ## CI gate: fmt-check + tidy-check + lint + test
 
