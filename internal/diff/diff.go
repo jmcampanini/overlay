@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"strings"
 
 	"github.com/charmbracelet/log"
 
@@ -44,7 +45,7 @@ func Run(opts Options) (bool, error) {
 		opts.Logger.Infof("skipping %s (no active layers)", stem)
 	}
 	if len(groups) == 0 {
-		opts.Logger.Infof("no overlay files found in %s", opts.Settings.SourceDir)
+		opts.Logger.Infof("no overlay files found in %s", sourceSummary(opts.Settings))
 		return false, nil
 	}
 
@@ -81,6 +82,10 @@ func Run(opts Options) (bool, error) {
 		return anyDiffer, fmt.Errorf("%d files failed during diff", failed)
 	}
 	return anyDiffer, nil
+}
+
+func sourceSummary(settings discover.Settings) string {
+	return strings.Join(settings.SourceDirs, ", ")
 }
 
 // readTarget returns the target file's bytes. A missing target file is

@@ -29,7 +29,7 @@ func TestLoadValid(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".overlay.toml")
 	writeFile(t, path, `
-source = "./src"
+sources = ["./src"]
 target = "~/out"
 profiles = ["work", "vpn"]
 env_profiles = "DOTFILES_PROFILE"
@@ -48,11 +48,11 @@ respect_gitignore = true
 	if len(report.LoadedFiles) != 1 {
 		t.Fatalf("LoadedFiles = %v, want one file", report.LoadedFiles)
 	}
-	if report.Updates["source"] != report.LoadedFiles[0] {
-		t.Errorf("source provenance = %q, want loaded file", report.Updates["source"])
+	if report.Updates["sources"] != report.LoadedFiles[0] {
+		t.Errorf("sources provenance = %q, want loaded file", report.Updates["sources"])
 	}
-	if c.Source != "./src" {
-		t.Errorf("Source = %q", c.Source)
+	if !reflect.DeepEqual(c.Sources, []string{"./src"}) {
+		t.Errorf("Sources = %v", c.Sources)
 	}
 	if c.Target != "~/out" {
 		t.Errorf("Target = %q", c.Target)
@@ -74,6 +74,22 @@ respect_gitignore = true
 	}
 	if !c.RespectGitignore {
 		t.Error("RespectGitignore should be true")
+	}
+}
+
+func TestLoadRejectsSingularSourceKey(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".overlay.toml")
+	writeFile(t, path, `
+source = "./src"
+target = "~/out"
+`)
+	_, _, _, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "unknown") || !strings.Contains(err.Error(), "source") {
+		t.Errorf("error should mention unknown source key: %v", err)
 	}
 }
 
@@ -120,8 +136,8 @@ respect_gitigore = true
 
 func TestDefault(t *testing.T) {
 	c := Default()
-	if c.Source != "." {
-		t.Errorf("Source default = %q", c.Source)
+	if !reflect.DeepEqual(c.Sources, []string{"."}) {
+		t.Errorf("Sources default = %v", c.Sources)
 	}
 	if !c.DotPrefix {
 		t.Error("DotPrefix default should be true")
@@ -146,11 +162,11 @@ func TestLoadMissingUsesDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Source != "." {
-		t.Errorf("Source should default to \".\", got %q", c.Source)
+	if !reflect.DeepEqual(c.Sources, []string{"."}) {
+		t.Errorf("Sources should default to [\".\"], got %v", c.Sources)
 	}
-	if report.Updates["source"] != configloader.SourceDefault {
-		t.Errorf("source provenance = %q, want default", report.Updates["source"])
+	if report.Updates["sources"] != configloader.SourceDefault {
+		t.Errorf("sources provenance = %q, want default", report.Updates["sources"])
 	}
 	if !c.DotPrefix {
 		t.Error("DotPrefix should default to true")

@@ -38,7 +38,7 @@ func Run(opts Options) error {
 		opts.Logger.Infof("skipping %s (no active layers)", stem)
 	}
 	if len(groups) == 0 {
-		opts.Logger.Infof("no overlay files found in %s", opts.Settings.SourceDir)
+		opts.Logger.Infof("no overlay files found in %s", sourceSummary(opts.Settings))
 		return nil
 	}
 
@@ -59,6 +59,10 @@ func Run(opts Options) error {
 		return fmt.Errorf("%d %s failed to render", failed, pluralize(failed, "file", "files"))
 	}
 	return nil
+}
+
+func sourceSummary(settings discover.Settings) string {
+	return strings.Join(settings.SourceDirs, ", ")
 }
 
 func pluralize(n int, singular, plural string) string {

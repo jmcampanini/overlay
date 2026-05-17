@@ -37,9 +37,9 @@ func TestDiffIdentical(t *testing.T) {
 	// First render to produce the target file so diff has something to compare.
 	if err := render.Run(render.Options{
 		Settings: discover.Settings{
-			SourceDir: src,
-			TargetDir: target,
-			Ignore:    discover.NoopIgnorer(),
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
 		},
 		Logger: silentLogger(),
 	}); err != nil {
@@ -49,9 +49,9 @@ func TestDiffIdentical(t *testing.T) {
 	var buf bytes.Buffer
 	differ, err := Run(Options{
 		Settings: discover.Settings{
-			SourceDir: src,
-			TargetDir: target,
-			Ignore:    discover.NoopIgnorer(),
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
 		},
 		Logger: silentLogger(),
 		Out:    &buf,
@@ -75,9 +75,9 @@ func TestDiffMissingTarget(t *testing.T) {
 	var buf bytes.Buffer
 	differ, err := Run(Options{
 		Settings: discover.Settings{
-			SourceDir: src,
-			TargetDir: target,
-			Ignore:    discover.NoopIgnorer(),
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
 		},
 		Logger: silentLogger(),
 		Out:    &buf,
@@ -103,9 +103,9 @@ func TestDiffFailFast(t *testing.T) {
 	var buf bytes.Buffer
 	_, err := Run(Options{
 		Settings: discover.Settings{
-			SourceDir: src,
-			TargetDir: target,
-			Ignore:    discover.NoopIgnorer(),
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
 		},
 		Logger: silentLogger(),
 		Out:    &buf,
@@ -124,9 +124,9 @@ func TestDiffContinueOnError(t *testing.T) {
 	var buf bytes.Buffer
 	differ, err := Run(Options{
 		Settings: discover.Settings{
-			SourceDir: src,
-			TargetDir: target,
-			Ignore:    discover.NoopIgnorer(),
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
 		},
 		ContinueOnError: true,
 		Logger:          silentLogger(),
@@ -156,9 +156,9 @@ func TestDiffChanged(t *testing.T) {
 	var buf bytes.Buffer
 	differ, err := Run(Options{
 		Settings: discover.Settings{
-			SourceDir: src,
-			TargetDir: target,
-			Ignore:    discover.NoopIgnorer(),
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
 		},
 		Logger: silentLogger(),
 		Out:    &buf,

@@ -18,7 +18,7 @@ func TestValidateValid(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".overlay.toml")
 	writeFile(t, path, `
-source = "."
+sources = ["."]
 target = "~/"
 profiles = ["work"]
 `)
@@ -30,13 +30,45 @@ profiles = ["work"]
 func TestValidateMissingTarget(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".overlay.toml")
-	writeFile(t, path, `source = "."`)
+	writeFile(t, path, `sources = ["."]`)
 	err := ValidateFile(path)
 	if err == nil {
 		t.Fatal("expected error")
 	}
 	if !strings.Contains(err.Error(), "target") {
 		t.Errorf("error should mention target: %v", err)
+	}
+}
+
+func TestValidateRejectsEmptySources(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".overlay.toml")
+	writeFile(t, path, `
+sources = []
+target = "~/"
+`)
+	err := ValidateFile(path)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "sources") {
+		t.Errorf("error should mention sources: %v", err)
+	}
+}
+
+func TestValidateRejectsEmptySourceString(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".overlay.toml")
+	writeFile(t, path, `
+sources = [""]
+target = "~/"
+`)
+	err := ValidateFile(path)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "empty source") {
+		t.Errorf("error should mention empty source: %v", err)
 	}
 }
 

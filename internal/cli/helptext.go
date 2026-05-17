@@ -1,5 +1,23 @@
 package cli
 
+// sourceSelectionHelp documents how source roots are resolved for commands
+// that walk overlay source files.
+const sourceSelectionHelp = `
+Source selection:
+
+  Positional args select source/package roots for this invocation, replacing
+  configured sources:
+
+    overlay plan pi codex
+    overlay diff pi
+    overlay render pi codex
+
+  If no positional sources are provided, --source/--sources overrides are used
+  (--source adds one value; --sources accepts comma-separated values).
+  Otherwise overlay uses .overlay.toml sources, defaulting to ["."]. Relative
+  config and positional sources are resolved from the config file's directory
+  when a config file exists.`
+
 // profilePrecedenceHelp documents how the active profile set is resolved.
 // It is attached to every subcommand that consumes profiles so the rules
 // are always visible in --help output.

@@ -11,7 +11,7 @@ const DefaultFilename = ".overlay.toml"
 // Config mirrors the .overlay.toml schema. Fields tagged with config are
 // loadable from environment variables and pflags; TOML-only fields are not.
 type Config struct {
-	Source           string   `toml:"source" config:"source" help:"override source directory from config"`
+	Sources          []string `toml:"sources" config:"sources" pflag_singular:"source" help:"override source directories from config"`
 	Target           string   `toml:"target" config:"target" help:"override target directory from config"`
 	DotPrefix        bool     `toml:"dot_prefix"`
 	Profiles         []string `toml:"profiles" config:"profiles" help:"comma-separated profile list"`
@@ -25,7 +25,7 @@ type Config struct {
 // Default returns a Config populated with the default raw values.
 func Default() Config {
 	return Config{
-		Source:    ".",
+		Sources:   []string{"."},
 		DotPrefix: true,
 		Profiles:  []string{},
 		Ignore:    []string{},

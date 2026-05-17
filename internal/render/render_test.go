@@ -24,11 +24,11 @@ func TestRunBasic(t *testing.T) {
 
 	err := Run(Options{
 		Settings: discover.Settings{
-			SourceDir: src,
-			TargetDir: target,
-			DotPrefix: true,
-			Profiles:  []string{"work"},
-			Ignore:    discover.NoopIgnorer(),
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			DotPrefix:  true,
+			Profiles:   []string{"work"},
+			Ignore:     discover.NoopIgnorer(),
 		},
 		Logger: newTestLogger(),
 	})
@@ -63,10 +63,10 @@ func TestRunScalarListDedupe(t *testing.T) {
 
 	err := Run(Options{
 		Settings: discover.Settings{
-			SourceDir: src,
-			TargetDir: target,
-			Profiles:  []string{"work"},
-			Ignore:    discover.NoopIgnorer(),
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Profiles:   []string{"work"},
+			Ignore:     discover.NoopIgnorer(),
 		},
 		Logger: newTestLogger(),
 	})
@@ -98,9 +98,9 @@ trust_level = "trusted"
 
 	err := Run(Options{
 		Settings: discover.Settings{
-			SourceDir: src,
-			TargetDir: target,
-			Ignore:    discover.NoopIgnorer(),
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
 		},
 		Logger: newTestLogger(),
 	})
@@ -121,9 +121,9 @@ func TestRunNoFilesFound(t *testing.T) {
 	target := t.TempDir()
 	err := Run(Options{
 		Settings: discover.Settings{
-			SourceDir: src,
-			TargetDir: target,
-			Ignore:    discover.NoopIgnorer(),
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
 		},
 		Logger: newTestLogger(),
 	})
@@ -140,9 +140,9 @@ func TestRunFailFast(t *testing.T) {
 
 	err := Run(Options{
 		Settings: discover.Settings{
-			SourceDir: src,
-			TargetDir: target,
-			Ignore:    discover.NoopIgnorer(),
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
 		},
 		Logger: newTestLogger(),
 	})
@@ -159,9 +159,9 @@ func TestRunContinueOnError(t *testing.T) {
 
 	err := Run(Options{
 		Settings: discover.Settings{
-			SourceDir: src,
-			TargetDir: target,
-			Ignore:    discover.NoopIgnorer(),
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
 		},
 		ContinueOnError: true,
 		Logger:          newTestLogger(),
