@@ -23,3 +23,13 @@ func Setup(quiet, verbose bool) *log.Logger {
 	}
 	return l
 }
+
+// WarnMissingSources emits one warning for each skipped source directory.
+func WarnMissingSources(l *log.Logger, sources []string) {
+	if l == nil {
+		l = log.Default()
+	}
+	for _, source := range sources {
+		l.Warnf("source %q not found, skipping", source)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/jmcampanini/overlay/internal/discover"
+	"github.com/jmcampanini/overlay/internal/logging"
 	"github.com/jmcampanini/overlay/internal/plan"
 )
 
@@ -19,14 +20,15 @@ func newPlanCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			active, inactive, err := discover.Walk(r.Settings)
+			result, err := discover.WalkDetailed(r.Settings)
 			if err != nil {
 				return err
 			}
-			for _, stem := range inactive {
+			logging.WarnMissingSources(r.Logger, result.MissingSources)
+			for _, stem := range result.Inactive {
 				r.Logger.Infof("skipping %s (no active layers)", stem)
 			}
-			return plan.Render(os.Stdout, active, r.Settings.Profiles, r.SourceLabels, r.Settings.TargetDir)
+			return plan.Render(os.Stdout, result.Active, r.Settings.Profiles, r.SourceLabels, r.Settings.TargetDir)
 		},
 	}
 }

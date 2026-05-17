@@ -16,7 +16,8 @@ FIELDS
     The source directories to walk when searching for *.olay.*.* files. Each
     source is treated as its own root: target paths are rendered relative to
     that source directory. TOML relative paths are resolved from the config
-    file's directory at runtime.
+    file's directory at runtime. Missing source directories are skipped with a
+    warning; existing directories with no overlay files are no-ops.
 
   target = "~/"
     type:    string

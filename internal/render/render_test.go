@@ -159,6 +159,22 @@ func TestRunNoFilesFound(t *testing.T) {
 	}
 }
 
+func TestRunMissingSourceNoop(t *testing.T) {
+	root := t.TempDir()
+	target := t.TempDir()
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{filepath.Join(root, "missing")},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
+		},
+		Logger: newTestLogger(),
+	})
+	if err != nil {
+		t.Errorf("missing source should not error, got: %v", err)
+	}
+}
+
 func TestRunFailFast(t *testing.T) {
 	src := t.TempDir()
 	target := t.TempDir()

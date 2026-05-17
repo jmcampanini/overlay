@@ -287,6 +287,67 @@ func TestWalkEmptySourceError(t *testing.T) {
 	}
 }
 
+func TestWalkSkipsMissingSource(t *testing.T) {
+	root := t.TempDir()
+	missing := filepath.Join(root, "missing")
+	existing := filepath.Join(root, "existing")
+	writeTestFile(t, filepath.Join(existing, "settings.olay.base.json"), `{"ok":true}`)
+
+	result, err := WalkDetailed(Settings{
+		SourceDirs: []string{missing, existing},
+		TargetDir:  "/tmp/out",
+		Ignore:     NoopIgnorer(),
+	})
+	if err != nil {
+		t.Fatalf("WalkDetailed: %v", err)
+	}
+	if len(result.MissingSources) != 1 || result.MissingSources[0] != missing {
+		t.Fatalf("MissingSources = %v, want [%s]", result.MissingSources, missing)
+	}
+	if len(result.Active) != 1 {
+		t.Fatalf("expected 1 active group, got %d", len(result.Active))
+	}
+	if len(result.Inactive) != 0 {
+		t.Fatalf("expected 0 inactive groups, got %d", len(result.Inactive))
+	}
+}
+
+func TestWalkAllMissingSourcesNoop(t *testing.T) {
+	root := t.TempDir()
+	missingA := filepath.Join(root, "a")
+	missingB := filepath.Join(root, "b")
+
+	result, err := WalkDetailed(Settings{
+		SourceDirs: []string{missingA, missingB},
+		TargetDir:  "/tmp/out",
+		Ignore:     NoopIgnorer(),
+	})
+	if err != nil {
+		t.Fatalf("WalkDetailed: %v", err)
+	}
+	if len(result.Active) != 0 || len(result.Inactive) != 0 {
+		t.Fatalf("expected no groups, got active=%d inactive=%d", len(result.Active), len(result.Inactive))
+	}
+	if !slices.Equal(result.MissingSources, []string{missingA, missingB}) {
+		t.Fatalf("MissingSources = %v", result.MissingSources)
+	}
+}
+
+func TestWalkExistingEmptySourceNoop(t *testing.T) {
+	dir := t.TempDir()
+	active, inactive, err := Walk(Settings{
+		SourceDirs: []string{dir},
+		TargetDir:  "/tmp/out",
+		Ignore:     NoopIgnorer(),
+	})
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if len(active) != 0 || len(inactive) != 0 {
+		t.Fatalf("expected no groups, got active=%d inactive=%d", len(active), len(inactive))
+	}
+}
+
 func TestWalkDetectsTargetPathCollision(t *testing.T) {
 	// Two source groups that collapse onto the same target path:
 	// dot-x/y.olay.base.json -> .x/y.json

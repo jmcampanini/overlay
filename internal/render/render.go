@@ -12,6 +12,7 @@ import (
 
 	"github.com/jmcampanini/overlay/internal/discover"
 	"github.com/jmcampanini/overlay/internal/document"
+	"github.com/jmcampanini/overlay/internal/logging"
 	"github.com/jmcampanini/overlay/internal/merge"
 )
 
@@ -36,15 +37,17 @@ func Run(opts Options) error {
 	if opts.Logger == nil {
 		opts.Logger = log.Default()
 	}
-	groups, inactive, err := discover.Walk(opts.Settings)
+	result, err := discover.WalkDetailed(opts.Settings)
 	if err != nil {
 		return fmt.Errorf("discover: %w", err)
 	}
-	for _, stem := range inactive {
+	logging.WarnMissingSources(opts.Logger, result.MissingSources)
+	for _, stem := range result.Inactive {
 		opts.Logger.Infof("skipping %s (no active layers)", stem)
 	}
+	groups := result.Active
 	if len(groups) == 0 {
-		opts.Logger.Infof("no overlay files found in %s", sourceSummary(opts.Settings))
+		opts.Logger.Debugf("no overlay files found in %s", sourceSummary(opts.Settings))
 		return nil
 	}
 

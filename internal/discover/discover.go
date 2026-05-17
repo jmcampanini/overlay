@@ -5,8 +5,10 @@ package discover
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -71,36 +73,59 @@ func newGroup(sourceDir, stem string, format document.Format, targetPath string,
 	return Group{SourceDir: sourceDir, Stem: stem, Format: format, TargetPath: targetPath, Layers: layers}, nil
 }
 
+// WalkResult is the complete result of scanning source directories.
+type WalkResult struct {
+	Active         []Group
+	Inactive       []string
+	MissingSources []string
+}
+
 // Walk scans s.SourceDirs for overlay groups. The active slice contains only
 // groups whose layer list is non-empty (the invariant
 // pinned by newGroup). The inactive slice contains the stems of groups that
 // matched the file convention but had no active profile layer; the caller should
 // log these for visibility.
 func Walk(s Settings) ([]Group, []string, error) {
+	result, err := WalkDetailed(s)
+	if err != nil {
+		return nil, nil, err
+	}
+	return result.Active, result.Inactive, nil
+}
+
+// WalkDetailed is Walk plus observability metadata for skipped source roots.
+func WalkDetailed(s Settings) (WalkResult, error) {
 	dirs := effectiveSourceDirs(s)
 	if len(dirs) == 0 {
-		return nil, nil, fmt.Errorf("source directories are empty")
+		return WalkResult{}, fmt.Errorf("source directories are empty")
 	}
 
-	var active []Group
-	var inactive []string
+	var result WalkResult
 	for _, source := range dirs {
 		if source == "" {
-			return nil, nil, fmt.Errorf("source directory is empty")
+			return WalkResult{}, fmt.Errorf("source directory is empty")
 		}
 		absSource, err := filepath.Abs(source)
 		if err != nil {
-			return nil, nil, fmt.Errorf("resolve source %q: %w", source, err)
+			return WalkResult{}, fmt.Errorf("resolve source %q: %w", source, err)
+		}
+		exists, err := sourceExists(absSource)
+		if err != nil {
+			return WalkResult{}, err
+		}
+		if !exists {
+			result.MissingSources = append(result.MissingSources, absSource)
+			continue
 		}
 		groups, skipped, err := walkSource(s, absSource)
 		if err != nil {
-			return nil, nil, err
+			return WalkResult{}, err
 		}
-		active = append(active, groups...)
-		inactive = append(inactive, skipped...)
+		result.Active = append(result.Active, groups...)
+		result.Inactive = append(result.Inactive, skipped...)
 	}
 
-	slices.SortFunc(active, func(a, b Group) int {
+	slices.SortFunc(result.Active, func(a, b Group) int {
 		return cmp.Or(
 			cmp.Compare(a.SourceDir, b.SourceDir),
 			cmp.Compare(a.TargetPath, b.TargetPath),
@@ -109,11 +134,11 @@ func Walk(s Settings) ([]Group, []string, error) {
 		)
 	})
 
-	seenTargets := make(map[string]string, len(active))
-	for _, g := range active {
+	seenTargets := make(map[string]string, len(result.Active))
+	for _, g := range result.Active {
 		source := g.Layers[0].Path
 		if prev, ok := seenTargets[g.TargetPath]; ok {
-			return nil, nil, fmt.Errorf(
+			return WalkResult{}, fmt.Errorf(
 				"target path collision: %q is produced by both %q and %q",
 				g.TargetPath, prev, source,
 			)
@@ -121,7 +146,7 @@ func Walk(s Settings) ([]Group, []string, error) {
 		seenTargets[g.TargetPath] = source
 	}
 
-	return active, inactive, nil
+	return result, nil
 }
 
 func effectiveSourceDirs(s Settings) []string {
@@ -129,6 +154,16 @@ func effectiveSourceDirs(s Settings) []string {
 		return nil
 	}
 	return append([]string(nil), s.SourceDirs...)
+}
+
+func sourceExists(path string) (bool, error) {
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("stat source %q: %w", path, err)
+	}
+	return true, nil
 }
 
 func walkSource(s Settings, absSource string) ([]Group, []string, error) {

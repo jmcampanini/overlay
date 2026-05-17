@@ -60,8 +60,9 @@ dot_prefix = true
 
 Then `pi/dot-pi/agent/models.olay.base.json` renders to
 `~/.pi/agent/models.json`; the package directory (`pi`) is the source root and
-does not appear in the target path. You can select packages for one run with
-positional args:
+does not appear in the target path. Missing source roots are skipped with a
+warning; existing roots with no overlay files are no-ops. You can select
+packages for one run with positional args:
 
 ```shell
 overlay plan pi codex
