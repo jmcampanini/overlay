@@ -77,19 +77,20 @@ Output is deterministic: keys are alphabetized in both JSON and TOML so
 
 ## Profile resolution precedence
 
-The active profile set is resolved from three possible sources. From
-**highest to lowest** precedence:
+Raw config is loaded from defaults, `.overlay.toml`, `OVERLAY_*` environment
+variables, and config-backed flags, with later sources overriding earlier ones.
+For profiles, the raw `profiles` value is chosen from these sources, highest to
+lowest:
 
-1. `--profiles a,b,c` on the command line — replaces the entire set.
-   Order on the command line is preserved.
-2. `.overlay.toml` in the current directory (or `--config <path>`) —
-   `config.profiles` first, then the comma-split value of the env var
-   named by `config.env_profiles` (if set) is **appended**. Duplicates
-   are removed, preserving first occurrence.
-3. `OVERLAY_PROFILES` env var — used only when no `.overlay.toml` is
-   found and no `--profiles` flag is given. Comma-split.
+1. `--profiles a,b,c` on the command line.
+2. `OVERLAY_PROFILES=a,b,c` in the environment.
+3. `profiles = [...]` in `.overlay.toml`.
+4. the default empty list.
 
-Within the resolved set, the merge layer order is always:
+After raw loading, Overlay appends the comma-split value of the env var named by
+`env_profiles` (if set). Duplicates are removed, preserving first occurrence.
+
+Within the effective set, the merge layer order is always:
 
 ```
 base → each profile in list order → local
@@ -111,11 +112,12 @@ overlay plan
 # Scenario 2: config + env → ["base-tools", "work"]
 DOTFILES_PROFILE=work overlay plan
 
-# Scenario 3: CLI flag replaces → ["personal"]
+# Scenario 3: CLI flag sets raw profiles, then env_profiles appends
+# → ["personal", "work"]
 DOTFILES_PROFILE=work overlay --profiles personal plan
 ```
 
-Run `overlay config` to see which source each resolved value came from.
+Run `overlay config` to see raw loaded values and GoConfigLoader provenance.
 
 ## Subcommands
 
@@ -124,7 +126,7 @@ Run `overlay config` to see which source each resolved value came from.
 | `overlay render` | Merge active layers and write output files to the target. |
 | `overlay diff` | Print a git-style unified diff vs. the current target files. Exit 1 if any file differs. |
 | `overlay plan` | Dry-run: print an aligned table of what would be generated. |
-| `overlay config` | Print the fully-resolved configuration with per-field source annotations. `--validate <path>` schema-checks a file. |
+| `overlay config` | Print raw loaded configuration plus GoConfigLoader provenance. `--validate <path>` schema-checks a file. |
 | `overlay docs` | Print the full `.overlay.toml` schema reference. |
 
 For the complete config schema run `overlay docs`. Every subcommand
@@ -159,6 +161,11 @@ profiles = ["work"]        # optional
 Run `overlay docs` for the full schema including `source`, `dot_prefix`,
 `env_profiles`, `continue_on_error`, `ignore`, `traverse_hidden`, and
 `respect_gitignore`.
+
+Config-backed environment variables are `OVERLAY_SOURCE`, `OVERLAY_TARGET`,
+`OVERLAY_PROFILES`, and `OVERLAY_CONTINUE`. `source` and `target` path expansion
+(`~`, `$VAR`, and config-file-relative TOML paths) happens at runtime; the
+`overlay config` command reports the raw loaded strings.
 
 ## Notes
 

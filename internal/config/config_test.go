@@ -5,15 +5,20 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	configloader "github.com/jmcampanini/go-config-loader"
 )
 
 func TestLoadMissingFile(t *testing.T) {
-	c, exists, err := Load(filepath.Join(t.TempDir(), "missing.toml"))
+	c, exists, report, err := Load(filepath.Join(t.TempDir(), "missing.toml"))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	if exists {
 		t.Error("expected exists = false")
+	}
+	if len(report.LoadedFiles) != 0 {
+		t.Errorf("LoadedFiles = %v, want none", report.LoadedFiles)
 	}
 	if !reflect.DeepEqual(c, Default()) {
 		t.Errorf("expected Default(), got %+v", c)
@@ -33,12 +38,18 @@ ignore = ["**/node_modules"]
 traverse_hidden = true
 respect_gitignore = true
 `)
-	c, exists, err := Load(path)
+	c, exists, report, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	if !exists {
 		t.Error("exists should be true")
+	}
+	if len(report.LoadedFiles) != 1 {
+		t.Fatalf("LoadedFiles = %v, want one file", report.LoadedFiles)
+	}
+	if report.Updates["source"] != report.LoadedFiles[0] {
+		t.Errorf("source provenance = %q, want loaded file", report.Updates["source"])
 	}
 	if c.Source != "./src" {
 		t.Errorf("Source = %q", c.Source)
@@ -70,24 +81,24 @@ func TestLoadMalformed(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".overlay.toml")
 	writeFile(t, path, `not = valid = toml`)
-	if _, _, err := Load(path); err == nil {
+	if _, _, _, err := Load(path); err == nil {
 		t.Error("expected parse error")
 	}
 }
 
-func TestLoadRejectsReservedProfile(t *testing.T) {
+func TestLoadDoesNotValidateReservedProfile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".overlay.toml")
 	writeFile(t, path, `
 target = "~/"
 profiles = ["base"]
 `)
-	_, _, err := Load(path)
-	if err == nil {
-		t.Fatal("expected error for reserved profile")
+	c, _, _, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load should only load raw config: %v", err)
 	}
-	if !strings.Contains(err.Error(), "reserved") {
-		t.Errorf("error should mention 'reserved': %v", err)
+	if !reflect.DeepEqual(c.Profiles, []string{"base"}) {
+		t.Errorf("Profiles = %v", c.Profiles)
 	}
 }
 
@@ -98,7 +109,7 @@ func TestLoadRejectsUnknownKeys(t *testing.T) {
 target = "~/"
 respect_gitigore = true
 `)
-	_, _, err := Load(path)
+	_, _, _, err := Load(path)
 	if err == nil {
 		t.Fatal("expected error for typo'd key")
 	}
@@ -131,12 +142,15 @@ func TestLoadMissingUsesDefaults(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".overlay.toml")
 	writeFile(t, path, `target = "~/"`)
-	c, _, err := Load(path)
+	c, _, report, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.Source != "." {
 		t.Errorf("Source should default to \".\", got %q", c.Source)
+	}
+	if report.Updates["source"] != configloader.SourceDefault {
+		t.Errorf("source provenance = %q, want default", report.Updates["source"])
 	}
 	if !c.DotPrefix {
 		t.Error("DotPrefix should default to true")
@@ -150,43 +164,14 @@ func TestLoadExplicitFalseOverridesDefault(t *testing.T) {
 target = "~/"
 dot_prefix = false
 `)
-	c, _, err := Load(path)
+	c, _, report, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	if c.DotPrefix {
 		t.Error("dot_prefix = false should override the default")
 	}
-}
-
-func TestLoadKeysReportsTopLevelKeys(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, ".overlay.toml")
-	writeFile(t, path, `
-target = "~/"
-traverse_hidden = false
-`)
-	keys, err := LoadKeys(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !keys["target"] {
-		t.Error("target should be in keys")
-	}
-	if !keys["traverse_hidden"] {
-		t.Error("traverse_hidden should be in keys even when set to false")
-	}
-	if keys["source"] {
-		t.Error("source should not be in keys")
-	}
-}
-
-func TestLoadKeysMissingFile(t *testing.T) {
-	keys, err := LoadKeys(filepath.Join(t.TempDir(), "missing.toml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(keys) != 0 {
-		t.Errorf("missing file should yield empty keys, got %v", keys)
+	if report.Updates["dotprefix"] != report.LoadedFiles[0] {
+		t.Errorf("dotprefix provenance = %q, want loaded file", report.Updates["dotprefix"])
 	}
 }

@@ -1,29 +1,29 @@
 package config
 
 // SchemaDocs is the canonical reference for the .overlay.toml file format.
-// It is printed by the `overlay docs` subcommand and used as the source of
-// truth for per-field comments in `overlay config` output.
+// It is printed by the `overlay docs` subcommand.
 const SchemaDocs = `overlay configuration reference (.overlay.toml)
 
 The .overlay.toml file lives in the directory you run 'overlay' from, or at
 the path passed via --config. All fields are optional except 'target', which
-must be set either in the file or via the --target flag.
+must be set by the file, OVERLAY_TARGET, or --target for runtime commands.
 
 FIELDS
 
   source = "."
     type:    string
     default: "."
-    The directory to walk when searching for *.olay.*.* files. Relative
-    paths are resolved from the current working directory.
+    The directory to walk when searching for *.olay.*.* files. TOML relative
+    paths are resolved from the config file's directory at runtime.
 
   target = "~/"
     type:    string
     default: (none — required)
     The directory where merged files are written. A leading "~" is expanded
     to the current user's home directory; "$VAR" and "${VAR}" are expanded
-    from the environment. Overlay exits with an error if target is empty
-    after config + flag resolution.
+    from the environment. TOML relative paths are resolved from the config
+    file's directory at runtime. Overlay exits with an error if target is
+    empty after config + environment + flag loading.
 
   dot_prefix = true
     type:    boolean
@@ -35,9 +35,10 @@ FIELDS
   profiles = ["work"]                  # example
     type:    array of strings
     default: []
-    Profiles to activate, in merge order. The layers are applied as
-    base -> <profile_1> -> <profile_2> -> ... -> local. The names "base"
-    and "local" are reserved and cannot appear here.
+    Raw profiles to activate, in merge order. This value can be overridden
+    by OVERLAY_PROFILES or --profiles. After raw loading, env_profiles may
+    append more profiles. The names "base" and "local" are reserved and
+    cannot appear in the effective list.
 
   env_profiles = "DOTFILES_PROFILE"    # example
     type:    string
@@ -51,8 +52,8 @@ FIELDS
     default: false
     When false (default), overlay fails fast on the first invalid source
     file. When true, it logs the error and continues with the remaining
-    groups, exiting non-zero at the end if any failed. The --continue
-    CLI flag is equivalent.
+    groups, exiting non-zero at the end if any failed. OVERLAY_CONTINUE and
+    the --continue CLI flag are equivalent config-backed overrides.
 
   ignore = []
     type:    array of strings (doublestar glob patterns)
@@ -74,16 +75,26 @@ FIELDS
     When true, overlay respects .gitignore rules while walking the source
     directory. This is off by default to keep walking cheap and predictable.
 
+CONFIG-BACKED ENVIRONMENT VARIABLES
+
+  OVERLAY_SOURCE     overrides source
+  OVERLAY_TARGET     overrides target
+  OVERLAY_PROFILES   overrides raw profiles (comma-separated)
+  OVERLAY_CONTINUE   overrides continue_on_error
+
 PROFILE RESOLUTION PRECEDENCE
 
-The active profile set is resolved from three sources, highest to lowest:
+Raw profiles are loaded from these sources, highest to lowest:
 
-  1. --profiles CLI flag  (replaces the entire set, order preserved)
-  2. .overlay.toml        (profiles list + appended env_profiles env var)
-  3. OVERLAY_PROFILES     (env var, only when no .overlay.toml is found
-                           and no --profiles flag was given)
+  1. --profiles CLI flag
+  2. OVERLAY_PROFILES env var
+  3. .overlay.toml profiles
+  4. default []
 
-Within the resolved set, the merge layer order is always:
+After raw loading, Overlay appends the comma-split value of the env var named
+by env_profiles (if set). Duplicates are removed, preserving first occurrence.
+
+Within the effective set, the merge layer order is always:
   base (if present) -> each profile in list order -> local (if present)
 
 FILE CONVENTION

@@ -4,20 +4,20 @@ package cli
 // It is attached to every subcommand that consumes profiles so the rules
 // are always visible in --help output.
 const profilePrecedenceHelp = `
-Profile resolution (highest precedence first):
+Profile resolution:
 
-  1. --profiles a,b,c           CLI flag. Replaces the entire set.
-                                Order on the command line is preserved.
+  Raw profiles are loaded with normal config precedence:
 
-  2. .overlay.toml              config.profiles (in listed order), then
-                                the comma-split value of the env var named
-                                by config.env_profiles (if set), appended.
-                                Duplicates removed, first occurrence kept.
+    1. --profiles a,b,c
+    2. OVERLAY_PROFILES=a,b,c
+    3. .overlay.toml profiles
+    4. default []
 
-  3. OVERLAY_PROFILES env var   Used only when no .overlay.toml exists and
-                                no --profiles flag was given.
+  After raw loading, the comma-split value of the env var named by
+  env_profiles (if set) is appended. Duplicates are removed, first occurrence
+  kept.
 
-Within the resolved set, the merge layer order is always:
+Within the effective set, the merge layer order is always:
 
   base -> each profile in list order -> local
 
