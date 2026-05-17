@@ -28,10 +28,11 @@ func newDiffCmd() *cobra.Command {
 				return DiffExitCode(2)
 			}
 			differ, err := diff.Run(diff.Options{
-				Settings:        r.Settings,
-				ContinueOnError: r.ContinueOnError,
-				Logger:          r.Logger,
-				Out:             os.Stdout,
+				Settings:         r.Settings,
+				ContinueOnError:  r.ContinueOnError,
+				TOMLIndentTables: r.RawConfig.TOMLIndentTables,
+				Logger:           r.Logger,
+				Out:              os.Stdout,
 			})
 			if err != nil {
 				r.Logger.Error(err)

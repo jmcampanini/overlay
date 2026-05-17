@@ -14,10 +14,10 @@ func parseTOML(data []byte) (any, error) {
 	return v, nil
 }
 
-func serializeTOML(v any) ([]byte, error) {
+func serializeTOML(v any, indentTables bool) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := toml.NewEncoder(&buf)
-	enc.SetIndentTables(true)
+	enc.SetIndentTables(indentTables)
 	if err := enc.Encode(v); err != nil {
 		return nil, err
 	}

@@ -17,9 +17,15 @@ import (
 
 // Options carries everything Run needs beyond the resolved discover.Settings.
 type Options struct {
-	Settings        discover.Settings
-	ContinueOnError bool
-	Logger          *log.Logger
+	Settings         discover.Settings
+	ContinueOnError  bool
+	TOMLIndentTables bool
+	Logger           *log.Logger
+}
+
+// MergeOptions controls output formatting for merged groups.
+type MergeOptions struct {
+	TOMLIndentTables bool
 }
 
 // Run discovers groups, merges, and writes each output file. When
@@ -43,8 +49,9 @@ func Run(opts Options) error {
 	}
 
 	var failed int
+	mergeOptions := MergeOptions{TOMLIndentTables: opts.TOMLIndentTables}
 	for _, g := range groups {
-		if err := renderGroup(g, opts.Logger); err != nil {
+		if err := renderGroup(g, opts.Logger, mergeOptions); err != nil {
 			if opts.ContinueOnError {
 				opts.Logger.Errorf("render %s: %v", g.TargetPath, err)
 				failed++
@@ -72,8 +79,8 @@ func pluralize(n int, singular, plural string) string {
 	return plural
 }
 
-func renderGroup(g discover.Group, logger *log.Logger) error {
-	content, err := MergeGroup(g)
+func renderGroup(g discover.Group, logger *log.Logger, opts MergeOptions) error {
+	content, err := MergeGroupWithOptions(g, opts)
 	if err != nil {
 		return err
 	}
@@ -91,6 +98,11 @@ func renderGroup(g discover.Group, logger *log.Logger) error {
 // and serializes the result. It performs no disk writes — callers use
 // this from both render.Run (to disk) and diff.Run (in-memory compare).
 func MergeGroup(g discover.Group) ([]byte, error) {
+	return MergeGroupWithOptions(g, MergeOptions{})
+}
+
+// MergeGroupWithOptions is MergeGroup with output formatting options.
+func MergeGroupWithOptions(g discover.Group, opts MergeOptions) ([]byte, error) {
 	var merged any = map[string]any{}
 	for _, layer := range g.Layers {
 		data, err := os.ReadFile(layer.Path)
@@ -103,7 +115,9 @@ func MergeGroup(g discover.Group) ([]byte, error) {
 		}
 		merged = merge.Merge(merged, parsed)
 	}
-	return document.Serialize(merged, g.Format)
+	return document.SerializeWithOptions(merged, g.Format, document.SerializeOptions{
+		TOMLIndentTables: opts.TOMLIndentTables,
+	})
 }
 
 func layerNames(g discover.Group) string {

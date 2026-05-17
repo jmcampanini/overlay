@@ -51,14 +51,24 @@ func Parse(data []byte, f Format) (any, error) {
 	return nil, fmt.Errorf("unsupported format: %s", f)
 }
 
+// SerializeOptions controls format-specific output style.
+type SerializeOptions struct {
+	TOMLIndentTables bool
+}
+
 // Serialize encodes the value tree for the given format. Output is
 // deterministic (keys are alphabetized) for both JSON and TOML.
 func Serialize(v any, f Format) ([]byte, error) {
+	return SerializeWithOptions(v, f, SerializeOptions{})
+}
+
+// SerializeWithOptions encodes the value tree for the given format using opts.
+func SerializeWithOptions(v any, f Format, opts SerializeOptions) ([]byte, error) {
 	switch f {
 	case FormatJSON:
 		return serializeJSON(v)
 	case FormatTOML:
-		return serializeTOML(v)
+		return serializeTOML(v, opts.TOMLIndentTables)
 	}
 	return nil, fmt.Errorf("unsupported format: %s", f)
 }

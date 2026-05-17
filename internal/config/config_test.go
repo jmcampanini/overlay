@@ -34,6 +34,7 @@ target = "~/out"
 profiles = ["work", "vpn"]
 env_profiles = "DOTFILES_PROFILE"
 continue_on_error = true
+toml_indent_tables = true
 ignore = ["**/node_modules"]
 traverse_hidden = true
 respect_gitignore = true
@@ -65,6 +66,9 @@ respect_gitignore = true
 	}
 	if !c.ContinueOnError {
 		t.Error("ContinueOnError should be true")
+	}
+	if !c.TOMLIndentTables {
+		t.Error("TOMLIndentTables should be true")
 	}
 	if !reflect.DeepEqual(c.Ignore, []string{"**/node_modules"}) {
 		t.Errorf("Ignore = %v", c.Ignore)
@@ -150,6 +154,9 @@ func TestDefault(t *testing.T) {
 	}
 	if c.Target != "" {
 		t.Errorf("Target should have no default, got %q", c.Target)
+	}
+	if c.TOMLIndentTables {
+		t.Error("TOMLIndentTables default should be false")
 	}
 }
 

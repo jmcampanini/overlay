@@ -57,6 +57,13 @@ FIELDS
     groups, exiting non-zero at the end if any failed. OVERLAY_CONTINUE and
     the --continue CLI flag are equivalent config-backed overrides.
 
+  toml_indent_tables = false
+    type:    boolean
+    default: false
+    When false (default), TOML tables and array-table values are emitted
+    without nested indentation. When true, Overlay passes true to the TOML
+    encoder's SetIndentTables option, preserving the older indented style.
+
   ignore = []
     type:    array of strings (doublestar glob patterns)
     default: []
