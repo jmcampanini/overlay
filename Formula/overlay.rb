@@ -1,0 +1,16 @@
+class Overlay < Formula
+  desc "Merge layered JSON/TOML configuration files by profile"
+  homepage "https://github.com/jmcampanini/overlay"
+  head "https://github.com/jmcampanini/overlay.git", branch: "main"
+
+  depends_on "go" => :build
+
+  def install
+    ldflags = "-s -w -X github.com/jmcampanini/overlay/internal/cli.Version=HEAD-#{Utils.git_short_head}"
+    system "go", "build", *std_go_args(output: bin/"overlay", ldflags: ldflags), "./cmd/overlay"
+  end
+
+  test do
+    assert_match "overlay version HEAD-", shell_output("#{bin}/overlay --version")
+  end
+end

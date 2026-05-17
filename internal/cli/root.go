@@ -19,6 +19,7 @@ func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "overlay",
 		Short:         "Merge layered JSON/TOML configuration files by profile.",
+		Version:       Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}

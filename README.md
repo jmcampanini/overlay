@@ -8,12 +8,31 @@ layers in order, and writes the result to a target directory. It's useful
 for dotfiles layouts where you want a base file, a machine profile, and a
 machine-local override to compose into a single rendered file.
 
+## Install
+
+### Homebrew `--HEAD` (macOS)
+
+```shell
+brew tap jmcampanini/overlay https://github.com/jmcampanini/overlay
+brew install --HEAD jmcampanini/overlay/overlay
+```
+
+Upgrade to the latest commit:
+
+```shell
+brew upgrade --fetch-HEAD overlay
+```
+
+### From source
+
+```shell
+make build
+# binary at ./out/overlay — copy or symlink onto your PATH
+```
+
 ## Quick start
 
 ```shell
-# Build (output goes to out/overlay)
-make build
-
 # Example layout
 src/
 ├── .overlay.toml
