@@ -18,11 +18,11 @@ func (e DiffExitCode) Error() string { return fmt.Sprintf("diff exit code %d", i
 
 func newDiffCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "diff",
+		Use:   "diff [source...]",
 		Short: "Show a unified diff between rendered output and existing target files.",
-		Long:  "Render each overlay group in memory and print a unified diff against the\nexisting target files.\n" + diffOutputHelp + "\n" + profilePrecedenceHelp,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			r, err := Resolve(cmd, &globals)
+		Long:  "Render each overlay group in memory and print a unified diff against the\nexisting target files. Positional sources select package roots for this run.\n" + sourceSelectionHelp + "\n" + diffOutputHelp + "\n" + profilePrecedenceHelp,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			r, err := Resolve(cmd, &globals, args...)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "overlay:", err)
 				return DiffExitCode(2)

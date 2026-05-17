@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"slices"
+	"strings"
 )
 
 // reservedProfiles cannot appear in the profiles list — they name the
@@ -13,7 +14,20 @@ var reservedProfiles = []string{"base", "local"}
 // Target is not required by this method because env/flag/runtime resolution can
 // supply it later; the CLI resolver checks the final value.
 func (c Config) Validate() error {
-	for _, p := range c.Profiles {
+	if len(c.Sources) == 0 {
+		return fmt.Errorf("sources must contain at least one source directory")
+	}
+	for _, source := range c.Sources {
+		if strings.TrimSpace(source) == "" {
+			return fmt.Errorf("sources contains an empty source directory")
+		}
+	}
+	return ValidateProfiles(c.Profiles)
+}
+
+// ValidateProfiles checks profile names after env_profiles has been applied.
+func ValidateProfiles(profiles []string) error {
+	for _, p := range profiles {
 		if slices.Contains(reservedProfiles, p) {
 			return fmt.Errorf("profile name %q is reserved (base and local are special layers)", p)
 		}

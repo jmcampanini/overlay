@@ -218,7 +218,7 @@ func TestResolveSourceRelativeFromConfig(t *testing.T) {
 	}
 	cfgPath := filepath.Join(sub, ".overlay.toml")
 	writeFile(t, cfgPath, `
-source = "pkgs"
+sources = ["pkgs"]
 target = "/tmp/out"
 `)
 	cmd, g := setupCmd(t, []string{"--config", cfgPath})
@@ -235,11 +235,58 @@ target = "/tmp/out"
 	}
 }
 
+func TestResolveLegacySourceRelativeFromConfig(t *testing.T) {
+	root := t.TempDir()
+	sub := filepath.Join(root, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(sub, ".overlay.toml")
+	writeFile(t, cfgPath, `
+source = "pkgs"
+target = "/tmp/out"
+`)
+	cmd, g := setupCmd(t, []string{"--config", cfgPath})
+	r, err := Resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{filepath.Join(sub, "pkgs")}
+	if !reflect.DeepEqual(r.Settings.SourceDirs, want) {
+		t.Errorf("SourceDirs = %v, want %v", r.Settings.SourceDirs, want)
+	}
+}
+
+func TestResolveMultipleSourcesRelativeFromConfig(t *testing.T) {
+	root := t.TempDir()
+	sub := filepath.Join(root, "sub")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(sub, ".overlay.toml")
+	writeFile(t, cfgPath, `
+sources = ["pi", "codex"]
+target = "/tmp/out"
+`)
+	cmd, g := setupCmd(t, []string{"--config", cfgPath})
+	r, err := Resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{filepath.Join(sub, "pi"), filepath.Join(sub, "codex")}
+	if !reflect.DeepEqual(r.Settings.SourceDirs, want) {
+		t.Errorf("SourceDirs = %v, want %v", r.Settings.SourceDirs, want)
+	}
+	if !reflect.DeepEqual(r.SourceLabels, []string{"pi", "codex"}) {
+		t.Errorf("SourceLabels = %v", r.SourceLabels)
+	}
+}
+
 func TestResolveSourceFlagOverride(t *testing.T) {
 	root := t.TempDir()
 	cfgPath := filepath.Join(root, ".overlay.toml")
 	writeFile(t, cfgPath, `
-source = "from-config"
+sources = ["from-config"]
 target = "/tmp/out"
 `)
 	cmd, g := setupCmd(t, []string{
@@ -255,6 +302,94 @@ target = "/tmp/out"
 	}
 	if r.Provenance.Source != ProvFlag {
 		t.Errorf("SourceFrom = %v, want flag", r.Provenance.Source)
+	}
+}
+
+func TestResolveRepeatedSourceFlagReplacesConfig(t *testing.T) {
+	root := t.TempDir()
+	cfgPath := filepath.Join(root, ".overlay.toml")
+	writeFile(t, cfgPath, `
+sources = ["from-config"]
+target = "/tmp/out"
+`)
+	cmd, g := setupCmd(t, []string{
+		"--config", cfgPath,
+		"--source", "pi",
+		"--source", "codex",
+	})
+	r, err := Resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"pi", "codex"}
+	if !reflect.DeepEqual(r.Settings.SourceDirs, want) {
+		t.Errorf("SourceDirs = %v, want %v", r.Settings.SourceDirs, want)
+	}
+	if r.Provenance.Source != ProvFlag {
+		t.Errorf("SourceFrom = %v, want flag", r.Provenance.Source)
+	}
+}
+
+func TestResolveCommaSourceFlagReplacesConfig(t *testing.T) {
+	root := t.TempDir()
+	cfgPath := filepath.Join(root, ".overlay.toml")
+	writeFile(t, cfgPath, `
+sources = ["from-config"]
+target = "/tmp/out"
+`)
+	cmd, g := setupCmd(t, []string{
+		"--config", cfgPath,
+		"--source", "pi,codex",
+	})
+	r, err := Resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"pi", "codex"}
+	if !reflect.DeepEqual(r.Settings.SourceDirs, want) {
+		t.Errorf("SourceDirs = %v, want %v", r.Settings.SourceDirs, want)
+	}
+}
+
+func TestResolvePositionalSourcesReplaceConfigAndUseConfigBase(t *testing.T) {
+	root := t.TempDir()
+	cfgPath := filepath.Join(root, ".overlay.toml")
+	writeFile(t, cfgPath, `
+sources = ["from-config"]
+target = "/tmp/out"
+`)
+	cmd, g := setupCmd(t, []string{"--config", cfgPath})
+	r, err := Resolve(cmd, g, "pi", "codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{filepath.Join(root, "pi"), filepath.Join(root, "codex")}
+	if !reflect.DeepEqual(r.Settings.SourceDirs, want) {
+		t.Errorf("SourceDirs = %v, want %v", r.Settings.SourceDirs, want)
+	}
+	if !reflect.DeepEqual(r.SourceLabels, []string{"pi", "codex"}) {
+		t.Errorf("SourceLabels = %v", r.SourceLabels)
+	}
+	if r.Provenance.Source != ProvFlag {
+		t.Errorf("SourceFrom = %v, want flag", r.Provenance.Source)
+	}
+}
+
+func TestResolvePositionalSourcesIgnoreConfiguredSources(t *testing.T) {
+	root := t.TempDir()
+	cfgPath := filepath.Join(root, ".overlay.toml")
+	writeFile(t, cfgPath, `
+sources = [""]
+target = "/tmp/out"
+`)
+	cmd, g := setupCmd(t, []string{"--config", cfgPath})
+	r, err := Resolve(cmd, g, "pi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{filepath.Join(root, "pi")}
+	if !reflect.DeepEqual(r.Settings.SourceDirs, want) {
+		t.Errorf("SourceDirs = %v, want %v", r.Settings.SourceDirs, want)
 	}
 }
 
@@ -355,7 +490,7 @@ func TestResolveTargetRelativeFromConfig(t *testing.T) {
 
 func TestGlobalFlagsRegistered(t *testing.T) {
 	cmd, _ := setupCmd(t, nil)
-	for _, name := range []string{"config", "source", "target", "profiles", "continue", "quiet", "verbose"} {
+	for _, name := range []string{"config", "sources", "source", "target", "profiles", "continue", "quiet", "verbose"} {
 		if cmd.Flags().Lookup(name) == nil {
 			t.Errorf("expected --%s to be registered", name)
 		}
@@ -370,7 +505,7 @@ func TestGlobalFlagsRegistered(t *testing.T) {
 func TestResolveEnvironmentTaggedFields(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
-	t.Setenv("OVERLAY_SOURCE", "/env/source")
+	t.Setenv("OVERLAY_SOURCES", "/env/source")
 	t.Setenv("OVERLAY_TARGET", "/env/target")
 	t.Setenv("OVERLAY_PROFILES", "env-a,env-b")
 	t.Setenv("OVERLAY_CONTINUE", "true")
@@ -379,8 +514,8 @@ func TestResolveEnvironmentTaggedFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.RawConfig.Source != "/env/source" || r.Settings.SourceDir != "/env/source" {
-		t.Errorf("Source raw/runtime = %q/%q", r.RawConfig.Source, r.Settings.SourceDir)
+	if !reflect.DeepEqual(r.RawConfig.Sources, []string{"/env/source"}) || r.Settings.SourceDir != "/env/source" {
+		t.Errorf("Sources raw/runtime = %v/%q", r.RawConfig.Sources, r.Settings.SourceDir)
 	}
 	if r.RawConfig.Target != "/env/target" || r.Settings.TargetDir != "/env/target" {
 		t.Errorf("Target raw/runtime = %q/%q", r.RawConfig.Target, r.Settings.TargetDir)
@@ -435,12 +570,12 @@ func TestResolveFlagsOverrideFileAndEnvironmentRawConfig(t *testing.T) {
 	t.Chdir(dir)
 	cfgPath := filepath.Join(dir, ".overlay.toml")
 	writeFile(t, cfgPath, `
-source = "file-src"
+sources = ["file-src"]
 target = "file-target"
 profiles = ["file-a"]
 continue_on_error = true
 `)
-	t.Setenv("OVERLAY_SOURCE", "env-src")
+	t.Setenv("OVERLAY_SOURCES", "env-src")
 	t.Setenv("OVERLAY_TARGET", "env-target")
 	t.Setenv("OVERLAY_PROFILES", "env-a,env-b")
 	t.Setenv("OVERLAY_CONTINUE", "true")
@@ -454,8 +589,8 @@ continue_on_error = true
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.RawConfig.Source != "flag-src" || r.RawConfig.Target != "flag-target" {
-		t.Errorf("raw source/target = %q/%q", r.RawConfig.Source, r.RawConfig.Target)
+	if !reflect.DeepEqual(r.RawConfig.Sources, []string{"flag-src"}) || r.RawConfig.Target != "flag-target" {
+		t.Errorf("raw sources/target = %v/%q", r.RawConfig.Sources, r.RawConfig.Target)
 	}
 	if !reflect.DeepEqual(r.RawConfig.Profiles, []string{"flag-a", "flag-b"}) {
 		t.Errorf("raw profiles = %v", r.RawConfig.Profiles)
@@ -516,7 +651,7 @@ func TestPrintRawConfigReportsRawValues(t *testing.T) {
 	t.Chdir(dir)
 	cfgPath := filepath.Join(dir, ".overlay.toml")
 	writeFile(t, cfgPath, `
-source = "pkgs"
+sources = ["pkgs"]
 target = "~/out"
 profiles = ["work"]
 env_profiles = "DOTFILES_PROFILE"
@@ -533,7 +668,7 @@ env_profiles = "DOTFILES_PROFILE"
 	}
 	out := buf.String()
 	for _, want := range []string{
-		`source = "pkgs"`,
+		`sources = ["pkgs"]`,
 		`target = "~/out"`,
 		`profiles = ["work"]`,
 		`env_profiles = "DOTFILES_PROFILE"`,
@@ -545,6 +680,32 @@ env_profiles = "DOTFILES_PROFILE"
 	}
 	if strings.Contains(out, "vpn") {
 		t.Fatalf("raw config output should not include effective env profile:\n%s", out)
+	}
+}
+
+func TestPrintRawConfigNormalizesLegacySource(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	cfgPath := filepath.Join(dir, ".overlay.toml")
+	writeFile(t, cfgPath, `
+source = "pkgs"
+target = "~/out"
+`)
+	cmd, g := setupCmd(t, []string{"--config", cfgPath})
+	raw, err := loadRawConfig(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := printRawConfig(&buf, raw); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `sources = ["pkgs"]`) {
+		t.Fatalf("raw config output should print canonical sources:\n%s", out)
+	}
+	if strings.Contains(out, `source = "pkgs"`) {
+		t.Fatalf("raw config output should not print legacy source:\n%s", out)
 	}
 }
 

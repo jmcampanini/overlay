@@ -16,11 +16,11 @@ import (
 // Render writes an aligned table of groups to w, with columns
 // TARGET, FORMAT, LAYERS. The header summarizes the active profile
 // set and source/target directories.
-func Render(w io.Writer, groups []discover.Group, profiles []string, sourceDir, targetDir string) error {
+func Render(w io.Writer, groups []discover.Group, profiles []string, sourceDirs []string, targetDir string) error {
 	if _, err := fmt.Fprintf(w, "Active profiles: [%s]\n", strings.Join(profiles, ", ")); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(w, "Source: %s  Target: %s\n\n", sourceDir, collapseHome(targetDir)); err != nil {
+	if _, err := fmt.Fprintf(w, "Sources: %s  Target: %s\n\n", sourceSummary(sourceDirs), collapseHome(targetDir)); err != nil {
 		return err
 	}
 
@@ -54,6 +54,20 @@ func Render(w io.Writer, groups []discover.Group, profiles []string, sourceDir, 
 	}
 	_, err := fmt.Fprintf(w, "\n%d %s will be generated\n", len(groups), noun)
 	return err
+}
+
+func sourceSummary(sources []string) string {
+	if len(sources) == 0 {
+		return "."
+	}
+	if len(sources) > 4 {
+		return fmt.Sprintf("%d configured", len(sources))
+	}
+	out := make([]string, len(sources))
+	for i, source := range sources {
+		out[i] = collapseHome(source)
+	}
+	return strings.Join(out, ", ")
 }
 
 // collapseHome shortens an absolute path to start with ~/ when it begins

@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	configPathSource          = "source"
+	configPathSources         = "sources"
 	configPathTarget          = "target"
 	configPathProfiles        = "profiles"
 	configPathContinueOnError = "continueonerror"
@@ -70,6 +70,7 @@ type Resolved struct {
 	Logger          *log.Logger
 	Provenance      Provenances
 	RawConfig       config.Config
+	SourceLabels    []string
 }
 
 type rawLoadedConfig struct {
@@ -78,10 +79,16 @@ type rawLoadedConfig struct {
 	ConfigPath string
 }
 
+type sourceResolution struct {
+	dirs       []string
+	labels     []string
+	provenance Provenance
+}
+
 // Resolve merges config file, environment variables, and CLI flags into a
 // runtime settings bundle. It returns an error when Overlay-specific runtime
 // validation fails.
-func Resolve(cmd *cobra.Command, g *GlobalFlags) (Resolved, error) {
+func Resolve(cmd *cobra.Command, g *GlobalFlags, positionalSources ...string) (Resolved, error) {
 	r := Resolved{
 		Logger: logging.Setup(g.Quiet, g.Verbose),
 	}
@@ -99,11 +106,12 @@ func Resolve(cmd *cobra.Command, g *GlobalFlags) (Resolved, error) {
 	}
 
 	cfg := raw.Config
-	source, sourceProv, err := resolvePath(configPathSource, cfg.Source, raw.Report, configBase, configExists)
+	sources, err := resolveSourceDirs(positionalSources, cfg, raw.Report, configBase, configExists)
 	if err != nil {
 		return r, err
 	}
-	r.Provenance.Source = sourceProv
+	r.Provenance.Source = sources.provenance
+	r.SourceLabels = sources.labels
 
 	target, targetProv, err := resolvePath(configPathTarget, cfg.Target, raw.Report, configBase, configExists)
 	if err != nil {
@@ -118,28 +126,24 @@ func Resolve(cmd *cobra.Command, g *GlobalFlags) (Resolved, error) {
 
 	profiles, envContributed := effectiveProfiles(cfg)
 	r.Provenance.Profiles = profilesProvenance(raw.Report, envContributed)
-	if err := (config.Config{Profiles: profiles}).Validate(); err != nil {
+	if err := config.ValidateProfiles(profiles); err != nil {
 		return r, err
 	}
 
 	r.ContinueOnError = cfg.ContinueOnError
 
-	gitignoreIgn, err := maybeGitignore(cfg.RespectGitignore, source)
-	if err != nil {
-		return r, err
-	}
 	globIgn, err := discover.NewGlobIgnorer(cfg.Ignore)
 	if err != nil {
 		return r, err
 	}
-	ignorer := discover.NewChain(globIgn, gitignoreIgn)
 
 	r.Settings = discover.Settings{
-		SourceDir:        source,
+		SourceDir:        firstSource(sources.dirs),
+		SourceDirs:       sources.dirs,
 		TargetDir:        target,
 		DotPrefix:        cfg.DotPrefix,
 		Profiles:         profiles,
-		Ignore:           ignorer,
+		Ignore:           globIgn,
 		TraverseHidden:   cfg.TraverseHidden,
 		RespectGitignore: cfg.RespectGitignore,
 	}
@@ -176,6 +180,69 @@ func loadRawConfig(cmd *cobra.Command, g *GlobalFlags) (rawLoadedConfig, error) 
 		Report:     report,
 		ConfigPath: cfgPath,
 	}, nil
+}
+
+func resolveSourceDirs(positional []string, cfg config.Config, report configloader.LoadReport, configBase string, configExists bool) (sourceResolution, error) {
+	if len(positional) > 0 {
+		values := append([]string(nil), positional...)
+		return resolveSourceValues(configPathSources, values, values, ProvFlag, configExists, configBase)
+	}
+
+	sourcesSource := report.Updates[configPathSources]
+	values := append([]string(nil), cfg.Sources...)
+	if sourcesSource == pflagloader.SourcePFlag {
+		values = splitSourceValues(values)
+	}
+	anchor := sourceIsFile(sourcesSource) || (sourcesSource == configloader.SourceDefault && configExists)
+	return resolveSourceValues(configPathSources, values, values, provenanceFromSource(sourcesSource), anchor, configBase)
+}
+
+func splitSourceValues(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		parts := splitCSV(value)
+		if len(parts) == 0 {
+			out = append(out, value)
+			continue
+		}
+		out = append(out, parts...)
+	}
+	return out
+}
+
+func resolveSourceValues(name string, values, labels []string, prov Provenance, anchor bool, configBase string) (sourceResolution, error) {
+	if len(values) == 0 {
+		return sourceResolution{}, fmt.Errorf("%s is empty", name)
+	}
+
+	dirs := make([]string, 0, len(values))
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			return sourceResolution{}, fmt.Errorf("%s contains an empty source directory", name)
+		}
+		p := value
+		if anchor {
+			p = resolveRelative(p, configBase)
+		}
+		expanded, err := discover.ExpandPath(p)
+		if err != nil {
+			return sourceResolution{}, fmt.Errorf("expand %s: %w", name, err)
+		}
+		dirs = append(dirs, expanded)
+	}
+
+	return sourceResolution{
+		dirs:       dirs,
+		labels:     append([]string(nil), labels...),
+		provenance: prov,
+	}, nil
+}
+
+func firstSource(sources []string) string {
+	if len(sources) == 0 {
+		return ""
+	}
+	return sources[0]
 }
 
 func effectiveProfiles(cfg config.Config) ([]string, bool) {
@@ -237,13 +304,6 @@ func dedupe(xs []string) []string {
 		out = append(out, x)
 	}
 	return out
-}
-
-func maybeGitignore(enabled bool, source string) (discover.Ignorer, error) {
-	if !enabled {
-		return discover.NoopIgnorer(), nil
-	}
-	return discover.NewGitignoreIgnorer(source)
 }
 
 // resolveRelative turns a relative path from the config file into one anchored

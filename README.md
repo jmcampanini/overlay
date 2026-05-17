@@ -2,7 +2,7 @@
 
 A small Go CLI that merges layered JSON/TOML configuration files by profile.
 
-`overlay` walks a source directory for files matching
+`overlay` walks one or more source directories for files matching
 `<stem>.olay.<profile>.<ext>`, groups them by stem, merges the matching
 layers in order, and writes the result to a target directory. It's useful
 for dotfiles layouts where you want a base file, a machine profile, and a
@@ -48,6 +48,26 @@ overlay --profiles work render
 
 With `dot_prefix = true` (the default) and `target = "~/"`, the merged
 file is written to `~/.claude/settings.json`.
+
+For stow-style dotfiles repos, configure package directories as separate
+source roots:
+
+```toml
+sources = ["pi", "codex", "opencode"]
+target = "~/"
+dot_prefix = true
+```
+
+Then `pi/dot-pi/agent/models.olay.base.json` renders to
+`~/.pi/agent/models.json`; the package directory (`pi`) is the source root and
+does not appear in the target path. You can select packages for one run with
+positional args:
+
+```shell
+overlay plan pi codex
+overlay diff pi
+overlay render pi codex
+```
 
 ## File convention
 
@@ -158,12 +178,14 @@ target = "~/"              # required
 profiles = ["work"]        # optional
 ```
 
-Run `overlay docs` for the full schema including `source`, `dot_prefix`,
+Run `overlay docs` for the full schema including `sources`, `dot_prefix`,
 `env_profiles`, `continue_on_error`, `ignore`, `traverse_hidden`, and
 `respect_gitignore`.
 
-Config-backed environment variables are `OVERLAY_SOURCE`, `OVERLAY_TARGET`,
-`OVERLAY_PROFILES`, and `OVERLAY_CONTINUE`. `source` and `target` path expansion
+Config-backed environment variables are `OVERLAY_SOURCES`, `OVERLAY_TARGET`,
+`OVERLAY_PROFILES`, and `OVERLAY_CONTINUE`. Legacy configs with `source = "dir"`
+are accepted as a single source, but new configs should use `sources = [...]`.
+`sources` and `target` path expansion
 (`~`, `$VAR`, and config-file-relative TOML paths) happens at runtime; the
 `overlay config` command reports the raw loaded strings.
 

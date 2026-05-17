@@ -11,11 +11,11 @@ import (
 
 func newPlanCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "plan",
+		Use:   "plan [source...]",
 		Short: "Show what files would be generated without writing anything.",
-		Long:  "Print an aligned table of target paths, formats, and active layers\nfor the current profile selection. Does not write any files.\n" + profilePrecedenceHelp,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			r, err := Resolve(cmd, &globals)
+		Long:  "Print an aligned table of target paths, formats, and active layers\nfor the current profile selection. Does not write any files. Positional sources select package roots for this run.\n" + sourceSelectionHelp + "\n" + profilePrecedenceHelp,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			r, err := Resolve(cmd, &globals, args...)
 			if err != nil {
 				return err
 			}
@@ -26,7 +26,7 @@ func newPlanCmd() *cobra.Command {
 			for _, stem := range inactive {
 				r.Logger.Infof("skipping %s (no active layers)", stem)
 			}
-			return plan.Render(os.Stdout, active, r.Settings.Profiles, r.Settings.SourceDir, r.Settings.TargetDir)
+			return plan.Render(os.Stdout, active, r.Settings.Profiles, r.SourceLabels, r.Settings.TargetDir)
 		},
 	}
 }

@@ -10,11 +10,14 @@ must be set by the file, OVERLAY_TARGET, or --target for runtime commands.
 
 FIELDS
 
-  source = "."
-    type:    string
-    default: "."
-    The directory to walk when searching for *.olay.*.* files. TOML relative
-    paths are resolved from the config file's directory at runtime.
+  sources = ["."]
+    type:    array of strings
+    default: ["."]
+    The source directories to walk when searching for *.olay.*.* files. Each
+    source is treated as its own root: target paths are rendered relative to
+    that source directory. TOML relative paths are resolved from the config
+    file's directory at runtime. Legacy files may use source = "dir" for a
+    single source; new configs should use sources, and a file may not set both.
 
   target = "~/"
     type:    string
@@ -58,29 +61,44 @@ FIELDS
   ignore = []
     type:    array of strings (doublestar glob patterns)
     default: []
-    Paths matching any of these patterns are skipped during the source
-    walk. Patterns support ** (match any number of path segments).
-    Hidden directories are already skipped by default via traverse_hidden,
-    so ".git" does not need to be listed unless you enable that.
+    Paths matching any of these patterns are skipped during each source
+    walk. Patterns support ** (match any number of path segments). Hidden
+    directories are already skipped by default via traverse_hidden, so ".git"
+    does not need to be listed unless you enable that.
 
   traverse_hidden = false
     type:    boolean
     default: false
     When false (default), directories whose name begins with "." are
-    skipped during the source walk. Set to true to descend into them.
+    skipped during each source walk. Set to true to descend into them.
 
   respect_gitignore = false
     type:    boolean
     default: false
-    When true, overlay respects .gitignore rules while walking the source
+    When true, overlay respects .gitignore rules while walking each source
     directory. This is off by default to keep walking cheap and predictable.
 
 CONFIG-BACKED ENVIRONMENT VARIABLES
 
-  OVERLAY_SOURCE     overrides source
+  OVERLAY_SOURCES    overrides sources (comma-separated)
   OVERLAY_TARGET     overrides target
   OVERLAY_PROFILES   overrides raw profiles (comma-separated)
   OVERLAY_CONTINUE   overrides continue_on_error
+
+SOURCE RESOLUTION PRECEDENCE
+
+Source roots are loaded from these sources, highest to lowest:
+
+  1. positional command args for plan, diff, and render (e.g. overlay plan pi)
+  2. --source / --sources CLI flags
+  3. OVERLAY_SOURCES env var
+  4. .overlay.toml sources
+  5. default ["."]
+
+Positional sources are resolved relative to the config file directory when a
+config file exists. This supports stow-style package selection:
+
+  overlay --config ~/dotfiles/.overlay.toml plan pi codex
 
 PROFILE RESOLUTION PRECEDENCE
 
@@ -110,6 +128,12 @@ merges last, and any other name is a user profile. For example:
 With dot_prefix = true and target = "~/", those layers merge into:
 
   ~/.claude/settings.json
+
+With a stow-style config, the package directory is the source root and is not
+part of the target path:
+
+  sources = ["pi"]
+  pi/dot-pi/agent/models.olay.base.json -> ~/.pi/agent/models.json
 
 See README.md for a worked example.
 `

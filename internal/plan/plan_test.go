@@ -34,7 +34,7 @@ func TestRenderBasic(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	if err := Render(&buf, groups, []string{"work"}, "./src", "/tmp/out"); err != nil {
+	if err := Render(&buf, groups, []string{"work"}, []string{"./src"}, "/tmp/out"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -56,9 +56,31 @@ func TestRenderBasic(t *testing.T) {
 	}
 }
 
+func TestRenderMultipleSourcesHeader(t *testing.T) {
+	var buf bytes.Buffer
+	if err := Render(&buf, nil, []string{}, []string{"pi", "codex"}, "/tmp/out"); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "Sources: pi, codex") {
+		t.Errorf("missing sources header:\n%s", out)
+	}
+}
+
+func TestRenderManySourcesHeader(t *testing.T) {
+	var buf bytes.Buffer
+	if err := Render(&buf, nil, []string{}, []string{"a", "b", "c", "d", "e"}, "/tmp/out"); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "Sources: 5 configured") {
+		t.Errorf("missing compact sources header:\n%s", out)
+	}
+}
+
 func TestRenderEmpty(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Render(&buf, nil, []string{}, ".", "/tmp/out"); err != nil {
+	if err := Render(&buf, nil, []string{}, []string{"."}, "/tmp/out"); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()

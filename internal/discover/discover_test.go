@@ -3,6 +3,7 @@ package discover
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -70,6 +71,65 @@ func TestWalkBasicBaseAndProfile(t *testing.T) {
 	wantTarget := filepath.Join("/tmp/out", ".claude", "settings.json")
 	if g.TargetPath != wantTarget {
 		t.Errorf("TargetPath = %q, want %q", g.TargetPath, wantTarget)
+	}
+}
+
+func TestWalkMultipleSourceRootsAreRelativeToEachRoot(t *testing.T) {
+	dir := t.TempDir()
+	pi := filepath.Join(dir, "pi")
+	codex := filepath.Join(dir, "codex")
+	writeTestFile(t, filepath.Join(pi, "dot-pi", "agent", "models.olay.base.json"), `{"pi":true}`)
+	writeTestFile(t, filepath.Join(codex, "dot-codex", "config.olay.base.toml"), `model = "x"`)
+
+	active, inactive, err := Walk(Settings{
+		SourceDirs: []string{pi, codex},
+		TargetDir:  "/tmp/out",
+		DotPrefix:  true,
+		Ignore:     NoopIgnorer(),
+	})
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if len(inactive) != 0 {
+		t.Errorf("expected 0 inactive, got %d", len(inactive))
+	}
+	if len(active) != 2 {
+		t.Fatalf("expected 2 active groups, got %d", len(active))
+	}
+	got := []string{active[0].TargetPath, active[1].TargetPath}
+	want := []string{
+		filepath.Join("/tmp/out", ".codex", "config.toml"),
+		filepath.Join("/tmp/out", ".pi", "agent", "models.json"),
+	}
+	for _, target := range want {
+		if !slices.Contains(got, target) {
+			t.Errorf("missing target %q from %v", target, got)
+		}
+	}
+	bad := filepath.Join("/tmp/out", "pi", ".pi", "agent", "models.json")
+	if slices.Contains(got, bad) {
+		t.Errorf("package directory leaked into target path: %v", got)
+	}
+}
+
+func TestWalkDetectsTargetPathCollisionAcrossSourceRoots(t *testing.T) {
+	dir := t.TempDir()
+	pi := filepath.Join(dir, "pi")
+	other := filepath.Join(dir, "other-pi")
+	writeTestFile(t, filepath.Join(pi, "dot-pi", "agent", "models.olay.base.json"), `{"a":1}`)
+	writeTestFile(t, filepath.Join(other, "dot-pi", "agent", "models.olay.base.json"), `{"a":2}`)
+
+	_, _, err := Walk(Settings{
+		SourceDirs: []string{pi, other},
+		TargetDir:  "/tmp/out",
+		DotPrefix:  true,
+		Ignore:     NoopIgnorer(),
+	})
+	if err == nil {
+		t.Fatal("expected collision error")
+	}
+	if !strings.Contains(err.Error(), "collision") || !strings.Contains(err.Error(), "models.olay.base.json") {
+		t.Errorf("error should mention collision and sources: %v", err)
 	}
 }
 
@@ -258,6 +318,9 @@ func TestWalkDetectsTargetPathCollision(t *testing.T) {
 
 func writeTestFile(t *testing.T, path, content string) {
 	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}

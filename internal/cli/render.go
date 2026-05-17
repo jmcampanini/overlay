@@ -8,11 +8,11 @@ import (
 
 func newRenderCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "render",
+		Use:   "render [source...]",
 		Short: "Merge overlay layers and write the output files.",
-		Long:  "Walk the source directory, merge each group's active layers, and write the\nresult to the target directory.\n" + profilePrecedenceHelp,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			r, err := Resolve(cmd, &globals)
+		Long:  "Walk the source directories, merge each group's active layers, and write the\nresult to the target directory. Positional sources select package roots for this run.\n" + sourceSelectionHelp + "\n" + profilePrecedenceHelp,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			r, err := Resolve(cmd, &globals, args...)
 			if err != nil {
 				return err
 			}
