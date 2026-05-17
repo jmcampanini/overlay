@@ -20,14 +20,10 @@ import (
 )
 
 const (
-	configPathSource           = "source"
-	configPathTarget           = "target"
-	configPathDotPrefix        = "dotprefix"
-	configPathProfiles         = "profiles"
-	configPathContinueOnError  = "continueonerror"
-	configPathIgnore           = "ignore"
-	configPathTraverseHidden   = "traversehidden"
-	configPathRespectGitignore = "respectgitignore"
+	configPathSource          = "source"
+	configPathTarget          = "target"
+	configPathProfiles        = "profiles"
+	configPathContinueOnError = "continueonerror"
 )
 
 // Provenance identifies which raw source produced a setting's value.
@@ -60,14 +56,10 @@ func (p Provenance) String() string {
 
 // Provenances records where each runtime setting's raw value came from.
 type Provenances struct {
-	Source           Provenance
-	Target           Provenance
-	DotPrefix        Provenance
-	Profiles         Provenance
-	ContinueOnError  Provenance
-	TraverseHidden   Provenance
-	RespectGitignore Provenance
-	Ignore           Provenance
+	Source          Provenance
+	Target          Provenance
+	Profiles        Provenance
+	ContinueOnError Provenance
 }
 
 // Resolved is the runtime settings bundle after raw config loading and
@@ -76,19 +68,14 @@ type Resolved struct {
 	Settings        discover.Settings
 	ContinueOnError bool
 	Logger          *log.Logger
-	ConfigPath      string
-	ConfigExists    bool
-	IgnorePatterns  []string
 	Provenance      Provenances
 	RawConfig       config.Config
-	LoadReport      configloader.LoadReport
 }
 
 type rawLoadedConfig struct {
 	Config     config.Config
 	Report     configloader.LoadReport
 	ConfigPath string
-	Exists     bool
 }
 
 // Resolve merges config file, environment variables, and CLI flags into a
@@ -103,24 +90,22 @@ func Resolve(cmd *cobra.Command, g *GlobalFlags) (Resolved, error) {
 	if err != nil {
 		return r, err
 	}
-	r.ConfigPath = raw.ConfigPath
-	r.ConfigExists = raw.Exists
 	r.RawConfig = raw.Config
-	r.LoadReport = raw.Report
 
+	configExists := len(raw.Report.LoadedFiles) > 0
 	configBase := "."
-	if raw.Exists && len(raw.Report.LoadedFiles) > 0 {
+	if configExists {
 		configBase = filepath.Dir(raw.Report.LoadedFiles[0])
 	}
 
 	cfg := raw.Config
-	source, sourceProv, err := resolvePath("source", cfg.Source, raw.Report, configBase, raw.Exists)
+	source, sourceProv, err := resolvePath(configPathSource, cfg.Source, raw.Report, configBase, configExists)
 	if err != nil {
 		return r, err
 	}
 	r.Provenance.Source = sourceProv
 
-	target, targetProv, err := resolvePath("target", cfg.Target, raw.Report, configBase, raw.Exists)
+	target, targetProv, err := resolvePath(configPathTarget, cfg.Target, raw.Report, configBase, configExists)
 	if err != nil {
 		return r, err
 	}
@@ -129,10 +114,6 @@ func Resolve(cmd *cobra.Command, g *GlobalFlags) (Resolved, error) {
 		return r, fmt.Errorf("target is required (set in %s or pass --target)", raw.ConfigPath)
 	}
 
-	r.Provenance.DotPrefix = provenanceFromReport(raw.Report, configPathDotPrefix)
-	r.Provenance.Ignore = provenanceFromReport(raw.Report, configPathIgnore)
-	r.Provenance.TraverseHidden = provenanceFromReport(raw.Report, configPathTraverseHidden)
-	r.Provenance.RespectGitignore = provenanceFromReport(raw.Report, configPathRespectGitignore)
 	r.Provenance.ContinueOnError = provenanceFromReport(raw.Report, configPathContinueOnError)
 
 	profiles, envContributed := effectiveProfiles(cfg)
@@ -153,7 +134,6 @@ func Resolve(cmd *cobra.Command, g *GlobalFlags) (Resolved, error) {
 	}
 	ignorer := discover.NewChain(globIgn, gitignoreIgn)
 
-	r.IgnorePatterns = cfg.Ignore
 	r.Settings = discover.Settings{
 		SourceDir:        source,
 		TargetDir:        target,
@@ -195,29 +175,24 @@ func loadRawConfig(cmd *cobra.Command, g *GlobalFlags) (rawLoadedConfig, error) 
 		Config:     cfg,
 		Report:     report,
 		ConfigPath: cfgPath,
-		Exists:     len(report.LoadedFiles) > 0,
 	}, nil
 }
 
 func effectiveProfiles(cfg config.Config) ([]string, bool) {
 	out := append([]string{}, cfg.Profiles...)
-	envContributed := false
-	if cfg.EnvProfiles != "" {
-		extra := splitCSV(os.Getenv(cfg.EnvProfiles))
-		if len(extra) > 0 {
-			out = append(out, extra...)
-			envContributed = true
-		}
+	if cfg.EnvProfiles == "" {
+		return dedupe(out), false
 	}
-	return dedupe(out), envContributed
+	extra := splitCSV(os.Getenv(cfg.EnvProfiles))
+	out = append(out, extra...)
+	return dedupe(out), len(extra) > 0
 }
 
 func profilesProvenance(report configloader.LoadReport, envContributed bool) Provenance {
-	prov := provenanceFromReport(report, configPathProfiles)
 	if envContributed {
 		return ProvConfigEnv
 	}
-	return prov
+	return provenanceFromReport(report, configPathProfiles)
 }
 
 func provenanceFromReport(report configloader.LoadReport, path string) Provenance {

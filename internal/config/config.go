@@ -44,11 +44,7 @@ func NewFileLoader(path string, required bool) (configloader.ConfigLoader[Config
 // Load reads an optional raw .overlay.toml file. The returned bool reports
 // whether the file existed; a missing file yields Default() and no error.
 func Load(path string) (Config, bool, configloader.LoadReport, error) {
-	loader, err := NewFileLoader(path, false)
-	if err != nil {
-		return Config{}, false, configloader.LoadReport{}, err
-	}
-	cfg, report, err := configloader.Load(Default(), loader)
+	cfg, report, err := load(path, false)
 	if err != nil {
 		return Config{}, false, configloader.LoadReport{}, err
 	}
@@ -57,7 +53,11 @@ func Load(path string) (Config, bool, configloader.LoadReport, error) {
 
 // LoadRequired reads a required raw .overlay.toml file.
 func LoadRequired(path string) (Config, configloader.LoadReport, error) {
-	loader, err := NewFileLoader(path, true)
+	return load(path, true)
+}
+
+func load(path string, required bool) (Config, configloader.LoadReport, error) {
+	loader, err := NewFileLoader(path, required)
 	if err != nil {
 		return Config{}, configloader.LoadReport{}, err
 	}

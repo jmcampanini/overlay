@@ -47,7 +47,7 @@ For the full schema reference with field descriptions, run: overlay docs`,
 
 func printRawConfig(w io.Writer, raw rawLoadedConfig) error {
 	notFound := ""
-	if !raw.Exists {
+	if len(raw.Report.LoadedFiles) == 0 {
 		notFound = " (not found)"
 	}
 	if _, err := fmt.Fprintf(w, "# overlay configuration (raw)\n# config file: %s%s\n\n", raw.ConfigPath, notFound); err != nil {
