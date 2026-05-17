@@ -43,11 +43,11 @@ func TestWalkBasicBaseAndProfile(t *testing.T) {
 	writeTestFile(t, filepath.Join(pkg, "settings.olay.work.json"), `{"b":2}`)
 
 	active, inactive, err := Walk(Settings{
-		SourceDir: dir,
-		TargetDir: "/tmp/out",
-		DotPrefix: true,
-		Profiles:  []string{"work"},
-		Ignore:    NoopIgnorer(),
+		SourceDirs: []string{dir},
+		TargetDir:  "/tmp/out",
+		DotPrefix:  true,
+		Profiles:   []string{"work"},
+		Ignore:     NoopIgnorer(),
 	})
 	if err != nil {
 		t.Fatalf("Walk: %v", err)
@@ -138,10 +138,10 @@ func TestWalkOnlyProfileNoBase(t *testing.T) {
 	writeTestFile(t, filepath.Join(dir, "config.olay.work.toml"), `key = "work"`)
 
 	active, _, err := Walk(Settings{
-		SourceDir: dir,
-		TargetDir: "/tmp/out",
-		Profiles:  []string{"work"},
-		Ignore:    NoopIgnorer(),
+		SourceDirs: []string{dir},
+		TargetDir:  "/tmp/out",
+		Profiles:   []string{"work"},
+		Ignore:     NoopIgnorer(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -159,10 +159,10 @@ func TestWalkInactiveGroup(t *testing.T) {
 	writeTestFile(t, filepath.Join(dir, "config.olay.work.toml"), `key = "work"`)
 
 	active, inactive, err := Walk(Settings{
-		SourceDir: dir,
-		TargetDir: "/tmp/out",
-		Profiles:  []string{"other"},
-		Ignore:    NoopIgnorer(),
+		SourceDirs: []string{dir},
+		TargetDir:  "/tmp/out",
+		Profiles:   []string{"other"},
+		Ignore:     NoopIgnorer(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -183,10 +183,10 @@ func TestWalkFullLayerStack(t *testing.T) {
 	writeTestFile(t, filepath.Join(dir, "settings.olay.local.json"), `{"d":4}`)
 
 	active, _, err := Walk(Settings{
-		SourceDir: dir,
-		TargetDir: "/tmp/out",
-		Profiles:  []string{"work", "vpn"},
-		Ignore:    NoopIgnorer(),
+		SourceDirs: []string{dir},
+		TargetDir:  "/tmp/out",
+		Profiles:   []string{"work", "vpn"},
+		Ignore:     NoopIgnorer(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -218,9 +218,9 @@ func TestWalkHiddenDirSkipped(t *testing.T) {
 	writeTestFile(t, filepath.Join(hidden, "x.olay.base.json"), `{}`)
 
 	active, _, err := Walk(Settings{
-		SourceDir: dir,
-		TargetDir: "/tmp/out",
-		Ignore:    NoopIgnorer(),
+		SourceDirs: []string{dir},
+		TargetDir:  "/tmp/out",
+		Ignore:     NoopIgnorer(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -239,7 +239,7 @@ func TestWalkHiddenDirTraversed(t *testing.T) {
 	writeTestFile(t, filepath.Join(hidden, "x.olay.base.json"), `{}`)
 
 	active, _, err := Walk(Settings{
-		SourceDir:      dir,
+		SourceDirs:     []string{dir},
 		TargetDir:      "/tmp/out",
 		TraverseHidden: true,
 		Ignore:         NoopIgnorer(),
@@ -266,9 +266,9 @@ func TestWalkIgnorePattern(t *testing.T) {
 		t.Fatal(err)
 	}
 	active, _, err := Walk(Settings{
-		SourceDir: dir,
-		TargetDir: "/tmp/out",
-		Ignore:    ign,
+		SourceDirs: []string{dir},
+		TargetDir:  "/tmp/out",
+		Ignore:     ign,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -283,7 +283,7 @@ func TestWalkIgnorePattern(t *testing.T) {
 
 func TestWalkEmptySourceError(t *testing.T) {
 	if _, _, err := Walk(Settings{TargetDir: "/tmp/out"}); err == nil {
-		t.Error("expected error for empty SourceDir")
+		t.Error("expected error for empty SourceDirs")
 	}
 }
 
@@ -302,7 +302,7 @@ func TestWalkDetectsTargetPathCollision(t *testing.T) {
 	writeTestFile(t, filepath.Join(dir, ".x", "y.olay.base.json"), `{"a":2}`)
 
 	_, _, err := Walk(Settings{
-		SourceDir:      dir,
+		SourceDirs:     []string{dir},
 		TargetDir:      "/tmp/out",
 		DotPrefix:      true,
 		TraverseHidden: true,

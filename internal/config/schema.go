@@ -16,8 +16,7 @@ FIELDS
     The source directories to walk when searching for *.olay.*.* files. Each
     source is treated as its own root: target paths are rendered relative to
     that source directory. TOML relative paths are resolved from the config
-    file's directory at runtime. Legacy files may use source = "dir" for a
-    single source; new configs should use sources, and a file may not set both.
+    file's directory at runtime.
 
   target = "~/"
     type:    string
@@ -90,7 +89,7 @@ SOURCE RESOLUTION PRECEDENCE
 Source roots are loaded from these sources, highest to lowest:
 
   1. positional command args for plan, diff, and render (e.g. overlay plan pi)
-  2. --source / --sources CLI flags
+  2. --source / --sources CLI flags (--source adds one value; --sources accepts comma-separated values)
   3. OVERLAY_SOURCES env var
   4. .overlay.toml sources
   5. default ["."]

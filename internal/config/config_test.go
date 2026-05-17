@@ -77,45 +77,19 @@ respect_gitignore = true
 	}
 }
 
-func TestLoadLegacySourceMapsToSources(t *testing.T) {
+func TestLoadRejectsSingularSourceKey(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".overlay.toml")
 	writeFile(t, path, `
 source = "./src"
-target = "~/out"
-`)
-	c, exists, report, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if !exists {
-		t.Error("exists should be true")
-	}
-	if !reflect.DeepEqual(c.Sources, []string{"./src"}) {
-		t.Errorf("Sources = %v", c.Sources)
-	}
-	if _, ok := report.Updates["source"]; ok {
-		t.Errorf("legacy source should be normalized out of provenance: %v", report.Updates)
-	}
-	if report.Updates["sources"] != report.LoadedFiles[0] {
-		t.Errorf("sources provenance = %q, want loaded file", report.Updates["sources"])
-	}
-}
-
-func TestLoadRejectsSourceAndSourcesTogether(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, ".overlay.toml")
-	writeFile(t, path, `
-source = "./src"
-sources = ["./other"]
 target = "~/out"
 `)
 	_, _, _, err := Load(path)
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !strings.Contains(err.Error(), "source") || !strings.Contains(err.Error(), "sources") {
-		t.Errorf("error should mention source and sources: %v", err)
+	if !strings.Contains(err.Error(), "unknown") || !strings.Contains(err.Error(), "source") {
+		t.Errorf("error should mention unknown source key: %v", err)
 	}
 }
 

@@ -62,11 +62,7 @@ func Run(opts Options) error {
 }
 
 func sourceSummary(settings discover.Settings) string {
-	sources := settings.SourceDirs
-	if len(sources) == 0 && settings.SourceDir != "" {
-		sources = []string{settings.SourceDir}
-	}
-	return strings.Join(sources, ", ")
+	return strings.Join(settings.SourceDirs, ", ")
 }
 
 func pluralize(n int, singular, plural string) string {

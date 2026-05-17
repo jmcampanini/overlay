@@ -27,7 +27,6 @@ const (
 
 // Settings is the resolved configuration that Walk needs.
 type Settings struct {
-	SourceDir        string
 	SourceDirs       []string
 	TargetDir        string
 	DotPrefix        bool
@@ -72,9 +71,8 @@ func newGroup(sourceDir, stem string, format document.Format, targetPath string,
 	return Group{SourceDir: sourceDir, Stem: stem, Format: format, TargetPath: targetPath, Layers: layers}, nil
 }
 
-// Walk scans s.SourceDirs for overlay groups. If SourceDirs is empty, SourceDir
-// is used for backward compatibility with tests and direct package callers. The
-// active slice contains only groups whose layer list is non-empty (the invariant
+// Walk scans s.SourceDirs for overlay groups. The active slice contains only
+// groups whose layer list is non-empty (the invariant
 // pinned by newGroup). The inactive slice contains the stems of groups that
 // matched the file convention but had no active profile layer; the caller should
 // log these for visibility.
@@ -127,13 +125,10 @@ func Walk(s Settings) ([]Group, []string, error) {
 }
 
 func effectiveSourceDirs(s Settings) []string {
-	if len(s.SourceDirs) > 0 {
-		return append([]string(nil), s.SourceDirs...)
+	if len(s.SourceDirs) == 0 {
+		return nil
 	}
-	if s.SourceDir != "" {
-		return []string{s.SourceDir}
-	}
-	return nil
+	return append([]string(nil), s.SourceDirs...)
 }
 
 func walkSource(s Settings, absSource string) ([]Group, []string, error) {

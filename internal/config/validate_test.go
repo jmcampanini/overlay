@@ -72,23 +72,6 @@ target = "~/"
 	}
 }
 
-func TestValidateRejectsSourceAndSourcesTogether(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, ".overlay.toml")
-	writeFile(t, path, `
-source = "."
-sources = ["pi"]
-target = "~/"
-`)
-	err := ValidateFile(path)
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !strings.Contains(err.Error(), "source") || !strings.Contains(err.Error(), "sources") {
-		t.Errorf("error should mention source and sources: %v", err)
-	}
-}
-
 func TestValidateReservedProfile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".overlay.toml")

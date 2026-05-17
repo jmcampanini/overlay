@@ -12,7 +12,8 @@ Source selection:
     overlay diff pi
     overlay render pi codex
 
-  If no positional sources are provided, --source/--sources overrides are used.
+  If no positional sources are provided, --source/--sources overrides are used
+  (--source adds one value; --sources accepts comma-separated values).
   Otherwise overlay uses .overlay.toml sources, defaulting to ["."]. Relative
   config and positional sources are resolved from the config file's directory
   when a config file exists.`

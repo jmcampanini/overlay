@@ -138,7 +138,6 @@ func Resolve(cmd *cobra.Command, g *GlobalFlags, positionalSources ...string) (R
 	}
 
 	r.Settings = discover.Settings{
-		SourceDir:        firstSource(sources.dirs),
 		SourceDirs:       sources.dirs,
 		TargetDir:        target,
 		DotPrefix:        cfg.DotPrefix,
@@ -190,24 +189,8 @@ func resolveSourceDirs(positional []string, cfg config.Config, report configload
 
 	sourcesSource := report.Updates[configPathSources]
 	values := append([]string(nil), cfg.Sources...)
-	if sourcesSource == pflagloader.SourcePFlag {
-		values = splitSourceValues(values)
-	}
 	anchor := sourceIsFile(sourcesSource) || (sourcesSource == configloader.SourceDefault && configExists)
 	return resolveSourceValues(configPathSources, values, values, provenanceFromSource(sourcesSource), anchor, configBase)
-}
-
-func splitSourceValues(values []string) []string {
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		parts := splitCSV(value)
-		if len(parts) == 0 {
-			out = append(out, value)
-			continue
-		}
-		out = append(out, parts...)
-	}
-	return out
 }
 
 func resolveSourceValues(name string, values, labels []string, prov Provenance, anchor bool, configBase string) (sourceResolution, error) {
@@ -236,13 +219,6 @@ func resolveSourceValues(name string, values, labels []string, prov Provenance, 
 		labels:     append([]string(nil), labels...),
 		provenance: prov,
 	}, nil
-}
-
-func firstSource(sources []string) string {
-	if len(sources) == 0 {
-		return ""
-	}
-	return sources[0]
 }
 
 func effectiveProfiles(cfg config.Config) ([]string, bool) {

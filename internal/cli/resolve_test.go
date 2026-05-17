@@ -226,34 +226,12 @@ target = "/tmp/out"
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(sub, "pkgs")
-	if r.Settings.SourceDir != want {
-		t.Errorf("SourceDir = %q, want %q", r.Settings.SourceDir, want)
-	}
-	if r.Provenance.Source != ProvConfig {
-		t.Errorf("SourceFrom = %v, want config", r.Provenance.Source)
-	}
-}
-
-func TestResolveLegacySourceRelativeFromConfig(t *testing.T) {
-	root := t.TempDir()
-	sub := filepath.Join(root, "sub")
-	if err := os.MkdirAll(sub, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfgPath := filepath.Join(sub, ".overlay.toml")
-	writeFile(t, cfgPath, `
-source = "pkgs"
-target = "/tmp/out"
-`)
-	cmd, g := setupCmd(t, []string{"--config", cfgPath})
-	r, err := Resolve(cmd, g)
-	if err != nil {
-		t.Fatal(err)
-	}
 	want := []string{filepath.Join(sub, "pkgs")}
 	if !reflect.DeepEqual(r.Settings.SourceDirs, want) {
 		t.Errorf("SourceDirs = %v, want %v", r.Settings.SourceDirs, want)
+	}
+	if r.Provenance.Source != ProvConfig {
+		t.Errorf("SourceFrom = %v, want config", r.Provenance.Source)
 	}
 }
 
@@ -297,8 +275,9 @@ target = "/tmp/out"
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Settings.SourceDir != "/absolute/override" {
-		t.Errorf("SourceDir = %q, want /absolute/override", r.Settings.SourceDir)
+	want := []string{"/absolute/override"}
+	if !reflect.DeepEqual(r.Settings.SourceDirs, want) {
+		t.Errorf("SourceDirs = %v, want %v", r.Settings.SourceDirs, want)
 	}
 	if r.Provenance.Source != ProvFlag {
 		t.Errorf("SourceFrom = %v, want flag", r.Provenance.Source)
@@ -330,7 +309,7 @@ target = "/tmp/out"
 	}
 }
 
-func TestResolveCommaSourceFlagReplacesConfig(t *testing.T) {
+func TestResolveCommaSourcesFlagReplacesConfig(t *testing.T) {
 	root := t.TempDir()
 	cfgPath := filepath.Join(root, ".overlay.toml")
 	writeFile(t, cfgPath, `
@@ -339,7 +318,7 @@ target = "/tmp/out"
 `)
 	cmd, g := setupCmd(t, []string{
 		"--config", cfgPath,
-		"--source", "pi,codex",
+		"--sources", "pi,codex",
 	})
 	r, err := Resolve(cmd, g)
 	if err != nil {
@@ -450,8 +429,9 @@ func TestResolveExpandsSourceTilde(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Settings.SourceDir != home {
-		t.Errorf("SourceDir = %q, want %q (home)", r.Settings.SourceDir, home)
+	want := []string{home}
+	if !reflect.DeepEqual(r.Settings.SourceDirs, want) {
+		t.Errorf("SourceDirs = %v, want %v", r.Settings.SourceDirs, want)
 	}
 }
 
@@ -464,8 +444,9 @@ func TestResolveExpandsSourceEnvVar(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Settings.SourceDir != "/custom/src" {
-		t.Errorf("SourceDir = %q, want /custom/src", r.Settings.SourceDir)
+	want := []string{"/custom/src"}
+	if !reflect.DeepEqual(r.Settings.SourceDirs, want) {
+		t.Errorf("SourceDirs = %v, want %v", r.Settings.SourceDirs, want)
 	}
 }
 
@@ -514,8 +495,9 @@ func TestResolveEnvironmentTaggedFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(r.RawConfig.Sources, []string{"/env/source"}) || r.Settings.SourceDir != "/env/source" {
-		t.Errorf("Sources raw/runtime = %v/%q", r.RawConfig.Sources, r.Settings.SourceDir)
+	wantSources := []string{"/env/source"}
+	if !reflect.DeepEqual(r.RawConfig.Sources, wantSources) || !reflect.DeepEqual(r.Settings.SourceDirs, wantSources) {
+		t.Errorf("Sources raw/runtime = %v/%v", r.RawConfig.Sources, r.Settings.SourceDirs)
 	}
 	if r.RawConfig.Target != "/env/target" || r.Settings.TargetDir != "/env/target" {
 		t.Errorf("Target raw/runtime = %q/%q", r.RawConfig.Target, r.Settings.TargetDir)
@@ -680,32 +662,6 @@ env_profiles = "DOTFILES_PROFILE"
 	}
 	if strings.Contains(out, "vpn") {
 		t.Fatalf("raw config output should not include effective env profile:\n%s", out)
-	}
-}
-
-func TestPrintRawConfigNormalizesLegacySource(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	cfgPath := filepath.Join(dir, ".overlay.toml")
-	writeFile(t, cfgPath, `
-source = "pkgs"
-target = "~/out"
-`)
-	cmd, g := setupCmd(t, []string{"--config", cfgPath})
-	raw, err := loadRawConfig(cmd, g)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var buf bytes.Buffer
-	if err := printRawConfig(&buf, raw); err != nil {
-		t.Fatal(err)
-	}
-	out := buf.String()
-	if !strings.Contains(out, `sources = ["pkgs"]`) {
-		t.Fatalf("raw config output should print canonical sources:\n%s", out)
-	}
-	if strings.Contains(out, `source = "pkgs"`) {
-		t.Fatalf("raw config output should not print legacy source:\n%s", out)
 	}
 }
 

@@ -85,11 +85,7 @@ func Run(opts Options) (bool, error) {
 }
 
 func sourceSummary(settings discover.Settings) string {
-	sources := settings.SourceDirs
-	if len(sources) == 0 && settings.SourceDir != "" {
-		sources = []string{settings.SourceDir}
-	}
-	return strings.Join(sources, ", ")
+	return strings.Join(settings.SourceDirs, ", ")
 }
 
 // readTarget returns the target file's bytes. A missing target file is

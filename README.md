@@ -183,9 +183,7 @@ Run `overlay docs` for the full schema including `sources`, `dot_prefix`,
 `respect_gitignore`.
 
 Config-backed environment variables are `OVERLAY_SOURCES`, `OVERLAY_TARGET`,
-`OVERLAY_PROFILES`, and `OVERLAY_CONTINUE`. Legacy configs with `source = "dir"`
-are accepted as a single source, but new configs should use `sources = [...]`.
-`sources` and `target` path expansion
+`OVERLAY_PROFILES`, and `OVERLAY_CONTINUE`. `sources` and `target` path expansion
 (`~`, `$VAR`, and config-file-relative TOML paths) happens at runtime; the
 `overlay config` command reports the raw loaded strings.
 
