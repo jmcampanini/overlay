@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/log"
+	configloader "github.com/jmcampanini/go-config-loader"
+	"github.com/jmcampanini/go-config-loader/pflagloader"
 	"github.com/spf13/cobra"
 
 	"github.com/jmcampanini/overlay/internal/config"
@@ -17,26 +19,31 @@ import (
 	"github.com/jmcampanini/overlay/internal/logging"
 )
 
-// DefaultEnvProfiles is the fallback env var name used when no config
-// file is found and no --profiles flag is given.
-const DefaultEnvProfiles = "OVERLAY_PROFILES"
+const (
+	configPathSource           = "source"
+	configPathTarget           = "target"
+	configPathDotPrefix        = "dotprefix"
+	configPathProfiles         = "profiles"
+	configPathContinueOnError  = "continueonerror"
+	configPathIgnore           = "ignore"
+	configPathTraverseHidden   = "traversehidden"
+	configPathRespectGitignore = "respectgitignore"
+)
 
-// Provenance identifies which resolution path produced a setting's value.
-// The String() method returns the labels printed by `overlay config`
-// ("default", "env", "config", "config+env", "flag").
+// Provenance identifies which raw source produced a setting's value.
 type Provenance int
 
 // Provenance constants. The integer values are not compared anywhere;
 // the constants exist solely as discriminated tags.
 const (
 	ProvDefault   Provenance = iota // built-in default
-	ProvEnv                         // OVERLAY_PROFILES env var
-	ProvConfig                      // .overlay.toml only
-	ProvConfigEnv                   // .overlay.toml + env_profiles env var
+	ProvEnv                         // environment variable
+	ProvConfig                      // .overlay.toml
+	ProvConfigEnv                   // raw profiles plus env_profiles contribution
 	ProvFlag                        // CLI flag override
 )
 
-// String returns the label printed by `overlay config`.
+// String returns a display label for the provenance.
 func (p Provenance) String() string {
 	switch p {
 	case ProvFlag:
@@ -51,12 +58,7 @@ func (p Provenance) String() string {
 	return "default"
 }
 
-// Provenances records where each resolved setting's value came from.
-// The struct (rather than a map) makes the writer in Resolve and the
-// reader in printResolved symmetric named-field accesses, so any drift
-// between them is reviewable rather than invisible. Adding a new setting
-// here without wiring printResolved is a missed reference grep, not a
-// compile error — keep them in sync by convention.
+// Provenances records where each runtime setting's raw value came from.
 type Provenances struct {
 	Source           Provenance
 	Target           Provenance
@@ -68,8 +70,8 @@ type Provenances struct {
 	Ignore           Provenance
 }
 
-// Resolved is the fully-resolved set of settings after applying the
-// config-file + env + flag precedence rules.
+// Resolved is the runtime settings bundle after raw config loading and
+// Overlay-specific derivation/validation.
 type Resolved struct {
 	Settings        discover.Settings
 	ContinueOnError bool
@@ -78,79 +80,68 @@ type Resolved struct {
 	ConfigExists    bool
 	IgnorePatterns  []string
 	Provenance      Provenances
+	RawConfig       config.Config
+	LoadReport      configloader.LoadReport
 }
 
-// Resolve merges config file, env vars, and CLI flags into a Resolved
-// settings bundle. It returns an error when a required field (target)
-// ends up empty or when reserved profile names slip through.
+type rawLoadedConfig struct {
+	Config     config.Config
+	Report     configloader.LoadReport
+	ConfigPath string
+	Exists     bool
+}
+
+// Resolve merges config file, environment variables, and CLI flags into a
+// runtime settings bundle. It returns an error when Overlay-specific runtime
+// validation fails.
 func Resolve(cmd *cobra.Command, g *GlobalFlags) (Resolved, error) {
 	r := Resolved{
 		Logger: logging.Setup(g.Quiet, g.Verbose),
 	}
 
-	cfgPath := g.Config
-	configExplicit := changed(cmd, "config")
-	if cfgPath == "" {
-		cfgPath = config.DefaultFilename
-	}
-	r.ConfigPath = cfgPath
-	cfg, exists, err := config.Load(cfgPath)
+	raw, err := loadRawConfig(cmd, g)
 	if err != nil {
 		return r, err
 	}
-	if configExplicit && !exists {
-		return r, fmt.Errorf("config file not found: %s", cfgPath)
-	}
-	r.ConfigExists = exists
-	setKeys, err := config.LoadKeys(cfgPath)
-	if err != nil {
-		return r, err
-	}
+	r.ConfigPath = raw.ConfigPath
+	r.ConfigExists = raw.Exists
+	r.RawConfig = raw.Config
+	r.LoadReport = raw.Report
 
-	// Relative paths in the config file are interpreted relative to the
-	// config file's directory, not to CWD. Flag overrides use CWD.
 	configBase := "."
-	if exists {
-		abs, err := filepath.Abs(cfgPath)
-		if err != nil {
-			return r, fmt.Errorf("resolve config path: %w", err)
-		}
-		configBase = filepath.Dir(abs)
+	if raw.Exists && len(raw.Report.LoadedFiles) > 0 {
+		configBase = filepath.Dir(raw.Report.LoadedFiles[0])
 	}
 
-	source, sourceProv, err := resolvePath(cmd, "source", cfg.Source, g.Source, configBase, setKeys["source"])
+	cfg := raw.Config
+	source, sourceProv, err := resolvePath("source", cfg.Source, raw.Report, configBase, raw.Exists)
 	if err != nil {
 		return r, err
 	}
 	r.Provenance.Source = sourceProv
 
-	target, targetProv, err := resolvePath(cmd, "target", cfg.Target, g.Target, configBase, setKeys["target"])
+	target, targetProv, err := resolvePath("target", cfg.Target, raw.Report, configBase, raw.Exists)
 	if err != nil {
 		return r, err
 	}
 	r.Provenance.Target = targetProv
 	if target == "" {
-		return r, fmt.Errorf("target is required (set in %s or pass --target)", cfgPath)
+		return r, fmt.Errorf("target is required (set in %s or pass --target)", raw.ConfigPath)
 	}
 
-	r.Provenance.DotPrefix = provenanceFromKey(setKeys["dot_prefix"])
-	r.Provenance.Ignore = provenanceFromKey(setKeys["ignore"])
-	r.Provenance.TraverseHidden = provenanceFromKey(setKeys["traverse_hidden"])
-	r.Provenance.RespectGitignore = provenanceFromKey(setKeys["respect_gitignore"])
-	r.Provenance.ContinueOnError = provenanceFromKey(setKeys["continue_on_error"])
+	r.Provenance.DotPrefix = provenanceFromReport(raw.Report, configPathDotPrefix)
+	r.Provenance.Ignore = provenanceFromReport(raw.Report, configPathIgnore)
+	r.Provenance.TraverseHidden = provenanceFromReport(raw.Report, configPathTraverseHidden)
+	r.Provenance.RespectGitignore = provenanceFromReport(raw.Report, configPathRespectGitignore)
+	r.Provenance.ContinueOnError = provenanceFromReport(raw.Report, configPathContinueOnError)
 
-	profiles, profilesProv := resolveProfiles(cmd, g, cfg, exists)
-	r.Provenance.Profiles = profilesProv
+	profiles, envContributed := effectiveProfiles(cfg)
+	r.Provenance.Profiles = profilesProvenance(raw.Report, envContributed)
 	if err := (config.Config{Profiles: profiles}).Validate(); err != nil {
 		return r, err
 	}
 
-	continueOnError := cfg.ContinueOnError
-	if changed(cmd, "continue") {
-		continueOnError = g.Continue
-		r.Provenance.ContinueOnError = ProvFlag
-	}
-	r.ContinueOnError = continueOnError
+	r.ContinueOnError = cfg.ContinueOnError
 
 	gitignoreIgn, err := maybeGitignore(cfg.RespectGitignore, source)
 	if err != nil {
@@ -175,38 +166,75 @@ func Resolve(cmd *cobra.Command, g *GlobalFlags) (Resolved, error) {
 	return r, nil
 }
 
-// provenanceFromKey returns ProvConfig if the key was set in the loaded
-// file or ProvDefault otherwise.
-func provenanceFromKey(set bool) Provenance {
-	if set {
-		return ProvConfig
+func loadRawConfig(cmd *cobra.Command, g *GlobalFlags) (rawLoadedConfig, error) {
+	cfgPath := g.Config
+	configExplicit := changed(cmd, "config")
+	if cfgPath == "" {
+		cfgPath = config.DefaultFilename
 	}
-	return ProvDefault
+
+	fileLoader, err := config.NewFileLoader(cfgPath, configExplicit)
+	if err != nil {
+		return rawLoadedConfig{}, err
+	}
+	envLoader, err := configloader.NewEnvironmentLoader[config.Config]("overlay", configloader.OSEnv())
+	if err != nil {
+		return rawLoadedConfig{}, err
+	}
+	flagLoader, err := pflagloader.NewLoader[config.Config](cmd.Flags())
+	if err != nil {
+		return rawLoadedConfig{}, err
+	}
+
+	cfg, report, err := configloader.Load(config.Default(), fileLoader, envLoader, flagLoader)
+	if err != nil {
+		return rawLoadedConfig{}, err
+	}
+
+	return rawLoadedConfig{
+		Config:     cfg,
+		Report:     report,
+		ConfigPath: cfgPath,
+		Exists:     len(report.LoadedFiles) > 0,
+	}, nil
 }
 
-func resolveProfiles(cmd *cobra.Command, g *GlobalFlags, cfg config.Config, cfgExists bool) ([]string, Provenance) {
-	if changed(cmd, "profiles") {
-		return dedupe(g.Profiles), ProvFlag
-	}
-	if cfgExists {
-		out := append([]string{}, cfg.Profiles...)
-		envContributed := false
-		if cfg.EnvProfiles != "" {
-			extra := splitCSV(os.Getenv(cfg.EnvProfiles))
-			if len(extra) > 0 {
-				out = append(out, extra...)
-				envContributed = true
-			}
+func effectiveProfiles(cfg config.Config) ([]string, bool) {
+	out := append([]string{}, cfg.Profiles...)
+	envContributed := false
+	if cfg.EnvProfiles != "" {
+		extra := splitCSV(os.Getenv(cfg.EnvProfiles))
+		if len(extra) > 0 {
+			out = append(out, extra...)
+			envContributed = true
 		}
-		if envContributed {
-			return dedupe(out), ProvConfigEnv
-		}
-		return dedupe(out), ProvConfig
 	}
-	if envVal := os.Getenv(DefaultEnvProfiles); envVal != "" {
-		return dedupe(splitCSV(envVal)), ProvEnv
+	return dedupe(out), envContributed
+}
+
+func profilesProvenance(report configloader.LoadReport, envContributed bool) Provenance {
+	prov := provenanceFromReport(report, configPathProfiles)
+	if envContributed {
+		return ProvConfigEnv
 	}
-	return nil, ProvDefault
+	return prov
+}
+
+func provenanceFromReport(report configloader.LoadReport, path string) Provenance {
+	return provenanceFromSource(report.Updates[path])
+}
+
+func provenanceFromSource(source string) Provenance {
+	switch source {
+	case pflagloader.SourcePFlag:
+		return ProvFlag
+	case configloader.SourceEnv:
+		return ProvEnv
+	case "", configloader.SourceDefault:
+		return ProvDefault
+	default:
+		return ProvConfig
+	}
 }
 
 func splitCSV(s string) []string {
@@ -243,9 +271,9 @@ func maybeGitignore(enabled bool, source string) (discover.Ignorer, error) {
 	return discover.NewGitignoreIgnorer(source)
 }
 
-// resolveRelative turns a relative path from the config file into one
-// anchored at the config file's directory. Absolute paths and paths
-// starting with ~ or $VAR are left alone for ExpandPath to handle.
+// resolveRelative turns a relative path from the config file into one anchored
+// at the config file's directory. Absolute paths and paths starting with ~ or
+// $VAR are left alone for ExpandPath to handle.
 func resolveRelative(p, base string) string {
 	if p == "" || filepath.IsAbs(p) {
 		return p
@@ -256,16 +284,25 @@ func resolveRelative(p, base string) string {
 	return filepath.Join(base, p)
 }
 
-func resolvePath(cmd *cobra.Command, flag, cfgVal, flagVal, configBase string, cfgSet bool) (string, Provenance, error) {
-	p := resolveRelative(cfgVal, configBase)
-	prov := provenanceFromKey(cfgSet)
-	if changed(cmd, flag) {
-		p = flagVal
-		prov = ProvFlag
+func resolvePath(name, value string, report configloader.LoadReport, configBase string, configExists bool) (string, Provenance, error) {
+	source := report.Updates[name]
+	p := value
+	if sourceIsFile(source) || (source == configloader.SourceDefault && configExists) {
+		p = resolveRelative(value, configBase)
 	}
+	prov := provenanceFromSource(source)
 	expanded, err := discover.ExpandPath(p)
 	if err != nil {
-		return "", prov, fmt.Errorf("expand %s: %w", flag, err)
+		return "", prov, fmt.Errorf("expand %s: %w", name, err)
 	}
 	return expanded, prov, nil
+}
+
+func sourceIsFile(source string) bool {
+	switch source {
+	case "", configloader.SourceDefault, configloader.SourceEnv, pflagloader.SourcePFlag:
+		return false
+	default:
+		return true
+	}
 }

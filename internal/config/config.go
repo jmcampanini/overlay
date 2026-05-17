@@ -1,37 +1,28 @@
-// Package config loads and validates the .overlay.toml file.
+// Package config loads and validates Overlay raw configuration.
 package config
 
 import (
-	"bytes"
-	"errors"
-	"fmt"
-	"io/fs"
-	"os"
-
-	"github.com/pelletier/go-toml/v2"
+	configloader "github.com/jmcampanini/go-config-loader"
 )
 
 // DefaultFilename is the conventional location for the overlay config.
 const DefaultFilename = ".overlay.toml"
 
-// Config mirrors the .overlay.toml schema. All fields use their natural
-// type; starting from Default() and overlaying a parsed file gives the
-// correct result because pelletier/go-toml only touches keys present in
-// the file.
+// Config mirrors the .overlay.toml schema. Fields tagged with config are
+// loadable from environment variables and pflags; TOML-only fields are not.
 type Config struct {
-	Source           string   `toml:"source"`
-	Target           string   `toml:"target"`
+	Source           string   `toml:"source" config:"source" help:"override source directory from config"`
+	Target           string   `toml:"target" config:"target" help:"override target directory from config"`
 	DotPrefix        bool     `toml:"dot_prefix"`
-	Profiles         []string `toml:"profiles"`
+	Profiles         []string `toml:"profiles" config:"profiles" help:"comma-separated profile list"`
 	EnvProfiles      string   `toml:"env_profiles"`
-	ContinueOnError  bool     `toml:"continue_on_error"`
+	ContinueOnError  bool     `toml:"continue_on_error" config:"continue" help:"continue past invalid source files"`
 	Ignore           []string `toml:"ignore"`
 	TraverseHidden   bool     `toml:"traverse_hidden"`
 	RespectGitignore bool     `toml:"respect_gitignore"`
 }
 
-// Default returns a Config populated with the default values. Callers
-// should start from Default() and then overlay user settings on top.
+// Default returns a Config populated with the default raw values.
 func Default() Config {
 	return Config{
 		Source:    ".",
@@ -41,64 +32,38 @@ func Default() Config {
 	}
 }
 
-// Load reads and parses a .overlay.toml file. The returned bool reports
+// NewFileLoader returns a GoConfigLoader file loader for path. When required is
+// true, path must exist; otherwise a missing file leaves defaults unchanged.
+func NewFileLoader(path string, required bool) (configloader.ConfigLoader[Config], error) {
+	if required {
+		return configloader.NewRequiredFileLoader[Config](path)
+	}
+	return configloader.NewMergeAllFilesLoader[Config](configloader.File(path))
+}
+
+// Load reads an optional raw .overlay.toml file. The returned bool reports
 // whether the file existed; a missing file yields Default() and no error.
-// When the file is present, Load starts from Default() and overlays the
-// file's settings so any field the user omits keeps its default.
-// Unknown keys and reserved profile names are rejected so typos and
-// misuses fail fast on every command path.
-func Load(path string) (Config, bool, error) {
-	data, err := os.ReadFile(path)
+func Load(path string) (Config, bool, configloader.LoadReport, error) {
+	loader, err := NewFileLoader(path, false)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return Default(), false, nil
-		}
-		return Config{}, false, fmt.Errorf("read %s: %w", path, err)
+		return Config{}, false, configloader.LoadReport{}, err
 	}
-	c := Default()
-	if err := decodeStrict(path, data, &c); err != nil {
-		return Config{}, true, err
+	cfg, report, err := configloader.Load(Default(), loader)
+	if err != nil {
+		return Config{}, false, configloader.LoadReport{}, err
 	}
-	if err := c.Validate(); err != nil {
-		return Config{}, true, fmt.Errorf("%s: %w", path, err)
-	}
-	return c, true, nil
+	return cfg, len(report.LoadedFiles) > 0, report, nil
 }
 
-// decodeStrict decodes TOML into c with unknown fields rejected, returning
-// an error formatted with path context. Callers own file reading and the
-// "missing file" policy.
-func decodeStrict(path string, data []byte, c *Config) error {
-	dec := toml.NewDecoder(bytes.NewReader(data)).DisallowUnknownFields()
-	if err := dec.Decode(c); err != nil {
-		var strictErr *toml.StrictMissingError
-		if errors.As(err, &strictErr) {
-			return fmt.Errorf("unknown fields in %s:\n%s", path, strictErr.String())
-		}
-		return fmt.Errorf("parse %s: %w", path, err)
-	}
-	return nil
-}
-
-// LoadKeys returns the set of top-level keys explicitly present in the
-// given file. It is used by the CLI resolver to report accurate "from:"
-// provenance for every field, including booleans that may match the
-// default value. A missing file yields an empty set and no error.
-func LoadKeys(path string) (map[string]bool, error) {
-	data, err := os.ReadFile(path)
+// LoadRequired reads a required raw .overlay.toml file.
+func LoadRequired(path string) (Config, configloader.LoadReport, error) {
+	loader, err := NewFileLoader(path, true)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return map[string]bool{}, nil
-		}
-		return nil, fmt.Errorf("read %s: %w", path, err)
+		return Config{}, configloader.LoadReport{}, err
 	}
-	var raw map[string]any
-	if err := toml.NewDecoder(bytes.NewReader(data)).Decode(&raw); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+	cfg, report, err := configloader.Load(Default(), loader)
+	if err != nil {
+		return Config{}, configloader.LoadReport{}, err
 	}
-	keys := make(map[string]bool, len(raw))
-	for k := range raw {
-		keys[k] = true
-	}
-	return keys, nil
+	return cfg, report, nil
 }
