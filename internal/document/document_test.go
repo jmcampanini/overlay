@@ -129,6 +129,53 @@ func TestTOMLSerializeAlphabetizesKeys(t *testing.T) {
 	}
 }
 
+func TestTOMLSerializeDoesNotIndentTablesByDefault(t *testing.T) {
+	v := map[string]any{
+		"actions": []any{map[string]any{"name": "build", "run": "make build"}},
+		"projects": map[string]any{
+			"/path/to/repo": map[string]any{"trust_level": "trusted"},
+		},
+	}
+	out, err := Serialize(v, FormatTOML)
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+	s := string(out)
+	for _, want := range []string{
+		"[[actions]]\nname = 'build'\nrun = 'make build'",
+		"[projects]\n[projects.'/path/to/repo']\ntrust_level = 'trusted'",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing unindented TOML block %q:\n%s", want, s)
+		}
+	}
+	if strings.Contains(s, "\n  name =") || strings.Contains(s, "\n  [projects.") {
+		t.Errorf("TOML tables should not be indented by default:\n%s", s)
+	}
+}
+
+func TestTOMLSerializeCanIndentTables(t *testing.T) {
+	v := map[string]any{
+		"actions": []any{map[string]any{"name": "build", "run": "make build"}},
+		"projects": map[string]any{
+			"/path/to/repo": map[string]any{"trust_level": "trusted"},
+		},
+	}
+	out, err := SerializeWithOptions(v, FormatTOML, SerializeOptions{TOMLIndentTables: true})
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+	s := string(out)
+	for _, want := range []string{
+		"[[actions]]\n  name = 'build'\n  run = 'make build'",
+		"[projects]\n  [projects.'/path/to/repo']\n    trust_level = 'trusted'",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing indented TOML block %q:\n%s", want, s)
+		}
+	}
+}
+
 func TestTOMLDottedKeyTables(t *testing.T) {
 	input := []byte(`
 [projects."/path/to/repo"]

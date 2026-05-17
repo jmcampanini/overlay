@@ -116,6 +116,33 @@ trust_level = "trusted"
 	}
 }
 
+func TestRunTOMLIndentTablesOption(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "config.olay.base.toml"), `model = "gpt-5.4"`)
+	writeFile(t, filepath.Join(src, "config.olay.local.toml"), `
+[projects."/path"]
+trust_level = "trusted"
+`)
+
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
+		},
+		TOMLIndentTables: true,
+		Logger:           newTestLogger(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(filepath.Join(target, "config.toml"))
+	if !contains(data, "  [projects.'/path']") || !contains(data, "    trust_level = 'trusted'") {
+		t.Errorf("expected indented TOML tables:\n%s", data)
+	}
+}
+
 func TestRunNoFilesFound(t *testing.T) {
 	src := t.TempDir()
 	target := t.TempDir()

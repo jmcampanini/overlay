@@ -18,10 +18,11 @@ import (
 
 // Options carries everything Run needs.
 type Options struct {
-	Settings        discover.Settings
-	ContinueOnError bool
-	Logger          *log.Logger
-	Out             io.Writer // diff output goes here; defaults to os.Stdout
+	Settings         discover.Settings
+	ContinueOnError  bool
+	TOMLIndentTables bool
+	Logger           *log.Logger
+	Out              io.Writer // diff output goes here; defaults to os.Stdout
 }
 
 // Run discovers groups, renders each in memory, and writes a unified
@@ -49,10 +50,11 @@ func Run(opts Options) (bool, error) {
 		return false, nil
 	}
 
+	mergeOptions := render.MergeOptions{TOMLIndentTables: opts.TOMLIndentTables}
 	var anyDiffer bool
 	var failed int
 	for _, g := range groups {
-		rendered, err := render.MergeGroup(g)
+		rendered, err := render.MergeGroupWithOptions(g, mergeOptions)
 		if err != nil {
 			if opts.ContinueOnError {
 				opts.Logger.Errorf("render %s: %v", g.TargetPath, err)

@@ -179,8 +179,8 @@ profiles = ["work"]        # optional
 ```
 
 Run `overlay docs` for the full schema including `sources`, `dot_prefix`,
-`env_profiles`, `continue_on_error`, `ignore`, `traverse_hidden`, and
-`respect_gitignore`.
+`env_profiles`, `continue_on_error`, `toml_indent_tables`, `ignore`,
+`traverse_hidden`, and `respect_gitignore`.
 
 Config-backed environment variables are `OVERLAY_SOURCES`, `OVERLAY_TARGET`,
 `OVERLAY_PROFILES`, and `OVERLAY_CONTINUE`. `sources` and `target` path expansion
@@ -193,6 +193,8 @@ Config-backed environment variables are `OVERLAY_SOURCES`, `OVERLAY_TARGET`,
   — it keeps `overlay diff` stable and makes golden-file tests cheap. If
   your source files had a hand-curated key order, it will not be
   preserved in the merged output.
+- **TOML tables are unindented by default.** Set `toml_indent_tables = true`
+  to ask the TOML encoder to indent nested tables and array-table values.
 - **Hidden directories are skipped by default.** Set
   `traverse_hidden = true` if you need to descend into `.foo` directories.
 - **Symlinks are not followed** during the source walk in v1. See the

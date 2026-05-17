@@ -17,6 +17,7 @@ type Config struct {
 	Profiles         []string `toml:"profiles" config:"profiles" help:"comma-separated profile list"`
 	EnvProfiles      string   `toml:"env_profiles"`
 	ContinueOnError  bool     `toml:"continue_on_error" config:"continue" help:"continue past invalid source files"`
+	TOMLIndentTables bool     `toml:"toml_indent_tables"`
 	Ignore           []string `toml:"ignore"`
 	TraverseHidden   bool     `toml:"traverse_hidden"`
 	RespectGitignore bool     `toml:"respect_gitignore"`
