@@ -180,17 +180,15 @@ func walkSource(s Settings, absSource string) ([]Group, []string, error) {
 	}
 
 	type key struct {
-		source string
 		relDir string
 		stem   string
 		ext    string
 	}
-	type discovered struct {
-		stem       string
+	type groupInfo struct {
 		format     document.Format
 		targetPath string
 	}
-	groups := make(map[key]discovered)
+	groups := make(map[key]groupInfo)
 	layerSources := make(map[key]map[string]string) // all discovered layers, keyed by profile
 
 	walkErr := filepath.WalkDir(absSource, func(path string, d fs.DirEntry, err error) error {
@@ -231,7 +229,7 @@ func walkSource(s Settings, absSource string) ([]Group, []string, error) {
 		if relDir == "." {
 			relDir = ""
 		}
-		k := key{source: absSource, relDir: relDir, stem: stem, ext: ext}
+		k := key{relDir: relDir, stem: stem, ext: ext}
 		if _, exists := layerSources[k]; !exists {
 			layerSources[k] = make(map[string]string)
 		}
@@ -242,7 +240,7 @@ func walkSource(s Settings, absSource string) ([]Group, []string, error) {
 			if terr != nil {
 				return terr
 			}
-			groups[k] = discovered{stem: stem, format: format, targetPath: target}
+			groups[k] = groupInfo{format: format, targetPath: target}
 		}
 		return nil
 	})
@@ -256,7 +254,6 @@ func walkSource(s Settings, absSource string) ([]Group, []string, error) {
 	}
 	slices.SortFunc(keys, func(a, b key) int {
 		return cmp.Or(
-			cmp.Compare(a.source, b.source),
 			cmp.Compare(a.relDir, b.relDir),
 			cmp.Compare(a.stem, b.stem),
 			cmp.Compare(a.ext, b.ext),
@@ -269,10 +266,10 @@ func walkSource(s Settings, absSource string) ([]Group, []string, error) {
 		d := groups[k]
 		layers := orderedLayers(layerSources[k], s.Profiles)
 		if len(layers) == 0 {
-			inactive = append(inactive, d.stem)
+			inactive = append(inactive, k.stem)
 			continue
 		}
-		g, err := newGroup(absSource, d.stem, d.format, d.targetPath, layers)
+		g, err := newGroup(absSource, k.stem, d.format, d.targetPath, layers)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -318,11 +315,19 @@ func ParseOverlayName(name string) (stem, profile, ext string, ok bool) {
 // and a non-nil error when the filename contains the marker but is malformed.
 func ParseOverlayNameStrict(name string) (stem, profile, ext string, ok bool, err error) {
 	parts := strings.Split(name, ".")
-	if len(parts) >= 4 && parts[len(parts)-3] == Marker {
-		return validateOverlayParts(strings.Join(parts[:len(parts)-3], "."), parts[len(parts)-2], parts[len(parts)-1], true)
+	if len(parts) >= 4 {
+		marker := len(parts) - 3
+		if parts[marker] == Marker {
+			stem = strings.Join(parts[:marker], ".")
+			return validateOverlayParts(stem, parts[marker+1], parts[marker+2], true)
+		}
 	}
-	if len(parts) >= 3 && parts[len(parts)-2] == Marker {
-		return validateOverlayParts(strings.Join(parts[:len(parts)-2], "."), parts[len(parts)-1], "", false)
+	if len(parts) >= 3 {
+		marker := len(parts) - 2
+		if parts[marker] == Marker {
+			stem = strings.Join(parts[:marker], ".")
+			return validateOverlayParts(stem, parts[marker+1], "", false)
+		}
 	}
 	for i, part := range parts {
 		if part != Marker {

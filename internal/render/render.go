@@ -108,7 +108,7 @@ func MergeGroup(g discover.Group) ([]byte, error) {
 // MergeGroupWithOptions is MergeGroup with output formatting options.
 func MergeGroupWithOptions(g discover.Group, opts MergeOptions) ([]byte, error) {
 	if g.Format == document.FormatCopy {
-		return copyGroup(g)
+		return copyWinningLayer(g)
 	}
 
 	var merged any = map[string]any{}
@@ -128,7 +128,7 @@ func MergeGroupWithOptions(g discover.Group, opts MergeOptions) ([]byte, error) 
 	})
 }
 
-func copyGroup(g discover.Group) ([]byte, error) {
+func copyWinningLayer(g discover.Group) ([]byte, error) {
 	if len(g.Layers) == 0 {
 		return nil, fmt.Errorf("copy group %q has no active layers", g.Stem)
 	}
