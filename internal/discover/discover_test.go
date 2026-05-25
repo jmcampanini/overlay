@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/jmcampanini/overlay/internal/document"
 )
 
 func TestParseOverlayName(t *testing.T) {
@@ -18,10 +20,15 @@ func TestParseOverlayName(t *testing.T) {
 		{"settings.olay.work.json", "settings", "work", "json", true},
 		{"config.olay.local.toml", "config", "local", "toml", true},
 		{"multi.dot.stem.olay.base.json", "multi.dot.stem", "base", "json", true},
+		{"settings.schema.olay.work.json", "settings.schema", "work", "json", true},
+		{"foo.olay.olay.json", "foo", "olay", "json", true},
+		{"file.olay.base.yaml", "file", "base", "yaml", true},
+		{"README.olay.local", "README", "local", "", true},
 		{"no-marker.json", "", "", "", false},
-		{"file.olay.base.yaml", "", "", "", false},
+		{"archive.olay.work.tar.gz", "", "", "", false},
 		{"olay.base.json", "", "", "", false},
 		{".olay.base.json", "", "", "", false},
+		{"script.olay..sh", "", "", "", false},
 		{"stem.notolay.profile.json", "", "", "", false},
 	}
 	for _, tc := range cases {
@@ -29,6 +36,27 @@ func TestParseOverlayName(t *testing.T) {
 		if ok != tc.ok || stem != tc.stem || profile != tc.profile || ext != tc.ext {
 			t.Errorf("ParseOverlayName(%q) = (%q,%q,%q,%v), want (%q,%q,%q,%v)",
 				tc.name, stem, profile, ext, ok, tc.stem, tc.profile, tc.ext, tc.ok)
+		}
+	}
+}
+
+func TestParseOverlayNameStrictErrors(t *testing.T) {
+	cases := []struct {
+		name string
+		want string
+	}{
+		{"archive.olay.work.tar.gz", "multi-part extension"},
+		{"settings.olay.work.schema.json", "multi-part extension"},
+		{".olay.work.sh", "missing stem"},
+		{"script.olay..sh", "missing profile"},
+	}
+	for _, tc := range cases {
+		_, _, _, ok, err := ParseOverlayNameStrict(tc.name)
+		if err == nil || ok {
+			t.Fatalf("ParseOverlayNameStrict(%q) = ok=%v err=%v, want error", tc.name, ok, err)
+		}
+		if !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("ParseOverlayNameStrict(%q) error = %v, want %q", tc.name, err, tc.want)
 		}
 	}
 }
@@ -374,6 +402,105 @@ func TestWalkDetectsTargetPathCollision(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "collision") {
 		t.Errorf("error should mention collision: %v", err)
+	}
+}
+
+func TestWalkCopyThroughFile(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "bin", "tool.olay.base.sh"), "base\n")
+	writeTestFile(t, filepath.Join(dir, "bin", "tool.olay.work.sh"), "work\n")
+	writeTestFile(t, filepath.Join(dir, "bin", "tool.olay.local.sh"), "local\n")
+
+	active, inactive, err := Walk(Settings{
+		SourceDirs: []string{dir},
+		TargetDir:  "/tmp/out",
+		Profiles:   []string{"work"},
+		Ignore:     NoopIgnorer(),
+	})
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if len(inactive) != 0 {
+		t.Fatalf("expected no inactive groups, got %d", len(inactive))
+	}
+	if len(active) != 1 {
+		t.Fatalf("expected 1 active group, got %d", len(active))
+	}
+	g := active[0]
+	if g.Format != document.FormatCopy {
+		t.Fatalf("Format = %s, want copy", g.Format)
+	}
+	wantTarget := filepath.Join("/tmp/out", "bin", "tool.sh")
+	if g.TargetPath != wantTarget {
+		t.Fatalf("TargetPath = %q, want %q", g.TargetPath, wantTarget)
+	}
+	got := []string{}
+	for _, l := range g.Layers {
+		got = append(got, l.Profile)
+	}
+	want := []string{"base", "work", "local"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("layers = %v, want %v", got, want)
+	}
+}
+
+func TestWalkExtensionlessCopyThroughFile(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "README.olay.local"), "local readme\n")
+
+	active, _, err := Walk(Settings{
+		SourceDirs: []string{dir},
+		TargetDir:  "/tmp/out",
+		Ignore:     NoopIgnorer(),
+	})
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if len(active) != 1 {
+		t.Fatalf("expected 1 active group, got %d", len(active))
+	}
+	if active[0].Format != document.FormatCopy {
+		t.Fatalf("Format = %s, want copy", active[0].Format)
+	}
+	wantTarget := filepath.Join("/tmp/out", "README")
+	if active[0].TargetPath != wantTarget {
+		t.Fatalf("TargetPath = %q, want %q", active[0].TargetPath, wantTarget)
+	}
+}
+
+func TestWalkRejectsMultipartExtension(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "archive.olay.work.tar.gz"), "data\n")
+
+	_, _, err := Walk(Settings{
+		SourceDirs: []string{dir},
+		TargetDir:  "/tmp/out",
+		Profiles:   []string{"work"},
+		Ignore:     NoopIgnorer(),
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "multi-part extension") {
+		t.Fatalf("error = %v, want multi-part extension", err)
+	}
+}
+
+func TestWalkCopyThroughCollidesWithStructuredTarget(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "settings.olay.base.json"), `{"a":1}`)
+	writeTestFile(t, filepath.Join(dir, "settings.json.olay.base"), "raw\n")
+
+	_, _, err := Walk(Settings{
+		SourceDirs: []string{dir},
+		TargetDir:  "/tmp/out",
+		Ignore:     NoopIgnorer(),
+	})
+	if err == nil {
+		t.Fatal("expected collision error")
+	}
+	if !strings.Contains(err.Error(), "collision") {
+		t.Fatalf("error should mention collision: %v", err)
 	}
 }
 

@@ -1,12 +1,15 @@
 # overlay
 
-A small Go CLI that merges layered JSON/TOML configuration files by profile.
+A small Go CLI that merges layered JSON/TOML configuration files by profile
+and copies other profile-specific files through as whole-file overlays.
 
 `overlay` walks one or more source directories for files matching
-`<stem>.olay.<profile>.<ext>`, groups them by stem, merges the matching
-layers in order, and writes the result to a target directory. It's useful
-for dotfiles layouts where you want a base file, a machine profile, and a
-machine-local override to compose into a single rendered file.
+`<stem>.olay.<profile>[.<ext>]`, groups them by target path, renders the
+active layers, and writes the result to a target directory. JSON/TOML layers
+are merged; other extensions and extensionless overlays copy the highest
+precedence active layer. It's useful for dotfiles layouts where you want a
+base file, a machine profile, and a machine-local override to compose into a
+single rendered file.
 
 ## Install
 
@@ -73,10 +76,13 @@ overlay render pi codex
 ## File convention
 
 ```
+<stem>.olay.<profile>
 <stem>.olay.<profile>.<ext>
 ```
 
-- `<ext>` is `json` or `toml`.
+- `<ext>` is optional. If present, it must be a single filename segment.
+- `json` and `toml` overlays are merged; every other extension, plus
+  extensionless overlays, is copied through as a whole file.
 - `<profile>` names the layer. `base` and `local` are **reserved**:
   `base` always merges first, `local` always merges last, with any active
   user profiles in between. User profiles can be named anything else.
@@ -92,6 +98,9 @@ overlay render pi codex
   duplicates removed, preserving first-seen order.
 - **Lists containing objects** are concatenated without deduplication.
 - **Scalars and type mismatches**: the override wins.
+
+For copy-through files, active layers are not combined. The last active layer
+in precedence order wins, so `base -> work -> local` copies `local`.
 
 Output is deterministic: keys are alphabetized in both JSON and TOML so
 `overlay diff` stays trustworthy and golden-file tests are stable.
@@ -203,7 +212,7 @@ Config-backed environment variables are `OVERLAY_SOURCES`, `OVERLAY_TARGET`,
 
 ## Roadmap
 
-- YAML support with the same merge semantics.
+- Configurable merge/copy strategies.
 - Symlink following during source walk (with inode-based loop detection).
 
 ## Development

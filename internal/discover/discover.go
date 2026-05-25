@@ -1,5 +1,5 @@
 // Package discover walks source directories, identifies overlay groups by
-// the *.olay.*.* filename convention, and resolves each group's target
+// the *.olay.*[.*] filename convention, and resolves each group's target
 // path and ordered layer list.
 package discover
 
@@ -18,7 +18,7 @@ import (
 
 const (
 	// Marker is the fixed segment that identifies overlay source files:
-	// <stem>.olay.<profile>.<ext>
+	// <stem>.olay.<profile>[.<ext>]
 	Marker = "olay"
 
 	// ProfileBase is the reserved profile name for the first merge layer.
@@ -180,18 +180,16 @@ func walkSource(s Settings, absSource string) ([]Group, []string, error) {
 	}
 
 	type key struct {
-		source string
 		relDir string
 		stem   string
 		ext    string
 	}
-	type discovered struct {
-		stem       string
+	type groupInfo struct {
 		format     document.Format
 		targetPath string
+		layers     map[string]string
 	}
-	groups := make(map[key]discovered)
-	layerSources := make(map[key]map[string]string) // all discovered layers, keyed by profile
+	groups := make(map[key]*groupInfo)
 
 	walkErr := filepath.WalkDir(absSource, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -216,14 +214,14 @@ func walkSource(s Settings, absSource string) ([]Group, []string, error) {
 		if ignorer.Match(rel, false) {
 			return nil
 		}
-		stem, profile, ext, ok := ParseOverlayName(d.Name())
+		stem, profile, ext, ok, parseErr := ParseOverlayNameStrict(d.Name())
+		if parseErr != nil {
+			return fmt.Errorf("invalid overlay filename %q: %w", rel, parseErr)
+		}
 		if !ok {
 			return nil
 		}
-		format, formatErr := document.DetectFormat("f." + ext)
-		if formatErr != nil {
-			return nil
-		}
+		format := formatForExtension(ext)
 		relDir, relErr := filepath.Rel(absSource, filepath.Dir(path))
 		if relErr != nil {
 			return relErr
@@ -231,19 +229,21 @@ func walkSource(s Settings, absSource string) ([]Group, []string, error) {
 		if relDir == "." {
 			relDir = ""
 		}
-		k := key{source: absSource, relDir: relDir, stem: stem, ext: ext}
-		if _, exists := layerSources[k]; !exists {
-			layerSources[k] = make(map[string]string)
-		}
-		layerSources[k][profile] = path
-
-		if _, exists := groups[k]; !exists {
+		k := key{relDir: relDir, stem: stem, ext: ext}
+		info, exists := groups[k]
+		if !exists {
 			target, terr := TargetPath(relDir, stem, ext, s.TargetDir, s.DotPrefix)
 			if terr != nil {
 				return terr
 			}
-			groups[k] = discovered{stem: stem, format: format, targetPath: target}
+			info = &groupInfo{
+				format:     format,
+				targetPath: target,
+				layers:     make(map[string]string),
+			}
+			groups[k] = info
 		}
+		info.layers[profile] = path
 		return nil
 	})
 	if walkErr != nil {
@@ -256,7 +256,6 @@ func walkSource(s Settings, absSource string) ([]Group, []string, error) {
 	}
 	slices.SortFunc(keys, func(a, b key) int {
 		return cmp.Or(
-			cmp.Compare(a.source, b.source),
 			cmp.Compare(a.relDir, b.relDir),
 			cmp.Compare(a.stem, b.stem),
 			cmp.Compare(a.ext, b.ext),
@@ -266,13 +265,13 @@ func walkSource(s Settings, absSource string) ([]Group, []string, error) {
 	active := make([]Group, 0, len(keys))
 	var inactive []string
 	for _, k := range keys {
-		d := groups[k]
-		layers := orderedLayers(layerSources[k], s.Profiles)
+		info := groups[k]
+		layers := orderedLayers(info.layers, s.Profiles)
 		if len(layers) == 0 {
-			inactive = append(inactive, d.stem)
+			inactive = append(inactive, k.stem)
 			continue
 		}
-		g, err := newGroup(absSource, d.stem, d.format, d.targetPath, layers)
+		g, err := newGroup(absSource, k.stem, info.format, info.targetPath, layers)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -304,29 +303,71 @@ func orderedLayers(discovered map[string]string, profiles []string) []Layer {
 	return out
 }
 
-// ParseOverlayName parses a filename of the form <stem>.olay.<profile>.<ext>.
-// It returns (stem, profile, ext, true) on success and zero values + false
-// on any non-match. The stem may itself contain dots.
+// ParseOverlayName parses a filename of the form
+// <stem>.olay.<profile>[.<ext>]. It returns (stem, profile, ext, true) on
+// success and zero values + false on any non-match or malformed match. The
+// stem may itself contain dots.
 func ParseOverlayName(name string) (stem, profile, ext string, ok bool) {
+	stem, profile, ext, ok, _ = ParseOverlayNameStrict(name)
+	return stem, profile, ext, ok
+}
+
+// ParseOverlayNameStrict parses a filename of the form
+// <stem>.olay.<profile>[.<ext>]. It returns ok=false when the marker is absent
+// and a non-nil error when the filename contains the marker but is malformed.
+func ParseOverlayNameStrict(name string) (stem, profile, ext string, ok bool, err error) {
 	parts := strings.Split(name, ".")
-	if len(parts) < 4 {
-		return "", "", "", false
+	if len(parts) >= 4 {
+		marker := len(parts) - 3
+		if parts[marker] == Marker {
+			stem = strings.Join(parts[:marker], ".")
+			return validateOverlayParts(stem, parts[marker+1], parts[marker+2], true)
+		}
 	}
-	ext = parts[len(parts)-1]
-	profile = parts[len(parts)-2]
-	marker := parts[len(parts)-3]
-	if marker != Marker {
-		return "", "", "", false
+	if len(parts) >= 3 {
+		marker := len(parts) - 2
+		if parts[marker] == Marker {
+			stem = strings.Join(parts[:marker], ".")
+			return validateOverlayParts(stem, parts[marker+1], "", false)
+		}
 	}
-	stem = strings.Join(parts[:len(parts)-3], ".")
-	if stem == "" || profile == "" {
-		return "", "", "", false
+	for i, part := range parts {
+		if part != Marker {
+			continue
+		}
+		tail := len(parts) - i - 1
+		switch {
+		case i == 0:
+			return "", "", "", false, fmt.Errorf("missing stem")
+		case tail == 0:
+			return "", "", "", false, fmt.Errorf("missing profile")
+		case tail > 2:
+			return "", "", "", false, fmt.Errorf("multi-part extension after profile")
+		}
 	}
-	switch ext {
-	case "json", "toml":
-		return stem, profile, ext, true
+	return "", "", "", false, nil
+}
+
+func validateOverlayParts(stem, profile, ext string, extPresent bool) (string, string, string, bool, error) {
+	switch {
+	case stem == "":
+		return "", "", "", false, fmt.Errorf("missing stem")
+	case profile == "":
+		return "", "", "", false, fmt.Errorf("missing profile")
+	case extPresent && ext == "":
+		return "", "", "", false, fmt.Errorf("missing extension")
 	}
-	return "", "", "", false
+	return stem, profile, ext, true, nil
+}
+
+func formatForExtension(ext string) document.Format {
+	switch strings.ToLower(ext) {
+	case "json":
+		return document.FormatJSON
+	case "toml":
+		return document.FormatTOML
+	}
+	return document.FormatCopy
 }
 
 func isHiddenDir(name string) bool {

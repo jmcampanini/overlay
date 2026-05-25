@@ -11,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2/table"
 
 	"github.com/jmcampanini/overlay/internal/discover"
+	"github.com/jmcampanini/overlay/internal/document"
 )
 
 // Render writes an aligned table of groups to w, with columns
@@ -38,11 +39,7 @@ func Render(w io.Writer, groups []discover.Group, profiles []string, sourceDirs 
 		Headers("TARGET", "FORMAT", "LAYERS")
 
 	for _, g := range groups {
-		layers := make([]string, len(g.Layers))
-		for i, l := range g.Layers {
-			layers[i] = l.Profile
-		}
-		t.Row(collapseHome(g.TargetPath), g.Format.String(), strings.Join(layers, ", "))
+		t.Row(collapseHome(g.TargetPath), g.Format.String(), layerDisplay(g))
 	}
 
 	if _, err := fmt.Fprintln(w, t.Render()); err != nil {
@@ -54,6 +51,18 @@ func Render(w io.Writer, groups []discover.Group, profiles []string, sourceDirs 
 	}
 	_, err := fmt.Fprintf(w, "\n%d %s will be generated\n", len(groups), noun)
 	return err
+}
+
+func layerDisplay(g discover.Group) string {
+	layers := make([]string, len(g.Layers))
+	for i, l := range g.Layers {
+		layers[i] = l.Profile
+	}
+	display := strings.Join(layers, ", ")
+	if g.Format == document.FormatCopy && len(layers) > 0 {
+		display += " (winner: " + layers[len(layers)-1] + ")"
+	}
+	return display
 }
 
 func sourceSummary(sources []string) string {

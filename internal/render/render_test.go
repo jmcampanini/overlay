@@ -143,6 +143,75 @@ trust_level = "trusted"
 	}
 }
 
+func TestRunCopyThroughUsesWinningLayer(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	base := filepath.Join(src, "bin", "tool.olay.base.sh")
+	writeFile(t, base, "base\n")
+	writeFile(t, filepath.Join(src, "bin", "tool.olay.work.sh"), "work\n")
+	writeFile(t, filepath.Join(src, "bin", "tool.olay.local.sh"), "local\n")
+	if err := os.Chmod(base, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Profiles:   []string{"work"},
+			Ignore:     discover.NoopIgnorer(),
+		},
+		Logger: newTestLogger(),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	out := filepath.Join(target, "bin", "tool.sh")
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	if string(data) != "local\n" {
+		t.Fatalf("content = %q, want local", data)
+	}
+	info, err := os.Stat(out)
+	if err != nil {
+		t.Fatalf("stat output: %v", err)
+	}
+	if info.Mode().Perm()&0o111 != 0 {
+		t.Fatalf("output mode = %v, should not preserve executable bits", info.Mode().Perm())
+	}
+}
+
+func TestRunExtensionlessCopyThrough(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "README.olay.base"), "base\n")
+	writeFile(t, filepath.Join(src, "README.olay.work"), "work\n")
+
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Profiles:   []string{"work"},
+			Ignore:     discover.NoopIgnorer(),
+		},
+		Logger: newTestLogger(),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(target, "README"))
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	if string(data) != "work\n" {
+		t.Fatalf("content = %q, want work", data)
+	}
+}
+
 func TestRunNoFilesFound(t *testing.T) {
 	src := t.TempDir()
 	target := t.TempDir()
