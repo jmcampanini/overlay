@@ -187,9 +187,9 @@ func walkSource(s Settings, absSource string) ([]Group, []string, error) {
 	type groupInfo struct {
 		format     document.Format
 		targetPath string
+		layers     map[string]string
 	}
-	groups := make(map[key]groupInfo)
-	layerSources := make(map[key]map[string]string) // all discovered layers, keyed by profile
+	groups := make(map[key]*groupInfo)
 
 	walkErr := filepath.WalkDir(absSource, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -230,18 +230,20 @@ func walkSource(s Settings, absSource string) ([]Group, []string, error) {
 			relDir = ""
 		}
 		k := key{relDir: relDir, stem: stem, ext: ext}
-		if _, exists := layerSources[k]; !exists {
-			layerSources[k] = make(map[string]string)
-		}
-		layerSources[k][profile] = path
-
-		if _, exists := groups[k]; !exists {
+		info, exists := groups[k]
+		if !exists {
 			target, terr := TargetPath(relDir, stem, ext, s.TargetDir, s.DotPrefix)
 			if terr != nil {
 				return terr
 			}
-			groups[k] = groupInfo{format: format, targetPath: target}
+			info = &groupInfo{
+				format:     format,
+				targetPath: target,
+				layers:     make(map[string]string),
+			}
+			groups[k] = info
 		}
+		info.layers[profile] = path
 		return nil
 	})
 	if walkErr != nil {
@@ -263,13 +265,13 @@ func walkSource(s Settings, absSource string) ([]Group, []string, error) {
 	active := make([]Group, 0, len(keys))
 	var inactive []string
 	for _, k := range keys {
-		d := groups[k]
-		layers := orderedLayers(layerSources[k], s.Profiles)
+		info := groups[k]
+		layers := orderedLayers(info.layers, s.Profiles)
 		if len(layers) == 0 {
 			inactive = append(inactive, k.stem)
 			continue
 		}
-		g, err := newGroup(absSource, k.stem, d.format, d.targetPath, layers)
+		g, err := newGroup(absSource, k.stem, info.format, info.targetPath, layers)
 		if err != nil {
 			return nil, nil, err
 		}
