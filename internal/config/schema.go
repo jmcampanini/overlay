@@ -13,16 +13,17 @@ FIELDS
   sources = ["."]
     type:    array of strings
     default: ["."]
-    The source directories to walk when searching for *.olay.*.* files. Each
-    source is treated as its own root: target paths are rendered relative to
-    that source directory. TOML relative paths are resolved from the config
+    The source directories to walk when searching for <stem>.olay.<profile>
+    and <stem>.olay.<profile>.<ext> files. Each source is treated as its own
+    root: target paths are rendered relative to that source directory. TOML
+    relative paths are resolved from the config
     file's directory at runtime. Missing source directories are skipped with a
     warning; existing directories with no overlay files are no-ops.
 
   target = "~/"
     type:    string
     default: (none — required)
-    The directory where merged files are written. A leading "~" is expanded
+    The directory where rendered files are written. A leading "~" is expanded
     to the current user's home directory; "$VAR" and "${VAR}" are expanded
     from the environment. TOML relative paths are resolved from the config
     file's directory at runtime. Overlay exits with an error if target is
@@ -38,7 +39,7 @@ FIELDS
   profiles = ["work"]                  # example
     type:    array of strings
     default: []
-    Raw profiles to activate, in merge order. This value can be overridden
+    Raw profiles to activate, in layer order. This value can be overridden
     by OVERLAY_PROFILES or --profiles. After raw loading, env_profiles may
     append more profiles. The names "base" and "local" are reserved and
     cannot appear in the effective list.
@@ -119,14 +120,21 @@ Raw profiles are loaded from these sources, highest to lowest:
 After raw loading, Overlay appends the comma-split value of the env var named
 by env_profiles (if set). Duplicates are removed, preserving first occurrence.
 
-Within the effective set, the merge layer order is always:
+Within the effective set, the layer order is always:
   base (if present) -> each profile in list order -> local (if present)
 
 FILE CONVENTION
 
-Overlay discovers files by the pattern <stem>.olay.<profile>.<ext> where
-<ext> is "json" or "toml". The profile name "base" merges first, "local"
-merges last, and any other name is a user profile. For example:
+Overlay discovers files by either pattern:
+
+  <stem>.olay.<profile>
+  <stem>.olay.<profile>.<ext>
+
+The stem is required and may contain dots. The profile name "base" is always
+first, "local" is always last, and any other name is a user profile. If an
+extension is present, it must be one filename segment with no additional dots.
+
+JSON and TOML overlays are mergeable structured formats:
 
   dot-claude/settings.olay.base.json      -> base layer (always first)
   dot-claude/settings.olay.work.json      -> "work" profile layer
@@ -135,6 +143,18 @@ merges last, and any other name is a user profile. For example:
 With dot_prefix = true and target = "~/", those layers merge into:
 
   ~/.claude/settings.json
+
+Valid overlays with any other extension, or no extension, are copied through as
+whole files. The highest-precedence active layer wins:
+
+  bin/tool.olay.base.sh
+  bin/tool.olay.work.sh                  -> ~/bin/tool.sh copies work
+  README.olay.local                      -> ~/README copies local
+
+Malformed overlay-looking filenames with multi-part extensions are errors:
+
+  archive.olay.work.tar.gz
+  settings.olay.work.schema.json
 
 With a stow-style config, the package directory is the source root and is not
 part of the target path:

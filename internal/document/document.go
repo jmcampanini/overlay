@@ -15,6 +15,7 @@ const (
 	FormatUnknown Format = iota // unrecognized
 	FormatJSON                  // RFC 8259 JSON
 	FormatTOML                  // TOML 1.0
+	FormatCopy                  // whole-file copy-through
 )
 
 func (f Format) String() string {
@@ -23,6 +24,8 @@ func (f Format) String() string {
 		return "json"
 	case FormatTOML:
 		return "toml"
+	case FormatCopy:
+		return "copy"
 	}
 	return "unknown"
 }

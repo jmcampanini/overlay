@@ -56,6 +56,31 @@ func TestRenderBasic(t *testing.T) {
 	}
 }
 
+func TestRenderCopyThroughShowsWinner(t *testing.T) {
+	groups := []discover.Group{
+		{
+			Stem:       "tool",
+			Format:     document.FormatCopy,
+			TargetPath: "/tmp/out/bin/tool.sh",
+			Layers: []discover.Layer{
+				{Profile: "base"},
+				{Profile: "work"},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	if err := Render(&buf, groups, []string{"work"}, []string{"./src"}, "/tmp/out"); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "copy") {
+		t.Fatalf("missing copy format:\n%s", out)
+	}
+	if !strings.Contains(out, "base, work (winner: work)") {
+		t.Fatalf("missing copy winner:\n%s", out)
+	}
+}
+
 func TestRenderMultipleSourcesHeader(t *testing.T) {
 	var buf bytes.Buffer
 	if err := Render(&buf, nil, []string{}, []string{"pi", "codex"}, "/tmp/out"); err != nil {

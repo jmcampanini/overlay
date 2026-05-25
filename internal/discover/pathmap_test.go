@@ -63,6 +63,30 @@ func TestTargetPathEmptyRelDir(t *testing.T) {
 	}
 }
 
+func TestTargetPathExtensionless(t *testing.T) {
+	got, err := TargetPath("docs", "README", "", "/tmp/out", true)
+	if err != nil {
+		t.Fatalf("TargetPath: %v", err)
+	}
+	want := filepath.Join("/tmp/out", "docs", "README")
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestTargetPathRejectsDotSegmentExtensionlessName(t *testing.T) {
+	cases := []string{".", "..", "dot-", "dot-."}
+	for _, stem := range cases {
+		_, err := TargetPath("", stem, "", "/tmp/out", true)
+		if err == nil {
+			t.Fatalf("TargetPath with stem %q should error", stem)
+		}
+		if !strings.Contains(err.Error(), "invalid target filename") {
+			t.Fatalf("TargetPath with stem %q error = %v", stem, err)
+		}
+	}
+}
+
 func TestTargetPathEmptyTargetErrors(t *testing.T) {
 	if _, err := TargetPath("x", "y", "json", "", true); err == nil {
 		t.Error("expected error for empty target")

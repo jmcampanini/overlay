@@ -10,8 +10,8 @@ import (
 // TargetPath resolves where a discovered overlay group should be written.
 //
 //	relDir:    path segment from source root to the group's directory
-//	stem:      base filename without any extension
-//	ext:       "json" or "toml"
+//	stem:      target filename stem, possibly containing dots
+//	ext:       optional target filename extension without a leading dot
 //	target:    configured target directory (may begin with ~ or $VAR)
 //	dotPrefix: if true, rewrite dot- prefixed path segments to leading dots
 func TargetPath(relDir, stem, ext, target string, dotPrefix bool) (string, error) {
@@ -37,7 +37,14 @@ func TargetPath(relDir, stem, ext, target string, dotPrefix bool) (string, error
 	if dotPrefix {
 		stem = transformDotPrefix(stem)
 	}
-	parts = append(parts, stem+"."+ext)
+	name := stem
+	if ext != "" {
+		name += "." + ext
+	}
+	if name == "." || name == ".." {
+		return "", fmt.Errorf("invalid target filename %q", name)
+	}
+	parts = append(parts, name)
 	return filepath.Join(parts...), nil
 }
 

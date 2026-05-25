@@ -97,15 +97,20 @@ func renderGroup(g discover.Group, logger *log.Logger, opts MergeOptions) error 
 	return nil
 }
 
-// MergeGroup loads each layer of a group, folds them with merge.Merge,
-// and serializes the result. It performs no disk writes — callers use
-// this from both render.Run (to disk) and diff.Run (in-memory compare).
+// MergeGroup loads each layer of a structured group, folds them with
+// merge.Merge, and serializes the result. Copy-through groups return the
+// winning layer's bytes. It performs no disk writes — callers use this from
+// both render.Run (to disk) and diff.Run (in-memory compare).
 func MergeGroup(g discover.Group) ([]byte, error) {
 	return MergeGroupWithOptions(g, MergeOptions{})
 }
 
 // MergeGroupWithOptions is MergeGroup with output formatting options.
 func MergeGroupWithOptions(g discover.Group, opts MergeOptions) ([]byte, error) {
+	if g.Format == document.FormatCopy {
+		return copyGroup(g)
+	}
+
 	var merged any = map[string]any{}
 	for _, layer := range g.Layers {
 		data, err := os.ReadFile(layer.Path)
@@ -121,6 +126,18 @@ func MergeGroupWithOptions(g discover.Group, opts MergeOptions) ([]byte, error) 
 	return document.SerializeWithOptions(merged, g.Format, document.SerializeOptions{
 		TOMLIndentTables: opts.TOMLIndentTables,
 	})
+}
+
+func copyGroup(g discover.Group) ([]byte, error) {
+	if len(g.Layers) == 0 {
+		return nil, fmt.Errorf("copy group %q has no active layers", g.Stem)
+	}
+	winner := g.Layers[len(g.Layers)-1]
+	data, err := os.ReadFile(winner.Path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", winner.Path, err)
+	}
+	return data, nil
 }
 
 func layerNames(g discover.Group) string {

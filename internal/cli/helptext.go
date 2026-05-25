@@ -35,7 +35,7 @@ Profile resolution:
   env_profiles (if set) is appended. Duplicates are removed, first occurrence
   kept.
 
-Within the effective set, the merge layer order is always:
+Within the effective set, the layer order is always:
 
   base -> each profile in list order -> local
 

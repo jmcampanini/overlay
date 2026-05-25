@@ -94,6 +94,34 @@ func TestDiffMissingTarget(t *testing.T) {
 	}
 }
 
+func TestDiffCopyThroughChanged(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "script.olay.base.sh"), "new\n")
+	writeFile(t, filepath.Join(target, "script.sh"), "old\n")
+
+	var buf bytes.Buffer
+	differ, err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
+		},
+		Logger: silentLogger(),
+		Out:    &buf,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !differ {
+		t.Fatal("expected differ = true")
+	}
+	out := buf.String()
+	if !strings.Contains(out, "-old") || !strings.Contains(out, "+new") {
+		t.Fatalf("expected copy-through diff markers:\n%s", out)
+	}
+}
+
 func TestDiffFailFast(t *testing.T) {
 	src := t.TempDir()
 	target := t.TempDir()
