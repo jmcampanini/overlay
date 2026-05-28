@@ -2,7 +2,7 @@
 package config
 
 import (
-	configloader "github.com/jmcampanini/go-config-loader"
+	"github.com/jmcampanini/go-config-loader/configloader"
 )
 
 // DefaultFilename is the conventional location for the overlay config.

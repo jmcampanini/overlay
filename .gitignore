@@ -1,5 +1,17 @@
-/out/
+# Agent scratch paths
+.claude/
+.claude-plans/
+.claude-sandbox/
+.codex-*
+
+# Local build artifacts
+/build/
+/dist/
+
+# Coverage output
 /coverage.out
 /coverage.html
-.claude-sandbox/
+*.coverprofile
+
+# Test fixture output
 testdata/fixtures/*/.generated/

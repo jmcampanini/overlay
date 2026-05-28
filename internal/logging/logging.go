@@ -1,10 +1,10 @@
-// Package logging wires the charmbracelet/log logger used throughout overlay.
+// Package logging wires the Charm log logger used throughout overlay.
 package logging
 
 import (
 	"os"
 
-	"github.com/charmbracelet/log"
+	"charm.land/log/v2"
 )
 
 // Setup returns a logger writing to stderr with a level chosen from the

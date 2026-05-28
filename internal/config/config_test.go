@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	configloader "github.com/jmcampanini/go-config-loader"
+	"github.com/jmcampanini/go-config-loader/configloader"
 )
 
 func TestLoadMissingFile(t *testing.T) {

@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/log"
-	configloader "github.com/jmcampanini/go-config-loader"
+	"charm.land/log/v2"
+	"github.com/jmcampanini/go-config-loader/configloader"
 	"github.com/jmcampanini/go-config-loader/pflagloader"
 	"github.com/spf13/cobra"
 
