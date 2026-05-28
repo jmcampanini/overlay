@@ -8,6 +8,7 @@ class Overlay < Formula
   def install
     ldflags = "-s -w -X github.com/jmcampanini/overlay/internal/cli.Version=HEAD-#{Utils.git_short_head}"
     system "go", "build", *std_go_args(output: bin/"overlay", ldflags: ldflags), "./cmd/overlay"
+    generate_completions_from_executable(bin/"overlay", "completion")
   end
 
   test do

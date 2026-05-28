@@ -30,7 +30,7 @@ brew upgrade --fetch-HEAD overlay
 
 ```shell
 make build
-# binary at ./out/overlay — copy or symlink onto your PATH
+# binary at ./build/overlay — copy or symlink onto your PATH
 ```
 
 ## Quick start
@@ -219,10 +219,10 @@ Config-backed environment variables are `OVERLAY_SOURCES`, `OVERLAY_TARGET`,
 
 ```shell
 make             # list tasks (help is the default)
-make build       # build ./out/overlay
+make build       # build ./build/overlay
 make test        # go test -race ./...
 make check       # fmt-check + tidy-check + lint + test
-make clean       # remove ./out, coverage files, and test cache
+make clean       # remove ./build, coverage files, and test cache
 ```
 
 The `.claude-sandbox/` directory is auto-created for local experiments
