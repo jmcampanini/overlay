@@ -4,7 +4,7 @@ BUILD_DIR   := build
 BINARY      := $(BUILD_DIR)/overlay
 CMD         := ./cmd/overlay
 PKG         := ./...
-GOFMT_FILES := $(shell git ls-files --cached --others --exclude-standard -- '*.go')
+GOFMT_FILES := $(shell git ls-files '*.go')
 
 VERSION := $(shell git describe --tags --dirty --always 2>/dev/null || date -u '+%Y-%m-%dT%H:%M:%SZ')
 LDFLAGS := -ldflags "-X github.com/jmcampanini/overlay/internal/cli.Version=$(VERSION)"
@@ -27,14 +27,17 @@ lint: ## Run golangci-lint.
 lint-fix: ## Run golangci-lint with --fix.
 	golangci-lint run --fix $(PKG)
 
-fmt: ## Apply gofmt -w to tracked/non-ignored Go files.
+fmt: ## Format tracked Go files.
 	@if [ -n "$(GOFMT_FILES)" ]; then gofmt -w $(GOFMT_FILES); fi
 
-fmt-check: ## Fail if tracked/non-ignored Go files need gofmt.
-	@if [ -z "$(GOFMT_FILES)" ]; then exit 0; fi; \
-	diff=$$(gofmt -l $(GOFMT_FILES) 2>&1); rc=$$?; \
-	if [ $$rc -ne 0 ]; then echo "gofmt failed (rc=$$rc):"; echo "$$diff"; exit $$rc; fi; \
-	if [ -n "$$diff" ]; then echo "gofmt issues:"; echo "$$diff"; exit 1; fi
+fmt-check: ## Fail if tracked Go files need gofmt.
+	@files="$$(gofmt -l $(GOFMT_FILES))"; \
+	if [ -n "$$files" ]; then \
+		echo "gofmt needed:"; \
+		echo "$$files"; \
+		echo "Run: make fmt"; \
+		exit 1; \
+	fi
 
 tidy: ## Apply go mod tidy.
 	go mod tidy
