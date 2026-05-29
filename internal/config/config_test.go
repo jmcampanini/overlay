@@ -38,6 +38,14 @@ toml_indent_tables = true
 ignore = ["**/node_modules"]
 traverse_hidden = true
 respect_gitignore = true
+
+[[render_rules]]
+path = ".npmrc"
+strategy = "append"
+
+[[render_rules]]
+path = ".some/generated.json"
+strategy = "copy"
 `)
 	c, exists, report, err := Load(path)
 	if err != nil {
@@ -78,6 +86,13 @@ respect_gitignore = true
 	}
 	if !c.RespectGitignore {
 		t.Error("RespectGitignore should be true")
+	}
+	wantRules := []RenderRule{
+		{Path: ".npmrc", Strategy: RenderStrategyAppend},
+		{Path: ".some/generated.json", Strategy: RenderStrategyCopy},
+	}
+	if !reflect.DeepEqual(c.RenderRules, wantRules) {
+		t.Errorf("RenderRules = %#v, want %#v", c.RenderRules, wantRules)
 	}
 }
 
@@ -152,6 +167,9 @@ func TestDefault(t *testing.T) {
 	if c.Profiles == nil {
 		t.Error("Profiles should be initialized")
 	}
+	if c.RenderRules == nil {
+		t.Error("RenderRules should be initialized")
+	}
 	if c.Target != "" {
 		t.Errorf("Target should have no default, got %q", c.Target)
 	}
@@ -177,6 +195,20 @@ func TestLoadMissingUsesDefaults(t *testing.T) {
 	}
 	if !c.DotPrefix {
 		t.Error("DotPrefix should default to true")
+	}
+}
+
+func TestSchemaDocsDescribeRenderRules(t *testing.T) {
+	for _, want := range []string{
+		"[[render_rules]]",
+		"path = \".npmrc\"",
+		"strategy = \"append\"",
+		".json/.toml -> merge",
+		"Valid rules that do not match",
+	} {
+		if !strings.Contains(SchemaDocs, want) {
+			t.Fatalf("SchemaDocs missing %q", want)
+		}
 	}
 }
 

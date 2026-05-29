@@ -3,6 +3,7 @@ package discover
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -18,13 +19,28 @@ func TargetPath(relDir, stem, ext, target string, dotPrefix bool) (string, error
 	if target == "" {
 		return "", fmt.Errorf("target directory is empty")
 	}
+	rel, err := TargetRelativePath(relDir, stem, ext, dotPrefix)
+	if err != nil {
+		return "", err
+	}
+	return targetPathFromRelative(target, rel)
+}
+
+func targetPathFromRelative(target, rel string) (string, error) {
+	if target == "" {
+		return "", fmt.Errorf("target directory is empty")
+	}
 	expanded, err := ExpandPath(target)
 	if err != nil {
 		return "", err
 	}
+	return filepath.Join(expanded, filepath.FromSlash(rel)), nil
+}
+
+// TargetRelativePath resolves a group's rendered path relative to the target.
+func TargetRelativePath(relDir, stem, ext string, dotPrefix bool) (string, error) {
 	rawSegments := strings.Split(filepath.ToSlash(relDir), "/")
-	parts := make([]string, 0, len(rawSegments)+2)
-	parts = append(parts, expanded)
+	parts := make([]string, 0, len(rawSegments)+1)
 	for _, seg := range rawSegments {
 		if seg == "" {
 			continue
@@ -45,7 +61,7 @@ func TargetPath(relDir, stem, ext, target string, dotPrefix bool) (string, error
 		return "", fmt.Errorf("invalid target filename %q", name)
 	}
 	parts = append(parts, name)
-	return filepath.Join(parts...), nil
+	return path.Join(parts...), nil
 }
 
 // ExpandPath expands a leading ~ to the user's home directory and any

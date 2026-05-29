@@ -45,22 +45,23 @@ type Layer struct {
 }
 
 // Group is one output file's worth of overlay sources: a stem, a format,
-// an ordered list of active layers, and the resolved target path.
+// an ordered list of active layers, and the resolved target paths.
 //
 // Group instances returned from Walk's active slice always have at least
 // one Layer. Construct Groups manually only in tests.
 type Group struct {
-	SourceDir  string
-	Stem       string
-	Format     document.Format
-	TargetPath string
-	Layers     []Layer
+	SourceDir     string
+	Stem          string
+	Format        document.Format
+	TargetPath    string
+	TargetRelPath string
+	Layers        []Layer
 }
 
 // newGroup constructs a Group with the active-group invariant: Layers
-// must be non-empty, Format must be a recognized format, and TargetPath
+// must be non-empty, Format must be a recognized format, and target paths
 // must be non-empty.
-func newGroup(sourceDir, stem string, format document.Format, targetPath string, layers []Layer) (Group, error) {
+func newGroup(sourceDir, stem string, format document.Format, targetPath, targetRelPath string, layers []Layer) (Group, error) {
 	if len(layers) == 0 {
 		return Group{}, fmt.Errorf("group %q has no active layers", stem)
 	}
@@ -70,7 +71,10 @@ func newGroup(sourceDir, stem string, format document.Format, targetPath string,
 	if targetPath == "" {
 		return Group{}, fmt.Errorf("group %q has empty target path", stem)
 	}
-	return Group{SourceDir: sourceDir, Stem: stem, Format: format, TargetPath: targetPath, Layers: layers}, nil
+	if targetRelPath == "" {
+		return Group{}, fmt.Errorf("group %q has empty target-relative path", stem)
+	}
+	return Group{SourceDir: sourceDir, Stem: stem, Format: format, TargetPath: targetPath, TargetRelPath: targetRelPath, Layers: layers}, nil
 }
 
 // WalkResult is the complete result of scanning source directories.
@@ -185,9 +189,10 @@ func walkSource(s Settings, absSource string) ([]Group, []string, error) {
 		ext    string
 	}
 	type groupInfo struct {
-		format     document.Format
-		targetPath string
-		layers     map[string]string
+		format        document.Format
+		targetPath    string
+		targetRelPath string
+		layers        map[string]string
 	}
 	groups := make(map[key]*groupInfo)
 
@@ -232,14 +237,19 @@ func walkSource(s Settings, absSource string) ([]Group, []string, error) {
 		k := key{relDir: relDir, stem: stem, ext: ext}
 		info, exists := groups[k]
 		if !exists {
-			target, terr := TargetPath(relDir, stem, ext, s.TargetDir, s.DotPrefix)
+			targetRel, terr := TargetRelativePath(relDir, stem, ext, s.DotPrefix)
+			if terr != nil {
+				return terr
+			}
+			target, terr := targetPathFromRelative(s.TargetDir, targetRel)
 			if terr != nil {
 				return terr
 			}
 			info = &groupInfo{
-				format:     format,
-				targetPath: target,
-				layers:     make(map[string]string),
+				format:        format,
+				targetPath:    target,
+				targetRelPath: targetRel,
+				layers:        make(map[string]string),
 			}
 			groups[k] = info
 		}
@@ -271,7 +281,7 @@ func walkSource(s Settings, absSource string) ([]Group, []string, error) {
 			inactive = append(inactive, k.stem)
 			continue
 		}
-		g, err := newGroup(absSource, k.stem, info.format, info.targetPath, layers)
+		g, err := newGroup(absSource, k.stem, info.format, info.targetPath, info.targetRelPath, layers)
 		if err != nil {
 			return nil, nil, err
 		}

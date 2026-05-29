@@ -42,6 +42,16 @@ func TestTargetPathNoDotPrefix(t *testing.T) {
 	}
 }
 
+func TestTargetRelativePathUsesRenderedPath(t *testing.T) {
+	got, err := TargetRelativePath("dot-ssh", "config", "", true)
+	if err != nil {
+		t.Fatalf("TargetRelativePath: %v", err)
+	}
+	if got != ".ssh/config" {
+		t.Errorf("got %q, want .ssh/config", got)
+	}
+}
+
 func TestTargetPathEnvVarExpansion(t *testing.T) {
 	t.Setenv("OVERLAY_TEST_TARGET", "/tmp/expanded")
 	got, err := TargetPath("sub", "file", "json", "$OVERLAY_TEST_TARGET/out", false)

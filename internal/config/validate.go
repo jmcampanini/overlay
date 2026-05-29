@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 )
@@ -22,7 +24,10 @@ func (c Config) Validate() error {
 			return fmt.Errorf("sources contains an empty source directory")
 		}
 	}
-	return ValidateProfiles(c.Profiles)
+	if err := ValidateProfiles(c.Profiles); err != nil {
+		return err
+	}
+	return ValidateRenderRules(c.RenderRules)
 }
 
 // ValidateProfiles checks profile names after env_profiles has been applied.
@@ -35,20 +40,68 @@ func ValidateProfiles(profiles []string) error {
 	return nil
 }
 
+// ValidateRenderRules checks render rule paths, strategies, and duplicates.
+func ValidateRenderRules(rules []RenderRule) error {
+	_, err := NormalizeRenderRules(rules)
+	return err
+}
+
+// NormalizeRenderRules validates rules and returns a copy with normalized paths.
+func NormalizeRenderRules(rules []RenderRule) ([]RenderRule, error) {
+	normalized := make([]RenderRule, 0, len(rules))
+	seen := make(map[string]int, len(rules))
+	for i, rule := range rules {
+		normalizedPath, err := NormalizeRenderRulePath(rule.Path)
+		if err != nil {
+			return nil, fmt.Errorf("render_rules[%d].path: %w", i, err)
+		}
+		switch rule.Strategy {
+		case RenderStrategyAppend, RenderStrategyCopy:
+		case "":
+			return nil, fmt.Errorf("render_rules[%d].strategy is required", i)
+		default:
+			return nil, fmt.Errorf("render_rules[%d].strategy %q is unsupported (supported: append, copy)", i, rule.Strategy)
+		}
+		if prev, ok := seen[normalizedPath]; ok {
+			return nil, fmt.Errorf("render_rules[%d].path duplicates render_rules[%d].path %q", i, prev, normalizedPath)
+		}
+		seen[normalizedPath] = i
+		normalized = append(normalized, RenderRule{Path: normalizedPath, Strategy: rule.Strategy})
+	}
+	return normalized, nil
+}
+
+// NormalizeRenderRulePath returns the slash-separated path key used for matching.
+func NormalizeRenderRulePath(p string) (string, error) {
+	if strings.TrimSpace(p) == "" {
+		return "", fmt.Errorf("path is required")
+	}
+	slash := filepath.ToSlash(p)
+	if filepath.IsAbs(p) || path.IsAbs(slash) {
+		return "", fmt.Errorf("path must be target-relative")
+	}
+	for _, part := range strings.Split(slash, "/") {
+		if part == ".." {
+			return "", fmt.Errorf("path must not contain '..'")
+		}
+	}
+	return path.Clean(slash), nil
+}
+
 // ValidateFile parses the file at path and reports schema problems as an
 // error. A missing file is an error. Unlike Config.Validate, this also requires
 // Target to be set, since the only way to fix it from a file is to edit the
 // file.
-func ValidateFile(path string) error {
-	c, _, err := LoadRequired(path)
+func ValidateFile(filename string) error {
+	c, _, err := LoadRequired(filename)
 	if err != nil {
 		return err
 	}
 	if c.Target == "" {
-		return fmt.Errorf("%s: 'target' is required", path)
+		return fmt.Errorf("%s: 'target' is required", filename)
 	}
 	if err := c.Validate(); err != nil {
-		return fmt.Errorf("%s: %w", path, err)
+		return fmt.Errorf("%s: %w", filename, err)
 	}
 	return nil
 }
