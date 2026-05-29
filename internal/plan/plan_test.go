@@ -91,9 +91,10 @@ func TestRenderCopyThroughShowsWinner(t *testing.T) {
 func TestRenderAppendRuleShowsAppendMode(t *testing.T) {
 	groups := []discover.Group{
 		{
-			Stem:       "dot-npmrc",
-			Format:     document.FormatCopy,
-			TargetPath: "/tmp/out/.npmrc",
+			Stem:          "dot-npmrc",
+			Format:        document.FormatCopy,
+			TargetPath:    "/tmp/out/.npmrc",
+			TargetRelPath: ".npmrc",
 			Layers: []discover.Layer{
 				{Profile: "base"},
 				{Profile: "work"},
@@ -119,9 +120,10 @@ func TestRenderAppendRuleShowsAppendMode(t *testing.T) {
 func TestRenderCopyOverrideShowsWinnerForJSON(t *testing.T) {
 	groups := []discover.Group{
 		{
-			Stem:       "settings",
-			Format:     document.FormatJSON,
-			TargetPath: "/tmp/out/settings.json",
+			Stem:          "settings",
+			Format:        document.FormatJSON,
+			TargetPath:    "/tmp/out/settings.json",
+			TargetRelPath: "settings.json",
 			Layers: []discover.Layer{
 				{Profile: "base"},
 				{Profile: "work"},

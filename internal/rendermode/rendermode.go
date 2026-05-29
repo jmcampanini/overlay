@@ -36,7 +36,8 @@ func ForGroup(g discover.Group, targetDir string, rules []config.RenderRule) (Mo
 	if len(rules) == 0 {
 		return DefaultForFormat(g.Format), nil
 	}
-	if err := config.ValidateRenderRules(rules); err != nil {
+	normalizedRules, err := config.NormalizeRenderRules(rules)
+	if err != nil {
 		return "", err
 	}
 	targetRel, err := targetRelativePath(g, targetDir)
@@ -47,12 +48,8 @@ func ForGroup(g discover.Group, targetDir string, rules []config.RenderRule) (Mo
 	if err != nil {
 		return "", fmt.Errorf("normalize target path %q: %w", targetRel, err)
 	}
-	for _, rule := range rules {
-		normalizedRule, err := config.NormalizeRenderRulePath(rule.Path)
-		if err != nil {
-			return "", fmt.Errorf("invalid render rule path %q: %w", rule.Path, err)
-		}
-		if normalizedRule != normalizedTarget {
+	for _, rule := range normalizedRules {
+		if rule.Path != normalizedTarget {
 			continue
 		}
 		switch rule.Strategy {

@@ -23,6 +23,13 @@ func TargetPath(relDir, stem, ext, target string, dotPrefix bool) (string, error
 	if err != nil {
 		return "", err
 	}
+	return targetPathFromRelative(target, rel)
+}
+
+func targetPathFromRelative(target, rel string) (string, error) {
+	if target == "" {
+		return "", fmt.Errorf("target directory is empty")
+	}
 	expanded, err := ExpandPath(target)
 	if err != nil {
 		return "", err

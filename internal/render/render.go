@@ -132,9 +132,9 @@ func MergeGroupWithOptions(g discover.Group, opts MergeOptions) ([]byte, error) 
 
 	var merged any = map[string]any{}
 	for _, layer := range g.Layers {
-		data, err := os.ReadFile(layer.Path)
+		data, err := readLayer(layer)
 		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", layer.Path, err)
+			return nil, err
 		}
 		parsed, err := document.Parse(data, g.Format)
 		if err != nil {
@@ -147,16 +147,19 @@ func MergeGroupWithOptions(g discover.Group, opts MergeOptions) ([]byte, error) 
 	})
 }
 
+func readLayer(layer discover.Layer) ([]byte, error) {
+	data, err := os.ReadFile(layer.Path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", layer.Path, err)
+	}
+	return data, nil
+}
+
 func copyWinningLayer(g discover.Group) ([]byte, error) {
 	if len(g.Layers) == 0 {
 		return nil, fmt.Errorf("copy group %q has no active layers", g.Stem)
 	}
-	winner := g.Layers[len(g.Layers)-1]
-	data, err := os.ReadFile(winner.Path)
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", winner.Path, err)
-	}
-	return data, nil
+	return readLayer(g.Layers[len(g.Layers)-1])
 }
 
 func appendLayers(g discover.Group) ([]byte, error) {
@@ -165,9 +168,9 @@ func appendLayers(g discover.Group) ([]byte, error) {
 	}
 	var out []byte
 	for _, layer := range g.Layers {
-		data, err := os.ReadFile(layer.Path)
+		data, err := readLayer(layer)
 		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", layer.Path, err)
+			return nil, err
 		}
 		if len(data) == 0 {
 			continue

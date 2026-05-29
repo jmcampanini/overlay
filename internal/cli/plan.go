@@ -28,7 +28,14 @@ func newPlanCmd() *cobra.Command {
 			for _, stem := range result.Inactive {
 				r.Logger.Infof("skipping %s (no active layers)", stem)
 			}
-			return plan.RenderWithOptions(os.Stdout, result.Active, r.Settings.Profiles, r.SourceLabels, r.Settings.TargetDir, plan.Options{RenderRules: r.RawConfig.RenderRules})
+			return plan.RenderWithOptions(
+				os.Stdout,
+				result.Active,
+				r.Settings.Profiles,
+				r.SourceLabels,
+				r.Settings.TargetDir,
+				plan.Options{RenderRules: r.RawConfig.RenderRules},
+			)
 		},
 	}
 }

@@ -241,7 +241,7 @@ func walkSource(s Settings, absSource string) ([]Group, []string, error) {
 			if terr != nil {
 				return terr
 			}
-			target, terr := TargetPath(relDir, stem, ext, s.TargetDir, s.DotPrefix)
+			target, terr := targetPathFromRelative(s.TargetDir, targetRel)
 			if terr != nil {
 				return terr
 			}
