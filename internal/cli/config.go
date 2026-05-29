@@ -64,6 +64,13 @@ func printConfig(w io.Writer, raw rawLoadedConfig) error {
 	if err := reporter.WriteTOML(w); err != nil {
 		return err
 	}
+	if err := writeConfigProvenance(w, reporter, raw.Report.LoadedFiles); err != nil {
+		return err
+	}
+	return writeConfigEffective(w, effective)
+}
+
+func writeConfigProvenance(w io.Writer, reporter configreporter.Reporter[config.Config], loadedFiles []string) error {
 	if _, err := fmt.Fprintln(w, "\n# provenance"); err != nil {
 		return err
 	}
@@ -81,10 +88,13 @@ func printConfig(w io.Writer, raw rawLoadedConfig) error {
 	if err := tw.Flush(); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(w, "# loaded_files = [%s]\n", quoteList(raw.Report.LoadedFiles)); err != nil {
+	if _, err := fmt.Fprintf(w, "# loaded_files = [%s]\n", quoteList(loadedFiles)); err != nil {
 		return err
 	}
+	return nil
+}
 
+func writeConfigEffective(w io.Writer, effective configEffective) error {
 	if _, err := fmt.Fprintln(w, "\n# effective:"); err != nil {
 		return err
 	}
