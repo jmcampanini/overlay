@@ -147,7 +147,7 @@ DOTFILES_PROFILE=work overlay plan
 DOTFILES_PROFILE=work overlay --profiles personal plan
 ```
 
-Run `overlay config` to see raw loaded values and GoConfigLoader provenance.
+Run `overlay config` to see loaded values, GoConfigLoader provenance, and commented effective runtime values.
 
 ## Subcommands
 
@@ -156,7 +156,7 @@ Run `overlay config` to see raw loaded values and GoConfigLoader provenance.
 | `overlay render` | Merge active layers and write output files to the target. |
 | `overlay diff` | Print a git-style unified diff vs. the current target files. Exit 1 if any file differs. |
 | `overlay plan` | Dry-run: print an aligned table of what would be generated. |
-| `overlay config` | Print raw loaded configuration plus GoConfigLoader provenance. `--validate <path>` schema-checks a file. |
+| `overlay config` | Print loaded configuration, GoConfigLoader provenance, and effective runtime comments. `--validate <path>` schema-checks a file. |
 | `overlay docs` | Print the full `.overlay.toml` schema reference. |
 
 For the complete config schema run `overlay docs`. Every subcommand
@@ -195,7 +195,7 @@ Run `overlay docs` for the full schema including `sources`, `dot_prefix`,
 Config-backed environment variables are `OVERLAY_SOURCES`, `OVERLAY_TARGET`,
 `OVERLAY_PROFILES`, and `OVERLAY_CONTINUE`. `sources` and `target` path expansion
 (`~`, `$VAR`, and config-file-relative TOML paths) happens at runtime; the
-`overlay config` command reports the raw loaded strings.
+`overlay config` reports the loaded strings and comments the expanded effective paths.
 
 ## Notes
 

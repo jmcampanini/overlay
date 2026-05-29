@@ -99,11 +99,7 @@ func Resolve(cmd *cobra.Command, g *GlobalFlags, positionalSources ...string) (R
 	}
 	r.RawConfig = raw.Config
 
-	configExists := len(raw.Report.LoadedFiles) > 0
-	configBase := "."
-	if configExists {
-		configBase = filepath.Dir(raw.Report.LoadedFiles[0])
-	}
+	configBase, configExists := configBaseFromReport(raw.Report)
 
 	cfg := raw.Config
 	sources, err := resolveSourceDirs(positionalSources, cfg, raw.Report, configBase, configExists)
@@ -179,6 +175,13 @@ func loadRawConfig(cmd *cobra.Command, g *GlobalFlags) (rawLoadedConfig, error) 
 		Report:     report,
 		ConfigPath: cfgPath,
 	}, nil
+}
+
+func configBaseFromReport(report configloader.LoadReport) (string, bool) {
+	if len(report.LoadedFiles) == 0 {
+		return ".", false
+	}
+	return filepath.Dir(report.LoadedFiles[0]), true
 }
 
 func resolveSourceDirs(positional []string, cfg config.Config, report configloader.LoadReport, configBase string, configExists bool) (sourceResolution, error) {

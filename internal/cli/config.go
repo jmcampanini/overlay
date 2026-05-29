@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/jmcampanini/go-config-loader/configreporter"
@@ -20,11 +21,11 @@ var configValidate string
 func newConfigCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
-		Short: "Show the raw loaded configuration, or validate a file.",
-		Long: `Show the raw loaded configuration after applying defaults, config file,
+		Short: "Show loaded configuration, provenance, and effective runtime values.",
+		Long: `Show loaded configuration after applying defaults, config file,
 environment variables, and config-backed flags. The report uses GoConfigLoader
-provenance and does not include Overlay runtime-derived values such as effective
-profiles or expanded paths.
+provenance, then adds Overlay runtime-derived comments such as effective
+profiles and expanded paths.
 
 With --validate <path>, parse and schema-check the given file without
 merging any flags or env vars. Exits 0 on success, 1 on any error.
@@ -38,19 +39,24 @@ For the full schema reference with field descriptions, run: overlay docs`,
 			if err != nil {
 				return err
 			}
-			return printRawConfig(os.Stdout, raw)
+			return printConfig(os.Stdout, raw)
 		},
 	}
 	cmd.Flags().StringVar(&configValidate, "validate", "", "validate the given .overlay.toml file and exit")
 	return cmd
 }
 
-func printRawConfig(w io.Writer, raw rawLoadedConfig) error {
+func printConfig(w io.Writer, raw rawLoadedConfig) error {
+	effective, err := resolveConfigEffective(raw)
+	if err != nil {
+		return err
+	}
+
 	notFound := ""
 	if len(raw.Report.LoadedFiles) == 0 {
 		notFound = " (not found)"
 	}
-	if _, err := fmt.Fprintf(w, "# overlay configuration (raw)\n# config file: %s%s\n\n", raw.ConfigPath, notFound); err != nil {
+	if _, err := fmt.Fprintf(w, "# overlay configuration\n# config file: %s%s\n\n", raw.ConfigPath, notFound); err != nil {
 		return err
 	}
 
@@ -72,5 +78,59 @@ func printRawConfig(w io.Writer, raw rawLoadedConfig) error {
 			return err
 		}
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "# loaded_files = [%s]\n", quoteList(raw.Report.LoadedFiles)); err != nil {
+		return err
+	}
+
+	if _, err := fmt.Fprintln(w, "\n# effective:"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "# effective_source_dirs = [%s]\n", quoteList(effective.SourceDirs)); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "# effective_target_dir = %q\n", effective.TargetDir); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "# effective_profiles = [%s]\n", quoteList(effective.Profiles)); err != nil {
+		return err
+	}
+	return nil
+}
+
+type configEffective struct {
+	SourceDirs []string
+	TargetDir  string
+	Profiles   []string
+}
+
+func resolveConfigEffective(raw rawLoadedConfig) (configEffective, error) {
+	configBase, configExists := configBaseFromReport(raw.Report)
+	sources, err := resolveSourceDirs(nil, raw.Config, raw.Report, configBase, configExists)
+	if err != nil {
+		return configEffective{}, err
+	}
+	target, _, err := resolvePath(configPathTarget, raw.Config.Target, raw.Report, configBase, configExists)
+	if err != nil {
+		return configEffective{}, err
+	}
+	profiles, _ := effectiveProfiles(raw.Config)
+	if err := config.ValidateProfiles(profiles); err != nil {
+		return configEffective{}, err
+	}
+	return configEffective{
+		SourceDirs: sources.dirs,
+		TargetDir:  target,
+		Profiles:   profiles,
+	}, nil
+}
+
+func quoteList(values []string) string {
+	quoted := make([]string, len(values))
+	for i, value := range values {
+		quoted[i] = fmt.Sprintf("%q", value)
+	}
+	return strings.Join(quoted, ", ")
 }

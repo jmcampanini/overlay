@@ -628,13 +628,13 @@ env_profiles = "TEST_EXTRA_PROFILES"
 	}
 }
 
-func TestPrintRawConfigReportsRawValues(t *testing.T) {
+func TestPrintConfigReportsRawAndEffectiveValues(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	cfgPath := filepath.Join(dir, ".overlay.toml")
 	writeFile(t, cfgPath, `
 sources = ["pkgs"]
-target = "~/out"
+target = "out"
 profiles = ["work"]
 env_profiles = "DOTFILES_PROFILE"
 `)
@@ -645,27 +645,33 @@ env_profiles = "DOTFILES_PROFILE"
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := printRawConfig(&buf, raw); err != nil {
+	if err := printConfig(&buf, raw); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
 	for _, want := range []string{
 		`sources = ["pkgs"]`,
-		`target = "~/out"`,
+		`target = "out"`,
 		`profiles = ["work"]`,
 		`env_profiles = "DOTFILES_PROFILE"`,
 		"# provenance",
+		`# loaded_files = ["` + cfgPath + `"]`,
+		`# effective_source_dirs = ["` + filepath.Join(dir, "pkgs") + `"]`,
+		`# effective_target_dir = "` + filepath.Join(dir, "out") + `"`,
+		`# effective_profiles = ["work", "vpn"]`,
 	} {
 		if !strings.Contains(out, want) {
-			t.Fatalf("raw config output missing %q:\n%s", want, out)
+			t.Fatalf("config output missing %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "vpn") {
-		t.Fatalf("raw config output should not include effective env profile:\n%s", out)
+	for _, line := range strings.Split(out, "\n") {
+		if line == `profiles = ["work", "vpn"]` {
+			t.Fatalf("raw TOML should not include effective env profile:\n%s", out)
+		}
 	}
 }
 
-func TestPrintRawConfigDoesNotRequireTarget(t *testing.T) {
+func TestPrintConfigDoesNotRequireTarget(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	cmd, g := setupCmd(t, nil)
@@ -674,10 +680,10 @@ func TestPrintRawConfigDoesNotRequireTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := printRawConfig(&buf, raw); err != nil {
+	if err := printConfig(&buf, raw); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), `target = ""`) {
-		t.Fatalf("raw config output should include empty raw target:\n%s", buf.String())
+		t.Fatalf("config output should include empty raw target:\n%s", buf.String())
 	}
 }
