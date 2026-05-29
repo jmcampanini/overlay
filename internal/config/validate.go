@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	pathpkg "path"
+	"path/filepath"
 	"slices"
 	"strings"
 )
@@ -22,7 +24,10 @@ func (c Config) Validate() error {
 			return fmt.Errorf("sources contains an empty source directory")
 		}
 	}
-	return ValidateProfiles(c.Profiles)
+	if err := ValidateProfiles(c.Profiles); err != nil {
+		return err
+	}
+	return ValidateRenderRules(c.RenderRules)
 }
 
 // ValidateProfiles checks profile names after env_profiles has been applied.
@@ -33,6 +38,46 @@ func ValidateProfiles(profiles []string) error {
 		}
 	}
 	return nil
+}
+
+// ValidateRenderRules checks render rule paths, strategies, and duplicates.
+func ValidateRenderRules(rules []RenderRule) error {
+	seen := make(map[string]int, len(rules))
+	for i, rule := range rules {
+		normalized, err := NormalizeRenderRulePath(rule.Path)
+		if err != nil {
+			return fmt.Errorf("render_rules[%d].path: %w", i, err)
+		}
+		switch rule.Strategy {
+		case RenderStrategyAppend, RenderStrategyCopy:
+		case "":
+			return fmt.Errorf("render_rules[%d].strategy is required", i)
+		default:
+			return fmt.Errorf("render_rules[%d].strategy %q is unsupported (supported: append, copy)", i, rule.Strategy)
+		}
+		if prev, ok := seen[normalized]; ok {
+			return fmt.Errorf("render_rules[%d].path duplicates render_rules[%d].path %q", i, prev, normalized)
+		}
+		seen[normalized] = i
+	}
+	return nil
+}
+
+// NormalizeRenderRulePath returns the slash-separated path key used for matching.
+func NormalizeRenderRulePath(p string) (string, error) {
+	if strings.TrimSpace(p) == "" {
+		return "", fmt.Errorf("path is required")
+	}
+	if filepath.IsAbs(p) || pathpkg.IsAbs(filepath.ToSlash(p)) {
+		return "", fmt.Errorf("path must be target-relative")
+	}
+	slash := filepath.ToSlash(p)
+	for _, part := range strings.Split(slash, "/") {
+		if part == ".." {
+			return "", fmt.Errorf("path must not contain '..'")
+		}
+	}
+	return pathpkg.Clean(slash), nil
 }
 
 // ValidateFile parses the file at path and reports schema problems as an

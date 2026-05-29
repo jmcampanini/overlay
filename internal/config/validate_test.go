@@ -119,3 +119,128 @@ func TestValidateMalformedTOML(t *testing.T) {
 		t.Error("expected parse error")
 	}
 }
+
+func TestValidateRenderRulesValid(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".overlay.toml")
+	writeFile(t, path, `
+target = "~/"
+
+[[render_rules]]
+path = ".npmrc"
+strategy = "append"
+
+[[render_rules]]
+path = ".some/generated.json"
+strategy = "copy"
+`)
+	if err := ValidateFile(path); err != nil {
+		t.Errorf("expected valid render rules, got: %v", err)
+	}
+}
+
+func TestValidateRenderRulesRejectsInvalidConfig(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "missing path",
+			body: `[[render_rules]]
+strategy = "append"`,
+			want: "path",
+		},
+		{
+			name: "empty path",
+			body: `[[render_rules]]
+path = ""
+strategy = "append"`,
+			want: "path",
+		},
+		{
+			name: "absolute path",
+			body: `[[render_rules]]
+path = "/.npmrc"
+strategy = "append"`,
+			want: "target-relative",
+		},
+		{
+			name: "path traversal",
+			body: `[[render_rules]]
+path = "../.npmrc"
+strategy = "append"`,
+			want: "..",
+		},
+		{
+			name: "nested path traversal",
+			body: `[[render_rules]]
+path = ".ssh/../config"
+strategy = "append"`,
+			want: "..",
+		},
+		{
+			name: "missing strategy",
+			body: `[[render_rules]]
+path = ".npmrc"`,
+			want: "strategy",
+		},
+		{
+			name: "unsupported merge",
+			body: `[[render_rules]]
+path = ".npmrc"
+strategy = "merge"`,
+			want: "unsupported",
+		},
+		{
+			name: "unsupported auto",
+			body: `[[render_rules]]
+path = ".npmrc"
+strategy = "auto"`,
+			want: "unsupported",
+		},
+		{
+			name: "unsupported replace",
+			body: `[[render_rules]]
+path = ".npmrc"
+strategy = "replace"`,
+			want: "unsupported",
+		},
+		{
+			name: "duplicate normalized path",
+			body: `[[render_rules]]
+path = "./.npmrc"
+strategy = "append"
+
+[[render_rules]]
+path = ".npmrc"
+strategy = "copy"`,
+			want: "duplicates",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, ".overlay.toml")
+			writeFile(t, path, "target = \"~/\"\n\n"+tc.body)
+			err := ValidateFile(path)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeRenderRulePath(t *testing.T) {
+	got, err := NormalizeRenderRulePath("./.ssh//config")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != ".ssh/config" {
+		t.Errorf("NormalizeRenderRulePath = %q, want .ssh/config", got)
+	}
+}

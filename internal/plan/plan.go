@@ -10,14 +10,26 @@ import (
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
 
+	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/jmcampanini/overlay/internal/discover"
-	"github.com/jmcampanini/overlay/internal/document"
+	"github.com/jmcampanini/overlay/internal/rendermode"
 )
 
-// Render writes an aligned table of groups to w, with columns
-// TARGET, FORMAT, LAYERS. The header summarizes the active profile
-// set and source/target directories.
+// Options controls plan rendering.
+type Options struct {
+	RenderRules []config.RenderRule
+}
+
+// Render writes an aligned table of groups using default rendering options.
 func Render(w io.Writer, groups []discover.Group, profiles []string, sourceDirs []string, targetDir string) error {
+	return RenderWithOptions(w, groups, profiles, sourceDirs, targetDir, Options{})
+}
+
+// RenderWithOptions writes an aligned table with columns TARGET, MODE, LAYERS.
+func RenderWithOptions(w io.Writer, groups []discover.Group, profiles []string, sourceDirs []string, targetDir string, opts Options) error {
+	if err := config.ValidateRenderRules(opts.RenderRules); err != nil {
+		return err
+	}
 	if _, err := fmt.Fprintf(w, "Active profiles: [%s]\n", strings.Join(profiles, ", ")); err != nil {
 		return err
 	}
@@ -36,10 +48,14 @@ func Render(w io.Writer, groups []discover.Group, profiles []string, sourceDirs 
 			}
 			return cellStyle
 		}).
-		Headers("TARGET", "FORMAT", "LAYERS")
+		Headers("TARGET", "MODE", "LAYERS")
 
 	for _, g := range groups {
-		t.Row(collapseHome(g.TargetPath), g.Format.String(), layerDisplay(g))
+		mode, err := rendermode.ForGroup(g, targetDir, opts.RenderRules)
+		if err != nil {
+			return err
+		}
+		t.Row(collapseHome(g.TargetPath), mode.String(), layerDisplay(g, mode))
 	}
 
 	if _, err := fmt.Fprintln(w, t.Render()); err != nil {
@@ -53,13 +69,13 @@ func Render(w io.Writer, groups []discover.Group, profiles []string, sourceDirs 
 	return err
 }
 
-func layerDisplay(g discover.Group) string {
+func layerDisplay(g discover.Group, mode rendermode.Mode) string {
 	layers := make([]string, len(g.Layers))
 	for i, l := range g.Layers {
 		layers[i] = l.Profile
 	}
 	display := strings.Join(layers, ", ")
-	if g.Format == document.FormatCopy && len(layers) > 0 {
+	if mode == rendermode.ModeCopy && len(layers) > 0 {
 		display += " (winner: " + layers[len(layers)-1] + ")"
 	}
 	return display

@@ -10,10 +10,12 @@ import (
 
 	"charm.land/log/v2"
 
+	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/jmcampanini/overlay/internal/discover"
 	"github.com/jmcampanini/overlay/internal/document"
 	"github.com/jmcampanini/overlay/internal/logging"
 	"github.com/jmcampanini/overlay/internal/merge"
+	"github.com/jmcampanini/overlay/internal/rendermode"
 )
 
 // Options carries everything Run needs beyond the resolved discover.Settings.
@@ -21,12 +23,15 @@ type Options struct {
 	Settings         discover.Settings
 	ContinueOnError  bool
 	TOMLIndentTables bool
+	RenderRules      []config.RenderRule
 	Logger           *log.Logger
 }
 
 // MergeOptions controls output formatting for merged groups.
 type MergeOptions struct {
 	TOMLIndentTables bool
+	RenderRules      []config.RenderRule
+	TargetDir        string
 }
 
 // Run discovers groups, merges, and writes each output file. When
@@ -36,6 +41,9 @@ type MergeOptions struct {
 func Run(opts Options) error {
 	if opts.Logger == nil {
 		opts.Logger = log.Default()
+	}
+	if err := config.ValidateRenderRules(opts.RenderRules); err != nil {
+		return err
 	}
 	result, err := discover.WalkDetailed(opts.Settings)
 	if err != nil {
@@ -52,7 +60,11 @@ func Run(opts Options) error {
 	}
 
 	var failed int
-	mergeOptions := MergeOptions{TOMLIndentTables: opts.TOMLIndentTables}
+	mergeOptions := MergeOptions{
+		TOMLIndentTables: opts.TOMLIndentTables,
+		RenderRules:      opts.RenderRules,
+		TargetDir:        opts.Settings.TargetDir,
+	}
 	for _, g := range groups {
 		if err := renderGroup(g, opts.Logger, mergeOptions); err != nil {
 			if opts.ContinueOnError {
@@ -99,16 +111,23 @@ func renderGroup(g discover.Group, logger *log.Logger, opts MergeOptions) error 
 
 // MergeGroup loads each layer of a structured group, folds them with
 // merge.Merge, and serializes the result. Copy-through groups return the
-// winning layer's bytes. It performs no disk writes — callers use this from
-// both render.Run (to disk) and diff.Run (in-memory compare).
+// winning layer's bytes and append groups concatenate active layers. It performs
+// no disk writes — callers use this from both render.Run and diff.Run.
 func MergeGroup(g discover.Group) ([]byte, error) {
 	return MergeGroupWithOptions(g, MergeOptions{})
 }
 
 // MergeGroupWithOptions is MergeGroup with output formatting options.
 func MergeGroupWithOptions(g discover.Group, opts MergeOptions) ([]byte, error) {
-	if g.Format == document.FormatCopy {
+	mode, err := rendermode.ForGroup(g, opts.TargetDir, opts.RenderRules)
+	if err != nil {
+		return nil, err
+	}
+	switch mode {
+	case rendermode.ModeCopy:
 		return copyWinningLayer(g)
+	case rendermode.ModeAppend:
+		return appendLayers(g)
 	}
 
 	var merged any = map[string]any{}
@@ -138,6 +157,27 @@ func copyWinningLayer(g discover.Group) ([]byte, error) {
 		return nil, fmt.Errorf("read %s: %w", winner.Path, err)
 	}
 	return data, nil
+}
+
+func appendLayers(g discover.Group) ([]byte, error) {
+	if len(g.Layers) == 0 {
+		return nil, fmt.Errorf("append group %q has no active layers", g.Stem)
+	}
+	var out []byte
+	for _, layer := range g.Layers {
+		data, err := os.ReadFile(layer.Path)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", layer.Path, err)
+		}
+		if len(data) == 0 {
+			continue
+		}
+		if len(out) > 0 && out[len(out)-1] != '\n' {
+			out = append(out, '\n')
+		}
+		out = append(out, data...)
+	}
+	return out, nil
 }
 
 func layerNames(g discover.Group) string {

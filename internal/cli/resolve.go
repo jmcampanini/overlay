@@ -106,6 +106,9 @@ func Resolve(cmd *cobra.Command, g *GlobalFlags, positionalSources ...string) (R
 	}
 
 	cfg := raw.Config
+	if err := config.ValidateRenderRules(cfg.RenderRules); err != nil {
+		return r, err
+	}
 	sources, err := resolveSourceDirs(positionalSources, cfg, raw.Report, configBase, configExists)
 	if err != nil {
 		return r, err

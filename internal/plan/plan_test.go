@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/jmcampanini/overlay/internal/discover"
 	"github.com/jmcampanini/overlay/internal/document"
 )
@@ -45,8 +46,14 @@ func TestRenderBasic(t *testing.T) {
 	if !strings.Contains(out, "2 files will be generated") {
 		t.Errorf("missing summary line:\n%s", out)
 	}
-	if !strings.Contains(out, "TARGET") || !strings.Contains(out, "FORMAT") || !strings.Contains(out, "LAYERS") {
+	if !strings.Contains(out, "TARGET") || !strings.Contains(out, "MODE") || !strings.Contains(out, "LAYERS") {
 		t.Errorf("missing column headers:\n%s", out)
+	}
+	if strings.Contains(out, "FORMAT") {
+		t.Errorf("plan should display MODE, not FORMAT:\n%s", out)
+	}
+	if !strings.Contains(out, "merge") {
+		t.Errorf("missing merge mode:\n%s", out)
 	}
 	if !strings.Contains(out, "settings.json") {
 		t.Errorf("missing settings.json row:\n%s", out)
@@ -78,6 +85,59 @@ func TestRenderCopyThroughShowsWinner(t *testing.T) {
 	}
 	if !strings.Contains(out, "base, work (winner: work)") {
 		t.Fatalf("missing copy winner:\n%s", out)
+	}
+}
+
+func TestRenderAppendRuleShowsAppendMode(t *testing.T) {
+	groups := []discover.Group{
+		{
+			Stem:       "dot-npmrc",
+			Format:     document.FormatCopy,
+			TargetPath: "/tmp/out/.npmrc",
+			Layers: []discover.Layer{
+				{Profile: "base"},
+				{Profile: "work"},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	err := RenderWithOptions(&buf, groups, []string{"work"}, []string{"./src"}, "/tmp/out", Options{
+		RenderRules: []config.RenderRule{{Path: ".npmrc", Strategy: config.RenderStrategyAppend}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "append") {
+		t.Fatalf("missing append mode:\n%s", out)
+	}
+	if strings.Contains(out, "winner") {
+		t.Fatalf("append mode should not show a copy winner:\n%s", out)
+	}
+}
+
+func TestRenderCopyOverrideShowsWinnerForJSON(t *testing.T) {
+	groups := []discover.Group{
+		{
+			Stem:       "settings",
+			Format:     document.FormatJSON,
+			TargetPath: "/tmp/out/settings.json",
+			Layers: []discover.Layer{
+				{Profile: "base"},
+				{Profile: "work"},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	err := RenderWithOptions(&buf, groups, []string{"work"}, []string{"./src"}, "/tmp/out", Options{
+		RenderRules: []config.RenderRule{{Path: "settings.json", Strategy: config.RenderStrategyCopy}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "copy") || !strings.Contains(out, "winner: work") {
+		t.Fatalf("missing copy override/winner:\n%s", out)
 	}
 }
 
