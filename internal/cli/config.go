@@ -47,8 +47,8 @@ For the full schema reference with field descriptions, run: overlay docs`,
 }
 
 func printConfig(w io.Writer, raw rawLoadedConfig) error {
-	effective := deriveConfigEffective(raw)
-	effectiveErrors := validateConfigEffective(raw, effective)
+	effective := deriveEffectiveConfig(raw)
+	effectiveErrors := validateEffectiveConfig(raw, effective)
 
 	notFound := ""
 	if len(raw.Report.LoadedFiles) == 0 {
@@ -65,7 +65,7 @@ func printConfig(w io.Writer, raw rawLoadedConfig) error {
 	if err := writeConfigProvenance(w, reporter, raw.Report.LoadedFiles); err != nil {
 		return err
 	}
-	return writeConfigEffective(w, effective, effectiveErrors)
+	return writeEffectiveConfig(w, effective, effectiveErrors)
 }
 
 func writeConfigProvenance(w io.Writer, reporter configreporter.Reporter[config.Config], loadedFiles []string) error {
@@ -92,7 +92,7 @@ func writeConfigProvenance(w io.Writer, reporter configreporter.Reporter[config.
 	return nil
 }
 
-func writeConfigEffective(w io.Writer, effective configEffective, effectiveErrors []configEffectiveError) error {
+func writeEffectiveConfig(w io.Writer, effective effectiveConfig, effectiveErrors []effectiveConfigError) error {
 	if _, err := fmt.Fprintln(w, "\n# effective:"); err != nil {
 		return err
 	}

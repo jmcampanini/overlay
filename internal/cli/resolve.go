@@ -79,26 +79,26 @@ type rawLoadedConfig struct {
 	ConfigPath string
 }
 
-type configEffective struct {
+type effectiveConfig struct {
 	SourceDirs       []string
 	SourceLabels     []string
 	TargetDir        string
 	Profiles         []string
 	ContinueOnError  bool
 	Provenance       Provenances
-	DerivationErrors []configEffectiveError
+	DerivationErrors []effectiveConfigError
 }
 
-type configEffectiveError struct {
+type effectiveConfigError struct {
 	Field string
 	Err   error
 }
 
 type sourceResolution struct {
-	dirs       []string
-	labels     []string
-	provenance Provenance
-	errors     []configEffectiveError
+	dirs             []string
+	labels           []string
+	provenance       Provenance
+	derivationErrors []effectiveConfigError
 }
 
 // Resolve merges config file, environment variables, and CLI flags into a
@@ -115,10 +115,11 @@ func Resolve(cmd *cobra.Command, g *GlobalFlags, positionalSources ...string) (R
 	}
 	r.RawConfig = raw.Config
 
-	effective := deriveConfigEffective(raw, positionalSources...)
+	effective := deriveEffectiveConfig(raw, positionalSources...)
 	r.Provenance = effective.Provenance
 	r.SourceLabels = effective.SourceLabels
-	if err := firstConfigEffectiveError(validateConfigEffective(raw, effective)); err != nil {
+	effectiveErrors := validateEffectiveConfig(raw, effective)
+	if err := firstEffectiveConfigError(effectiveErrors); err != nil {
 		return r, err
 	}
 	r.ContinueOnError = effective.ContinueOnError
@@ -179,7 +180,7 @@ func configBaseFromReport(report configloader.LoadReport) (string, bool) {
 	return filepath.Dir(report.LoadedFiles[0]), true
 }
 
-func deriveConfigEffective(raw rawLoadedConfig, positionalSources ...string) configEffective {
+func deriveEffectiveConfig(raw rawLoadedConfig, positionalSources ...string) effectiveConfig {
 	configBase, configExists := configBaseFromReport(raw.Report)
 	cfg := raw.Config
 
@@ -187,12 +188,16 @@ func deriveConfigEffective(raw rawLoadedConfig, positionalSources ...string) con
 	target, targetProv, targetErrors := derivePath(configPathTarget, cfg.Target, raw.Report, configBase, configExists)
 	profiles, envContributed := effectiveProfiles(cfg)
 
-	effective := configEffective{
-		SourceDirs:      sources.dirs,
-		SourceLabels:    sources.labels,
-		TargetDir:       target,
-		Profiles:        profiles,
-		ContinueOnError: cfg.ContinueOnError,
+	derivationErrors := append([]effectiveConfigError(nil), sources.derivationErrors...)
+	derivationErrors = append(derivationErrors, targetErrors...)
+
+	return effectiveConfig{
+		SourceDirs:       sources.dirs,
+		SourceLabels:     sources.labels,
+		TargetDir:        target,
+		Profiles:         profiles,
+		ContinueOnError:  cfg.ContinueOnError,
+		DerivationErrors: derivationErrors,
 		Provenance: Provenances{
 			Source:          sources.provenance,
 			Target:          targetProv,
@@ -200,26 +205,21 @@ func deriveConfigEffective(raw rawLoadedConfig, positionalSources ...string) con
 			ContinueOnError: provenanceFromReport(raw.Report, configPathContinueOnError),
 		},
 	}
-	effective.DerivationErrors = append(effective.DerivationErrors, sources.errors...)
-	effective.DerivationErrors = append(effective.DerivationErrors, targetErrors...)
-	return effective
 }
 
 func deriveSourceDirs(positional []string, cfg config.Config, report configloader.LoadReport, configBase string, configExists bool) sourceResolution {
 	if len(positional) > 0 {
-		values := append([]string(nil), positional...)
-		return deriveSourceValues(configPathSources, values, values, ProvFlag, configExists, configBase)
+		return deriveSourceValues(positional, ProvFlag, configExists, configBase)
 	}
 
 	sourcesSource := report.Updates[configPathSources]
-	values := append([]string(nil), cfg.Sources...)
 	anchor := sourceIsFile(sourcesSource) || (sourcesSource == configloader.SourceDefault && configExists)
-	return deriveSourceValues(configPathSources, values, values, provenanceFromSource(sourcesSource), anchor, configBase)
+	return deriveSourceValues(cfg.Sources, provenanceFromSource(sourcesSource), anchor, configBase)
 }
 
-func deriveSourceValues(name string, values, labels []string, prov Provenance, anchor bool, configBase string) sourceResolution {
+func deriveSourceValues(values []string, prov Provenance, anchor bool, configBase string) sourceResolution {
 	dirs := make([]string, 0, len(values))
-	var errors []configEffectiveError
+	var derivationErrors []effectiveConfigError
 	for _, value := range values {
 		if strings.TrimSpace(value) == "" {
 			dirs = append(dirs, value)
@@ -231,7 +231,7 @@ func deriveSourceValues(name string, values, labels []string, prov Provenance, a
 		}
 		expanded, err := discover.ExpandPath(p)
 		if err != nil {
-			errors = append(errors, configEffectiveError{Field: name, Err: fmt.Errorf("expand %s: %w", name, err)})
+			derivationErrors = append(derivationErrors, effectiveConfigError{Field: configPathSources, Err: fmt.Errorf("expand %s: %w", configPathSources, err)})
 			dirs = append(dirs, p)
 			continue
 		}
@@ -239,14 +239,14 @@ func deriveSourceValues(name string, values, labels []string, prov Provenance, a
 	}
 
 	return sourceResolution{
-		dirs:       dirs,
-		labels:     append([]string(nil), labels...),
-		provenance: prov,
-		errors:     errors,
+		dirs:             dirs,
+		labels:           append([]string(nil), values...),
+		provenance:       prov,
+		derivationErrors: derivationErrors,
 	}
 }
 
-func derivePath(name, value string, report configloader.LoadReport, configBase string, configExists bool) (string, Provenance, []configEffectiveError) {
+func derivePath(name, value string, report configloader.LoadReport, configBase string, configExists bool) (string, Provenance, []effectiveConfigError) {
 	source := report.Updates[name]
 	p := value
 	if sourceIsFile(source) || (source == configloader.SourceDefault && configExists) {
@@ -255,32 +255,32 @@ func derivePath(name, value string, report configloader.LoadReport, configBase s
 	prov := provenanceFromSource(source)
 	expanded, err := discover.ExpandPath(p)
 	if err != nil {
-		return p, prov, []configEffectiveError{{Field: name, Err: fmt.Errorf("expand %s: %w", name, err)}}
+		return p, prov, []effectiveConfigError{{Field: name, Err: fmt.Errorf("expand %s: %w", name, err)}}
 	}
 	return expanded, prov, nil
 }
 
-func validateConfigEffective(raw rawLoadedConfig, effective configEffective) []configEffectiveError {
-	errors := append([]configEffectiveError(nil), effective.DerivationErrors...)
+func validateEffectiveConfig(raw rawLoadedConfig, effective effectiveConfig) []effectiveConfigError {
+	errors := append([]effectiveConfigError(nil), effective.DerivationErrors...)
 	if len(effective.SourceDirs) == 0 {
-		errors = append(errors, configEffectiveError{Field: configPathSources, Err: fmt.Errorf("%s is empty", configPathSources)})
+		errors = append(errors, effectiveConfigError{Field: configPathSources, Err: fmt.Errorf("%s is empty", configPathSources)})
 	}
 	for _, source := range effective.SourceDirs {
 		if strings.TrimSpace(source) == "" {
-			errors = append(errors, configEffectiveError{Field: configPathSources, Err: fmt.Errorf("%s contains an empty source directory", configPathSources)})
+			errors = append(errors, effectiveConfigError{Field: configPathSources, Err: fmt.Errorf("%s contains an empty source directory", configPathSources)})
 			break
 		}
 	}
 	if effective.TargetDir == "" {
-		errors = append(errors, configEffectiveError{Field: configPathTarget, Err: fmt.Errorf("target is required (set in %s or pass --target)", raw.ConfigPath)})
+		errors = append(errors, effectiveConfigError{Field: configPathTarget, Err: fmt.Errorf("target is required (set in %s or pass --target)", raw.ConfigPath)})
 	}
 	if err := config.ValidateProfiles(effective.Profiles); err != nil {
-		errors = append(errors, configEffectiveError{Field: configPathProfiles, Err: err})
+		errors = append(errors, effectiveConfigError{Field: configPathProfiles, Err: err})
 	}
 	return errors
 }
 
-func firstConfigEffectiveError(errors []configEffectiveError) error {
+func firstEffectiveConfigError(errors []effectiveConfigError) error {
 	if len(errors) == 0 {
 		return nil
 	}
