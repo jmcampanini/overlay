@@ -171,7 +171,7 @@ Run `overlay config` to see loaded values, GoConfigLoader provenance, and commen
 | `overlay render` | Merge active layers and write output files to the target. |
 | `overlay diff` | Print a git-style unified diff vs. the current target files. Exit 1 if any file differs. |
 | `overlay plan` | Dry-run: print an aligned table of what would be generated. |
-| `overlay config` | Print loaded configuration, GoConfigLoader provenance, and effective runtime comments. `--validate <path>` schema-checks a file. |
+| `overlay config` | Print loaded configuration, GoConfigLoader provenance, and effective runtime comments. `--validate <path>` validates the effective runtime config for a file using env vars and config-backed flags. |
 | `overlay docs` | Print the full `.overlay.toml` schema reference. |
 
 For the complete config schema run `overlay docs`. Every subcommand

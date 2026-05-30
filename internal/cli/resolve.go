@@ -24,6 +24,8 @@ const (
 	configPathTarget          = "target"
 	configPathProfiles        = "profiles"
 	configPathContinueOnError = "continueonerror"
+	configPathIgnore          = "ignore"
+	configPathRenderRules     = "render_rules"
 )
 
 // Provenance identifies which raw source produced a setting's value.
@@ -70,6 +72,7 @@ type Resolved struct {
 	Logger          *log.Logger
 	Provenance      Provenances
 	RawConfig       config.Config
+	Effective       effectiveConfig
 	SourceLabels    []string
 }
 
@@ -83,8 +86,14 @@ type effectiveConfig struct {
 	SourceDirs       []string
 	SourceLabels     []string
 	TargetDir        string
+	DotPrefix        bool
 	Profiles         []string
 	ContinueOnError  bool
+	TOMLIndentTables bool
+	Ignore           []string
+	TraverseHidden   bool
+	RespectGitignore bool
+	RenderRules      []config.RenderRule
 	Provenance       Provenances
 	DerivationErrors []effectiveConfigError
 }
@@ -116,6 +125,7 @@ func Resolve(cmd *cobra.Command, g *GlobalFlags, positionalSources ...string) (R
 	r.RawConfig = raw.Config
 
 	effective := deriveEffectiveConfig(raw, positionalSources...)
+	r.Effective = effective
 	r.Provenance = effective.Provenance
 	r.SourceLabels = effective.SourceLabels
 	effectiveErrors := validateEffectiveConfig(raw, effective)
@@ -124,7 +134,7 @@ func Resolve(cmd *cobra.Command, g *GlobalFlags, positionalSources ...string) (R
 	}
 	r.ContinueOnError = effective.ContinueOnError
 
-	globIgn, err := discover.NewGlobIgnorer(raw.Config.Ignore)
+	globIgn, err := discover.NewGlobIgnorer(effective.Ignore)
 	if err != nil {
 		return r, err
 	}
@@ -132,11 +142,11 @@ func Resolve(cmd *cobra.Command, g *GlobalFlags, positionalSources ...string) (R
 	r.Settings = discover.Settings{
 		SourceDirs:       effective.SourceDirs,
 		TargetDir:        effective.TargetDir,
-		DotPrefix:        raw.Config.DotPrefix,
+		DotPrefix:        effective.DotPrefix,
 		Profiles:         effective.Profiles,
 		Ignore:           globIgn,
-		TraverseHidden:   raw.Config.TraverseHidden,
-		RespectGitignore: raw.Config.RespectGitignore,
+		TraverseHidden:   effective.TraverseHidden,
+		RespectGitignore: effective.RespectGitignore,
 	}
 	return r, nil
 }
@@ -147,8 +157,11 @@ func loadRawConfig(cmd *cobra.Command, g *GlobalFlags) (rawLoadedConfig, error) 
 	if cfgPath == "" {
 		cfgPath = config.DefaultFilename
 	}
+	return loadRawConfigFromPath(cmd, cfgPath, configExplicit)
+}
 
-	fileLoader, err := config.NewFileLoader(cfgPath, configExplicit)
+func loadRawConfigFromPath(cmd *cobra.Command, cfgPath string, required bool) (rawLoadedConfig, error) {
+	fileLoader, err := config.NewFileLoader(cfgPath, required)
 	if err != nil {
 		return rawLoadedConfig{}, err
 	}
@@ -187,16 +200,26 @@ func deriveEffectiveConfig(raw rawLoadedConfig, positionalSources ...string) eff
 	sources := deriveSourceDirs(positionalSources, cfg, raw.Report, configBase, configExists)
 	target, targetProv, targetErrors := derivePath(configPathTarget, cfg.Target, raw.Report, configBase, configExists)
 	profiles, envContributed := effectiveProfiles(cfg)
+	ignore, ignoreErrors := deriveIgnorePatterns(cfg.Ignore)
+	renderRules, renderRuleErrors := deriveRenderRules(cfg.RenderRules)
 
 	derivationErrors := append([]effectiveConfigError(nil), sources.derivationErrors...)
 	derivationErrors = append(derivationErrors, targetErrors...)
+	derivationErrors = append(derivationErrors, ignoreErrors...)
+	derivationErrors = append(derivationErrors, renderRuleErrors...)
 
 	return effectiveConfig{
 		SourceDirs:       sources.dirs,
 		SourceLabels:     sources.labels,
 		TargetDir:        target,
+		DotPrefix:        cfg.DotPrefix,
 		Profiles:         profiles,
 		ContinueOnError:  cfg.ContinueOnError,
+		TOMLIndentTables: cfg.TOMLIndentTables,
+		Ignore:           ignore,
+		TraverseHidden:   cfg.TraverseHidden,
+		RespectGitignore: cfg.RespectGitignore,
+		RenderRules:      renderRules,
 		DerivationErrors: derivationErrors,
 		Provenance: Provenances{
 			Source:          sources.provenance,
@@ -260,6 +283,22 @@ func derivePath(name, value string, report configloader.LoadReport, configBase s
 	return expanded, prov, nil
 }
 
+func deriveIgnorePatterns(patterns []string) ([]string, []effectiveConfigError) {
+	normalized, err := discover.NormalizeGlobPatterns(patterns)
+	if err != nil {
+		return append([]string(nil), patterns...), []effectiveConfigError{{Field: configPathIgnore, Err: err}}
+	}
+	return normalized, nil
+}
+
+func deriveRenderRules(rules []config.RenderRule) ([]config.RenderRule, []effectiveConfigError) {
+	normalized, err := config.NormalizeRenderRules(rules)
+	if err != nil {
+		return append([]config.RenderRule(nil), rules...), []effectiveConfigError{{Field: configPathRenderRules, Err: err}}
+	}
+	return normalized, nil
+}
+
 func validateEffectiveConfig(raw rawLoadedConfig, effective effectiveConfig) []effectiveConfigError {
 	errors := append([]effectiveConfigError(nil), effective.DerivationErrors...)
 	if len(effective.SourceDirs) == 0 {
@@ -276,9 +315,6 @@ func validateEffectiveConfig(raw rawLoadedConfig, effective effectiveConfig) []e
 	}
 	if err := config.ValidateProfiles(effective.Profiles); err != nil {
 		errors = append(errors, effectiveConfigError{Field: configPathProfiles, Err: err})
-	}
-	if err := config.ValidateRenderRules(raw.Config.RenderRules); err != nil {
-		errors = append(errors, effectiveConfigError{Field: "render_rules", Err: err})
 	}
 	return errors
 }

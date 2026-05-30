@@ -30,8 +30,8 @@ func newDiffCmd() *cobra.Command {
 			differ, err := diff.Run(diff.Options{
 				Settings:         r.Settings,
 				ContinueOnError:  r.ContinueOnError,
-				TOMLIndentTables: r.RawConfig.TOMLIndentTables,
-				RenderRules:      r.RawConfig.RenderRules,
+				TOMLIndentTables: r.Effective.TOMLIndentTables,
+				RenderRules:      r.Effective.RenderRules,
 				Logger:           r.Logger,
 				Out:              os.Stdout,
 			})

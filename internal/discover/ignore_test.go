@@ -66,6 +66,27 @@ func TestGlobIgnorerInvalidPatternErrors(t *testing.T) {
 	}
 }
 
+func TestNormalizeGlobPatterns(t *testing.T) {
+	got, err := NormalizeGlobPatterns([]string{"", " node_modules ", "vendor/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"node_modules", "vendor/"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("NormalizeGlobPatterns = %v, want %v", got, want)
+	}
+}
+
+func TestValidateGlobPatternsInvalidPatternErrors(t *testing.T) {
+	err := ValidateGlobPatterns([]string{"[unclosed"})
+	if err == nil {
+		t.Fatal("expected error for invalid glob pattern")
+	}
+	if !strings.Contains(err.Error(), "invalid ignore pattern") {
+		t.Errorf("error should mention 'invalid ignore pattern': %v", err)
+	}
+}
+
 func TestNoopIgnorer(t *testing.T) {
 	ign := NoopIgnorer()
 	if ign.Match("anything", true) {

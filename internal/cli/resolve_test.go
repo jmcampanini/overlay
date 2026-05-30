@@ -671,6 +671,47 @@ env_profiles = "TEST_EXTRA_PROFILES"
 	}
 }
 
+func TestResolveRejectsInvalidIgnorePatternDuringEffectiveValidation(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+ignore = ["[bad"]
+`)
+	cmd, g := setupCmd(t, nil)
+	_, err := Resolve(cmd, g)
+	if err == nil {
+		t.Fatal("expected invalid ignore pattern error")
+	}
+	if !strings.Contains(err.Error(), `invalid ignore pattern "[bad"`) {
+		t.Fatalf("error = %v, want invalid ignore pattern", err)
+	}
+}
+
+func TestResolveCarriesNormalizedRenderRules(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+
+[[render_rules]]
+path = "./.npmrc"
+strategy = "append"
+`)
+	cmd, g := setupCmd(t, nil)
+	r, err := Resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Effective.RenderRules) != 1 {
+		t.Fatalf("render rules = %#v, want one rule", r.Effective.RenderRules)
+	}
+	got := r.Effective.RenderRules[0]
+	if got.Path != ".npmrc" || got.Strategy != "append" {
+		t.Fatalf("render rule = %#v, want normalized .npmrc append", got)
+	}
+}
+
 func TestPrintConfigReportsRawAndEffectiveValues(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -786,6 +827,17 @@ target = "$OVERLAY_TEST_MISSING_TARGET/out"
 				`# target = "expand target: undefined environment variable(s): OVERLAY_TEST_MISSING_TARGET"`,
 			},
 		},
+		{
+			name: "invalid ignore pattern",
+			toml: `
+target = "/tmp/out"
+ignore = ["[bad"]
+`,
+			want: []string{
+				`ignore = ["[bad"]`,
+				`# ignore = "invalid ignore pattern \"[bad\"`,
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -839,6 +891,55 @@ func TestPrintConfigDoesNotRequireTarget(t *testing.T) {
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("config output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRunConfigValidateRejectsInvalidIgnorePattern(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".overlay.toml")
+	writeFile(t, cfgPath, `
+target = "/tmp/out"
+ignore = ["[bad"]
+`)
+	cmd, _ := setupCmd(t, nil)
+	err := runConfigValidate(cmd, cfgPath)
+	if err == nil {
+		t.Fatal("expected invalid ignore pattern error")
+	}
+	if !strings.Contains(err.Error(), `ignore: invalid ignore pattern "[bad"`) {
+		t.Fatalf("error = %v, want invalid ignore pattern", err)
+	}
+}
+
+func TestRunConfigValidateUsesEnvAndConfigBackedFlags(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".overlay.toml")
+	writeFile(t, cfgPath, `
+sources = []
+`)
+	t.Setenv("OVERLAY_TARGET", "/env/out")
+	cmd, _ := setupCmd(t, []string{"--source", "flag-src"})
+	if err := runConfigValidate(cmd, cfgPath); err != nil {
+		t.Fatalf("runConfigValidate() error = %v, want env target and flag source to satisfy validation", err)
+	}
+}
+
+func TestRunConfigValidateReportsAllEffectiveErrors(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".overlay.toml")
+	writeFile(t, cfgPath, `
+sources = []
+ignore = ["[bad"]
+`)
+	cmd, _ := setupCmd(t, nil)
+	err := runConfigValidate(cmd, cfgPath)
+	if err == nil {
+		t.Fatal("expected effective validation errors")
+	}
+	for _, want := range []string{"sources: sources is empty", "target: target is required", `ignore: invalid ignore pattern "[bad"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q:\n%v", want, err)
 		}
 	}
 }

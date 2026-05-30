@@ -28,10 +28,16 @@ type globIgnorer struct {
 	patterns []string
 }
 
-// NewGlobIgnorer returns an Ignorer backed by doublestar glob patterns.
-// Patterns are validated up front; a malformed pattern is returned as an
-// error rather than silently producing no matches at run time.
-func NewGlobIgnorer(patterns []string) (Ignorer, error) {
+// ValidateGlobPatterns reports malformed ignore glob patterns without
+// constructing an Ignorer.
+func ValidateGlobPatterns(patterns []string) error {
+	_, err := NormalizeGlobPatterns(patterns)
+	return err
+}
+
+// NormalizeGlobPatterns trims and drops empty ignore patterns, and reports
+// malformed doublestar globs.
+func NormalizeGlobPatterns(patterns []string) ([]string, error) {
 	cleaned := make([]string, 0, len(patterns))
 	for _, p := range patterns {
 		if p = strings.TrimSpace(p); p == "" {
@@ -42,6 +48,17 @@ func NewGlobIgnorer(patterns []string) (Ignorer, error) {
 			return nil, fmt.Errorf("invalid ignore pattern %q: %w", p, err)
 		}
 		cleaned = append(cleaned, p)
+	}
+	return cleaned, nil
+}
+
+// NewGlobIgnorer returns an Ignorer backed by doublestar glob patterns.
+// Patterns are validated up front; a malformed pattern is returned as an
+// error rather than silently producing no matches at run time.
+func NewGlobIgnorer(patterns []string) (Ignorer, error) {
+	cleaned, err := NormalizeGlobPatterns(patterns)
+	if err != nil {
+		return nil, err
 	}
 	return globIgnorer{patterns: cleaned}, nil
 }

@@ -27,13 +27,14 @@ environment variables, and config-backed flags. The report uses GoConfigLoader
 provenance, then adds Overlay runtime-derived comments such as effective
 profiles and expanded paths.
 
-With --validate <path>, parse and schema-check the given file without
-merging any flags or env vars. Exits 0 on success, 1 on any error.
+With --validate <path>, parse the given file, merge environment variables and
+config-backed flags, and validate the effective runtime configuration. Exits 0
+on success, 1 on any error.
 
 For the full schema reference with field descriptions, run: overlay docs`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if configValidate != "" {
-				return config.ValidateFile(configValidate)
+				return runConfigValidate(cmd, configValidate)
 			}
 			raw, err := loadRawConfig(cmd, &globals)
 			if err != nil {
@@ -42,8 +43,17 @@ For the full schema reference with field descriptions, run: overlay docs`,
 			return printConfig(os.Stdout, raw)
 		},
 	}
-	cmd.Flags().StringVar(&configValidate, "validate", "", "validate the given .overlay.toml file and exit")
+	cmd.Flags().StringVar(&configValidate, "validate", "", "validate the given .overlay.toml as effective runtime config and exit")
 	return cmd
+}
+
+func runConfigValidate(cmd *cobra.Command, path string) error {
+	raw, err := loadRawConfigFromPath(cmd, path, true)
+	if err != nil {
+		return err
+	}
+	effective := deriveEffectiveConfig(raw)
+	return effectiveConfigErrors(validateEffectiveConfig(raw, effective)).Err()
 }
 
 func printConfig(w io.Writer, raw rawLoadedConfig) error {
@@ -117,6 +127,23 @@ func writeEffectiveConfig(w io.Writer, effective effectiveConfig, effectiveError
 		}
 	}
 	return nil
+}
+
+type effectiveConfigErrors []effectiveConfigError
+
+func (errors effectiveConfigErrors) Err() error {
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors
+}
+
+func (errors effectiveConfigErrors) Error() string {
+	lines := make([]string, len(errors))
+	for i, effectiveErr := range errors {
+		lines[i] = fmt.Sprintf("%s: %v", effectiveErr.Field, effectiveErr.Err)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func quoteList(values []string) string {
