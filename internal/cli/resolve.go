@@ -103,6 +103,30 @@ type effectiveConfigError struct {
 	Err   error
 }
 
+type effectiveConfigErrors []effectiveConfigError
+
+func (errs effectiveConfigErrors) Err() error {
+	if len(errs) == 0 {
+		return nil
+	}
+	return errs
+}
+
+func (errs effectiveConfigErrors) FirstError() error {
+	if len(errs) == 0 {
+		return nil
+	}
+	return errs[0].Err
+}
+
+func (errs effectiveConfigErrors) Error() string {
+	lines := make([]string, len(errs))
+	for i, effectiveErr := range errs {
+		lines[i] = fmt.Sprintf("%s: %v", effectiveErr.Field, effectiveErr.Err)
+	}
+	return strings.Join(lines, "\n")
+}
+
 type sourceResolution struct {
 	dirs             []string
 	labels           []string
@@ -128,8 +152,8 @@ func Resolve(cmd *cobra.Command, g *GlobalFlags, positionalSources ...string) (R
 	r.Effective = effective
 	r.Provenance = effective.Provenance
 	r.SourceLabels = effective.SourceLabels
-	effectiveErrors := validateEffectiveConfig(raw, effective)
-	if err := firstEffectiveConfigError(effectiveErrors); err != nil {
+	effectiveErrors := effectiveConfigErrors(validateEffectiveConfig(raw, effective))
+	if err := effectiveErrors.FirstError(); err != nil {
 		return r, err
 	}
 	r.ContinueOnError = effective.ContinueOnError
@@ -317,13 +341,6 @@ func validateEffectiveConfig(raw rawLoadedConfig, effective effectiveConfig) []e
 		errors = append(errors, effectiveConfigError{Field: configPathProfiles, Err: err})
 	}
 	return errors
-}
-
-func firstEffectiveConfigError(errors []effectiveConfigError) error {
-	if len(errors) == 0 {
-		return nil
-	}
-	return errors[0].Err
 }
 
 func effectiveProfiles(cfg config.Config) ([]string, bool) {

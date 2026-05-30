@@ -38,29 +38,30 @@ func ValidateGlobPatterns(patterns []string) error {
 // NormalizeGlobPatterns trims and drops empty ignore patterns, and reports
 // malformed doublestar globs.
 func NormalizeGlobPatterns(patterns []string) ([]string, error) {
-	cleaned := make([]string, 0, len(patterns))
-	for _, p := range patterns {
-		if p = strings.TrimSpace(p); p == "" {
+	normalized := make([]string, 0, len(patterns))
+	for _, pattern := range patterns {
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
 			continue
 		}
-		check := strings.TrimSuffix(p, "/")
+		check := strings.TrimSuffix(pattern, "/")
 		if _, err := doublestar.Match(check, ""); err != nil {
-			return nil, fmt.Errorf("invalid ignore pattern %q: %w", p, err)
+			return nil, fmt.Errorf("invalid ignore pattern %q: %w", pattern, err)
 		}
-		cleaned = append(cleaned, p)
+		normalized = append(normalized, pattern)
 	}
-	return cleaned, nil
+	return normalized, nil
 }
 
 // NewGlobIgnorer returns an Ignorer backed by doublestar glob patterns.
 // Patterns are validated up front; a malformed pattern is returned as an
 // error rather than silently producing no matches at run time.
 func NewGlobIgnorer(patterns []string) (Ignorer, error) {
-	cleaned, err := NormalizeGlobPatterns(patterns)
+	normalized, err := NormalizeGlobPatterns(patterns)
 	if err != nil {
 		return nil, err
 	}
-	return globIgnorer{patterns: cleaned}, nil
+	return globIgnorer{patterns: normalized}, nil
 }
 
 func (g globIgnorer) Match(relPath string, isDir bool) bool {

@@ -129,23 +129,6 @@ func writeEffectiveConfig(w io.Writer, effective effectiveConfig, effectiveError
 	return nil
 }
 
-type effectiveConfigErrors []effectiveConfigError
-
-func (errors effectiveConfigErrors) Err() error {
-	if len(errors) == 0 {
-		return nil
-	}
-	return errors
-}
-
-func (errors effectiveConfigErrors) Error() string {
-	lines := make([]string, len(errors))
-	for i, effectiveErr := range errors {
-		lines[i] = fmt.Sprintf("%s: %v", effectiveErr.Field, effectiveErr.Err)
-	}
-	return strings.Join(lines, "\n")
-}
-
 func quoteList(values []string) string {
 	quoted := make([]string, len(values))
 	for i, value := range values {
