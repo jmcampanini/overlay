@@ -79,10 +79,26 @@ type rawLoadedConfig struct {
 	ConfigPath string
 }
 
+type configEffective struct {
+	SourceDirs       []string
+	SourceLabels     []string
+	TargetDir        string
+	Profiles         []string
+	ContinueOnError  bool
+	Provenance       Provenances
+	DerivationErrors []configEffectiveError
+}
+
+type configEffectiveError struct {
+	Field string
+	Err   error
+}
+
 type sourceResolution struct {
 	dirs       []string
 	labels     []string
 	provenance Provenance
+	errors     []configEffectiveError
 }
 
 // Resolve merges config file, environment variables, and CLI flags into a
@@ -99,48 +115,27 @@ func Resolve(cmd *cobra.Command, g *GlobalFlags, positionalSources ...string) (R
 	}
 	r.RawConfig = raw.Config
 
-	configBase, configExists := configBaseFromReport(raw.Report)
-
-	cfg := raw.Config
-	sources, err := resolveSourceDirs(positionalSources, cfg, raw.Report, configBase, configExists)
-	if err != nil {
+	effective := deriveConfigEffective(raw, positionalSources...)
+	r.Provenance = effective.Provenance
+	r.SourceLabels = effective.SourceLabels
+	if err := firstConfigEffectiveError(validateConfigEffective(raw, effective)); err != nil {
 		return r, err
 	}
-	r.Provenance.Source = sources.provenance
-	r.SourceLabels = sources.labels
+	r.ContinueOnError = effective.ContinueOnError
 
-	target, targetProv, err := resolvePath(configPathTarget, cfg.Target, raw.Report, configBase, configExists)
-	if err != nil {
-		return r, err
-	}
-	r.Provenance.Target = targetProv
-	if target == "" {
-		return r, fmt.Errorf("target is required (set in %s or pass --target)", raw.ConfigPath)
-	}
-
-	r.Provenance.ContinueOnError = provenanceFromReport(raw.Report, configPathContinueOnError)
-
-	profiles, envContributed := effectiveProfiles(cfg)
-	r.Provenance.Profiles = profilesProvenance(raw.Report, envContributed)
-	if err := config.ValidateProfiles(profiles); err != nil {
-		return r, err
-	}
-
-	r.ContinueOnError = cfg.ContinueOnError
-
-	globIgn, err := discover.NewGlobIgnorer(cfg.Ignore)
+	globIgn, err := discover.NewGlobIgnorer(raw.Config.Ignore)
 	if err != nil {
 		return r, err
 	}
 
 	r.Settings = discover.Settings{
-		SourceDirs:       sources.dirs,
-		TargetDir:        target,
-		DotPrefix:        cfg.DotPrefix,
-		Profiles:         profiles,
+		SourceDirs:       effective.SourceDirs,
+		TargetDir:        effective.TargetDir,
+		DotPrefix:        raw.Config.DotPrefix,
+		Profiles:         effective.Profiles,
 		Ignore:           globIgn,
-		TraverseHidden:   cfg.TraverseHidden,
-		RespectGitignore: cfg.RespectGitignore,
+		TraverseHidden:   raw.Config.TraverseHidden,
+		RespectGitignore: raw.Config.RespectGitignore,
 	}
 	return r, nil
 }
@@ -184,27 +179,51 @@ func configBaseFromReport(report configloader.LoadReport) (string, bool) {
 	return filepath.Dir(report.LoadedFiles[0]), true
 }
 
-func resolveSourceDirs(positional []string, cfg config.Config, report configloader.LoadReport, configBase string, configExists bool) (sourceResolution, error) {
+func deriveConfigEffective(raw rawLoadedConfig, positionalSources ...string) configEffective {
+	configBase, configExists := configBaseFromReport(raw.Report)
+	cfg := raw.Config
+
+	sources := deriveSourceDirs(positionalSources, cfg, raw.Report, configBase, configExists)
+	target, targetProv, targetErrors := derivePath(configPathTarget, cfg.Target, raw.Report, configBase, configExists)
+	profiles, envContributed := effectiveProfiles(cfg)
+
+	effective := configEffective{
+		SourceDirs:      sources.dirs,
+		SourceLabels:    sources.labels,
+		TargetDir:       target,
+		Profiles:        profiles,
+		ContinueOnError: cfg.ContinueOnError,
+		Provenance: Provenances{
+			Source:          sources.provenance,
+			Target:          targetProv,
+			Profiles:        profilesProvenance(raw.Report, envContributed),
+			ContinueOnError: provenanceFromReport(raw.Report, configPathContinueOnError),
+		},
+	}
+	effective.DerivationErrors = append(effective.DerivationErrors, sources.errors...)
+	effective.DerivationErrors = append(effective.DerivationErrors, targetErrors...)
+	return effective
+}
+
+func deriveSourceDirs(positional []string, cfg config.Config, report configloader.LoadReport, configBase string, configExists bool) sourceResolution {
 	if len(positional) > 0 {
 		values := append([]string(nil), positional...)
-		return resolveSourceValues(configPathSources, values, values, ProvFlag, configExists, configBase)
+		return deriveSourceValues(configPathSources, values, values, ProvFlag, configExists, configBase)
 	}
 
 	sourcesSource := report.Updates[configPathSources]
 	values := append([]string(nil), cfg.Sources...)
 	anchor := sourceIsFile(sourcesSource) || (sourcesSource == configloader.SourceDefault && configExists)
-	return resolveSourceValues(configPathSources, values, values, provenanceFromSource(sourcesSource), anchor, configBase)
+	return deriveSourceValues(configPathSources, values, values, provenanceFromSource(sourcesSource), anchor, configBase)
 }
 
-func resolveSourceValues(name string, values, labels []string, prov Provenance, anchor bool, configBase string) (sourceResolution, error) {
-	if len(values) == 0 {
-		return sourceResolution{}, fmt.Errorf("%s is empty", name)
-	}
-
+func deriveSourceValues(name string, values, labels []string, prov Provenance, anchor bool, configBase string) sourceResolution {
 	dirs := make([]string, 0, len(values))
+	var errors []configEffectiveError
 	for _, value := range values {
 		if strings.TrimSpace(value) == "" {
-			return sourceResolution{}, fmt.Errorf("%s contains an empty source directory", name)
+			dirs = append(dirs, value)
+			continue
 		}
 		p := value
 		if anchor {
@@ -212,7 +231,9 @@ func resolveSourceValues(name string, values, labels []string, prov Provenance, 
 		}
 		expanded, err := discover.ExpandPath(p)
 		if err != nil {
-			return sourceResolution{}, fmt.Errorf("expand %s: %w", name, err)
+			errors = append(errors, configEffectiveError{Field: name, Err: fmt.Errorf("expand %s: %w", name, err)})
+			dirs = append(dirs, p)
+			continue
 		}
 		dirs = append(dirs, expanded)
 	}
@@ -221,7 +242,49 @@ func resolveSourceValues(name string, values, labels []string, prov Provenance, 
 		dirs:       dirs,
 		labels:     append([]string(nil), labels...),
 		provenance: prov,
-	}, nil
+		errors:     errors,
+	}
+}
+
+func derivePath(name, value string, report configloader.LoadReport, configBase string, configExists bool) (string, Provenance, []configEffectiveError) {
+	source := report.Updates[name]
+	p := value
+	if sourceIsFile(source) || (source == configloader.SourceDefault && configExists) {
+		p = resolveRelative(value, configBase)
+	}
+	prov := provenanceFromSource(source)
+	expanded, err := discover.ExpandPath(p)
+	if err != nil {
+		return p, prov, []configEffectiveError{{Field: name, Err: fmt.Errorf("expand %s: %w", name, err)}}
+	}
+	return expanded, prov, nil
+}
+
+func validateConfigEffective(raw rawLoadedConfig, effective configEffective) []configEffectiveError {
+	errors := append([]configEffectiveError(nil), effective.DerivationErrors...)
+	if len(effective.SourceDirs) == 0 {
+		errors = append(errors, configEffectiveError{Field: configPathSources, Err: fmt.Errorf("%s is empty", configPathSources)})
+	}
+	for _, source := range effective.SourceDirs {
+		if strings.TrimSpace(source) == "" {
+			errors = append(errors, configEffectiveError{Field: configPathSources, Err: fmt.Errorf("%s contains an empty source directory", configPathSources)})
+			break
+		}
+	}
+	if effective.TargetDir == "" {
+		errors = append(errors, configEffectiveError{Field: configPathTarget, Err: fmt.Errorf("target is required (set in %s or pass --target)", raw.ConfigPath)})
+	}
+	if err := config.ValidateProfiles(effective.Profiles); err != nil {
+		errors = append(errors, configEffectiveError{Field: configPathProfiles, Err: err})
+	}
+	return errors
+}
+
+func firstConfigEffectiveError(errors []configEffectiveError) error {
+	if len(errors) == 0 {
+		return nil
+	}
+	return errors[0].Err
 }
 
 func effectiveProfiles(cfg config.Config) ([]string, bool) {
@@ -296,20 +359,6 @@ func resolveRelative(p, base string) string {
 		return p
 	}
 	return filepath.Join(base, p)
-}
-
-func resolvePath(name, value string, report configloader.LoadReport, configBase string, configExists bool) (string, Provenance, error) {
-	source := report.Updates[name]
-	p := value
-	if sourceIsFile(source) || (source == configloader.SourceDefault && configExists) {
-		p = resolveRelative(value, configBase)
-	}
-	prov := provenanceFromSource(source)
-	expanded, err := discover.ExpandPath(p)
-	if err != nil {
-		return "", prov, fmt.Errorf("expand %s: %w", name, err)
-	}
-	return expanded, prov, nil
 }
 
 func sourceIsFile(source string) bool {

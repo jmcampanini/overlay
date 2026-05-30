@@ -35,6 +35,25 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
+func unsetEnv(t *testing.T, key string) {
+	t.Helper()
+	old, ok := os.LookupEnv(key)
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatalf("Unsetenv(%q): %v", key, err)
+	}
+	t.Cleanup(func() {
+		if ok {
+			if err := os.Setenv(key, old); err != nil {
+				t.Fatalf("restore env %s: %v", key, err)
+			}
+			return
+		}
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatalf("clear env %s: %v", key, err)
+		}
+	})
+}
+
 func TestResolveFlagsOnly(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -671,6 +690,112 @@ env_profiles = "DOTFILES_PROFILE"
 	}
 }
 
+func TestPrintConfigReportsEffectiveErrors(t *testing.T) {
+	missingSourceEnv := "OVERLAY_TEST_MISSING_SOURCE"
+	missingTargetEnv := "OVERLAY_TEST_MISSING_TARGET"
+	unsetEnv(t, missingSourceEnv)
+	unsetEnv(t, missingTargetEnv)
+
+	tests := []struct {
+		name string
+		toml string
+		env  map[string]string
+		want []string
+	}{
+		{
+			name: "empty sources",
+			toml: `
+sources = []
+target = "/tmp/out"
+`,
+			want: []string{
+				`sources = []`,
+				`# effective_source_dirs = []`,
+				`# effective_errors:`,
+				`# sources = "sources is empty"`,
+			},
+		},
+		{
+			name: "blank source",
+			toml: `
+sources = [" "]
+target = "/tmp/out"
+`,
+			want: []string{
+				`sources = [" "]`,
+				`# sources = "sources contains an empty source directory"`,
+			},
+		},
+		{
+			name: "reserved env profile",
+			toml: `
+target = "/tmp/out"
+profiles = ["work"]
+env_profiles = "OVERLAY_TEST_EXTRA_PROFILES"
+`,
+			env: map[string]string{"OVERLAY_TEST_EXTRA_PROFILES": "base"},
+			want: []string{
+				`profiles = ["work"]`,
+				`# effective_profiles = ["work", "base"]`,
+				`# profiles = "profile name \"base\" is reserved`,
+			},
+		},
+		{
+			name: "undefined source env var",
+			toml: `
+sources = ["$OVERLAY_TEST_MISSING_SOURCE"]
+target = "/tmp/out"
+`,
+			want: []string{
+				`# effective_source_dirs = ["$OVERLAY_TEST_MISSING_SOURCE"]`,
+				`# sources = "expand sources: undefined environment variable(s): OVERLAY_TEST_MISSING_SOURCE"`,
+			},
+		},
+		{
+			name: "undefined target env var",
+			toml: `
+sources = ["pkgs"]
+target = "$OVERLAY_TEST_MISSING_TARGET/out"
+`,
+			want: []string{
+				`# effective_target_dir = "$OVERLAY_TEST_MISSING_TARGET/out"`,
+				`# target = "expand target: undefined environment variable(s): OVERLAY_TEST_MISSING_TARGET"`,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Chdir(dir)
+			cfgPath := filepath.Join(dir, ".overlay.toml")
+			writeFile(t, cfgPath, tt.toml)
+			for key, value := range tt.env {
+				t.Setenv(key, value)
+			}
+			cmd, g := setupCmd(t, []string{"--config", cfgPath})
+			raw, err := loadRawConfig(cmd, g)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var buf bytes.Buffer
+			if err := printConfig(&buf, raw); err != nil {
+				t.Fatal(err)
+			}
+			out := buf.String()
+			wants := append([]string{
+				"# provenance",
+				`# loaded_files = ["` + cfgPath + `"]`,
+			}, tt.want...)
+			for _, want := range wants {
+				if !strings.Contains(out, want) {
+					t.Fatalf("config output missing %q:\n%s", want, out)
+				}
+			}
+		})
+	}
+}
+
 func TestPrintConfigDoesNotRequireTarget(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -683,7 +808,13 @@ func TestPrintConfigDoesNotRequireTarget(t *testing.T) {
 	if err := printConfig(&buf, raw); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), `target = ""`) {
-		t.Fatalf("config output should include empty raw target:\n%s", buf.String())
+	out := buf.String()
+	for _, want := range []string{
+		`target = ""`,
+		`# target = "target is required (set in .overlay.toml or pass --target)"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("config output missing %q:\n%s", want, out)
+		}
 	}
 }

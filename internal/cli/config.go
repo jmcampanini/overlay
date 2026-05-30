@@ -47,10 +47,8 @@ For the full schema reference with field descriptions, run: overlay docs`,
 }
 
 func printConfig(w io.Writer, raw rawLoadedConfig) error {
-	effective, err := resolveConfigEffective(raw)
-	if err != nil {
-		return err
-	}
+	effective := deriveConfigEffective(raw)
+	effectiveErrors := validateConfigEffective(raw, effective)
 
 	notFound := ""
 	if len(raw.Report.LoadedFiles) == 0 {
@@ -67,7 +65,7 @@ func printConfig(w io.Writer, raw rawLoadedConfig) error {
 	if err := writeConfigProvenance(w, reporter, raw.Report.LoadedFiles); err != nil {
 		return err
 	}
-	return writeConfigEffective(w, effective)
+	return writeConfigEffective(w, effective, effectiveErrors)
 }
 
 func writeConfigProvenance(w io.Writer, reporter configreporter.Reporter[config.Config], loadedFiles []string) error {
@@ -94,7 +92,7 @@ func writeConfigProvenance(w io.Writer, reporter configreporter.Reporter[config.
 	return nil
 }
 
-func writeConfigEffective(w io.Writer, effective configEffective) error {
+func writeConfigEffective(w io.Writer, effective configEffective, effectiveErrors []configEffectiveError) error {
 	if _, err := fmt.Fprintln(w, "\n# effective:"); err != nil {
 		return err
 	}
@@ -107,34 +105,18 @@ func writeConfigEffective(w io.Writer, effective configEffective) error {
 	if _, err := fmt.Fprintf(w, "# effective_profiles = [%s]\n", quoteList(effective.Profiles)); err != nil {
 		return err
 	}
+	if len(effectiveErrors) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w, "# effective_errors:"); err != nil {
+		return err
+	}
+	for _, effectiveErr := range effectiveErrors {
+		if _, err := fmt.Fprintf(w, "# %s = %q\n", effectiveErr.Field, effectiveErr.Err.Error()); err != nil {
+			return err
+		}
+	}
 	return nil
-}
-
-type configEffective struct {
-	SourceDirs []string
-	TargetDir  string
-	Profiles   []string
-}
-
-func resolveConfigEffective(raw rawLoadedConfig) (configEffective, error) {
-	configBase, configExists := configBaseFromReport(raw.Report)
-	sources, err := resolveSourceDirs(nil, raw.Config, raw.Report, configBase, configExists)
-	if err != nil {
-		return configEffective{}, err
-	}
-	target, _, err := resolvePath(configPathTarget, raw.Config.Target, raw.Report, configBase, configExists)
-	if err != nil {
-		return configEffective{}, err
-	}
-	profiles, _ := effectiveProfiles(raw.Config)
-	if err := config.ValidateProfiles(profiles); err != nil {
-		return configEffective{}, err
-	}
-	return configEffective{
-		SourceDirs: sources.dirs,
-		TargetDir:  target,
-		Profiles:   profiles,
-	}, nil
 }
 
 func quoteList(values []string) string {
