@@ -9,6 +9,7 @@ import (
 
 	"charm.land/log/v2"
 
+	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/jmcampanini/overlay/internal/discover"
 	"github.com/jmcampanini/overlay/internal/render"
 )
@@ -119,6 +120,33 @@ func TestDiffCopyThroughChanged(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "-old") || !strings.Contains(out, "+new") {
 		t.Fatalf("expected copy-through diff markers:\n%s", out)
+	}
+}
+
+func TestDiffAppendUsesRenderRules(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "rc.olay.base"), "base")
+	writeFile(t, filepath.Join(src, "rc.olay.work"), "work")
+	rules := []config.RenderRule{{Path: "rc", Strategy: config.RenderStrategyAppend}}
+
+	settings := discover.Settings{
+		SourceDirs: []string{src},
+		TargetDir:  target,
+		Profiles:   []string{"work"},
+		Ignore:     discover.NoopIgnorer(),
+	}
+	if err := render.Run(render.Options{Settings: settings, RenderRules: rules, Logger: silentLogger()}); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	differ, err := Run(Options{Settings: settings, RenderRules: rules, Logger: silentLogger(), Out: &buf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if differ {
+		t.Fatalf("expected no diff when diff uses append rules, got:\n%s", buf.String())
 	}
 }
 

@@ -1,15 +1,15 @@
 # overlay
 
 A small Go CLI that merges layered JSON/TOML configuration files by profile
-and copies other profile-specific files through as whole-file overlays.
+and renders other profile-specific files as whole-file overlays.
 
 `overlay` walks one or more source directories for files matching
 `<stem>.olay.<profile>[.<ext>]`, groups them by target path, renders the
-active layers, and writes the result to a target directory. JSON/TOML layers
-are merged; other extensions and extensionless overlays copy the highest
-precedence active layer. It's useful for dotfiles layouts where you want a
-base file, a machine profile, and a machine-local override to compose into a
-single rendered file.
+active layers, and writes the result to a target directory. By default,
+JSON/TOML layers are merged; other extensions and extensionless overlays copy
+the highest precedence active layer. It's useful for dotfiles layouts where you
+want a base file, a machine profile, and a machine-local override to compose
+into a single rendered file.
 
 ## Install
 
@@ -81,8 +81,8 @@ overlay render pi codex
 ```
 
 - `<ext>` is optional. If present, it must be a single filename segment.
-- `json` and `toml` overlays are merged; every other extension, plus
-  extensionless overlays, is copied through as a whole file.
+- By default, `json` and `toml` overlays are merged; every other extension,
+  plus extensionless overlays, is copied through as a whole file.
 - `<profile>` names the layer. `base` and `local` are **reserved**:
   `base` always merges first, `local` always merges last, with any active
   user profiles in between. User profiles can be named anything else.
@@ -101,6 +101,21 @@ overlay render pi codex
 
 For copy-through files, active layers are not combined. The last active layer
 in precedence order wins, so `base -> work -> local` copies `local`.
+
+`[[render_rules]]` entries in `.overlay.toml` can opt a specific rendered
+target-relative path into `append` or `copy` behavior:
+
+```toml
+[[render_rules]]
+path = ".npmrc"
+strategy = "append"
+```
+
+Rules match the final target-relative path after `dot_prefix` mapping, so
+`dot-npmrc.olay.base` matches `path = ".npmrc"`. `append` concatenates active
+layers in Overlay order, inserting one newline between adjacent non-empty layers
+only when needed. `copy` forces whole-file copy behavior, including for JSON or
+TOML targets that would otherwise merge.
 
 Output is deterministic: keys are alphabetized in both JSON and TOML so
 `overlay diff` stays trustworthy and golden-file tests are stable.
@@ -190,7 +205,7 @@ profiles = ["work"]        # optional
 
 Run `overlay docs` for the full schema including `sources`, `dot_prefix`,
 `env_profiles`, `continue_on_error`, `toml_indent_tables`, `ignore`,
-`traverse_hidden`, and `respect_gitignore`.
+`traverse_hidden`, `respect_gitignore`, and `render_rules`.
 
 Config-backed environment variables are `OVERLAY_SOURCES`, `OVERLAY_TARGET`,
 `OVERLAY_PROFILES`, and `OVERLAY_CONTINUE`. `sources` and `target` path expansion
@@ -212,7 +227,6 @@ Config-backed environment variables are `OVERLAY_SOURCES`, `OVERLAY_TARGET`,
 
 ## Roadmap
 
-- Configurable merge/copy strategies.
 - Symlink following during source walk (with inode-based loop detection).
 
 ## Development

@@ -215,6 +215,26 @@ func TestResolveReservedProfileErrors(t *testing.T) {
 	}
 }
 
+func TestResolveRejectsInvalidRenderRule(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+
+[[render_rules]]
+path = ".npmrc"
+strategy = "merge"
+`)
+	cmd, g := setupCmd(t, nil)
+	_, err := Resolve(cmd, g)
+	if err == nil {
+		t.Fatal("expected invalid render rule error")
+	}
+	if !strings.Contains(err.Error(), "render_rules") || !strings.Contains(err.Error(), "unsupported") {
+		t.Errorf("error should mention render_rules and unsupported strategy: %v", err)
+	}
+}
+
 func TestResolveProfileDedupe(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -495,7 +515,7 @@ func TestGlobalFlagsRegistered(t *testing.T) {
 			t.Errorf("expected --%s to be registered", name)
 		}
 	}
-	for _, name := range []string{"dot-prefix", "env-profiles", "ignore", "traverse-hidden", "respect-gitignore"} {
+	for _, name := range []string{"dot-prefix", "env-profiles", "ignore", "traverse-hidden", "respect-gitignore", "render-rules"} {
 		if cmd.Flags().Lookup(name) != nil {
 			t.Errorf("expected --%s to be absent", name)
 		}
@@ -544,6 +564,7 @@ func TestResolveTomlOnlyEnvironmentVariablesDoNotLoad(t *testing.T) {
 	t.Setenv("OVERLAY_TRAVERSE_HIDDEN", "true")
 	t.Setenv("OVERLAY_RESPECT_GITIGNORE", "true")
 	t.Setenv("OVERLAY_ENV_PROFILES", "SOME_VAR")
+	t.Setenv("OVERLAY_RENDER_RULES", "not-a-rule")
 	cmd, g := setupCmd(t, nil)
 	r, err := Resolve(cmd, g)
 	if err != nil {
@@ -563,6 +584,9 @@ func TestResolveTomlOnlyEnvironmentVariablesDoNotLoad(t *testing.T) {
 	}
 	if r.RawConfig.EnvProfiles != "" {
 		t.Errorf("OVERLAY_ENV_PROFILES should not load, got %q", r.RawConfig.EnvProfiles)
+	}
+	if len(r.RawConfig.RenderRules) != 0 {
+		t.Errorf("OVERLAY_RENDER_RULES should not load, got %v", r.RawConfig.RenderRules)
 	}
 }
 

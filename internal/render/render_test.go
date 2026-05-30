@@ -7,6 +7,7 @@ import (
 
 	"charm.land/log/v2"
 
+	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/jmcampanini/overlay/internal/discover"
 )
 
@@ -209,6 +210,214 @@ func TestRunExtensionlessCopyThrough(t *testing.T) {
 	}
 	if string(data) != "work\n" {
 		t.Fatalf("content = %q, want work", data)
+	}
+}
+
+func TestRunAppendRuleDotPrefixTargetPath(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "dot-npmrc.olay.base"), "allow-git=root\naudit=true\n")
+	writeFile(t, filepath.Join(src, "dot-npmrc.olay.work"), "@company:registry=https://registry.example.com/\n")
+
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			DotPrefix:  true,
+			Profiles:   []string{"work"},
+			Ignore:     discover.NoopIgnorer(),
+		},
+		RenderRules: []config.RenderRule{{Path: ".npmrc", Strategy: config.RenderStrategyAppend}},
+		Logger:      newTestLogger(),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(target, ".npmrc"))
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	want := "allow-git=root\naudit=true\n@company:registry=https://registry.example.com/\n"
+	if string(data) != want {
+		t.Fatalf("content = %q, want %q", data, want)
+	}
+}
+
+func TestRunAppendRuleRespectsLayerOrderAndProfiles(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "rc.olay.base"), "base")
+	writeFile(t, filepath.Join(src, "rc.olay.work"), "work")
+	writeFile(t, filepath.Join(src, "rc.olay.personal"), "personal")
+	writeFile(t, filepath.Join(src, "rc.olay.other"), "other")
+	writeFile(t, filepath.Join(src, "rc.olay.local"), "local")
+
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Profiles:   []string{"personal", "work"},
+			Ignore:     discover.NoopIgnorer(),
+		},
+		RenderRules: []config.RenderRule{{Path: "rc", Strategy: config.RenderStrategyAppend}},
+		Logger:      newTestLogger(),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(target, "rc"))
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	want := "base\npersonal\nwork\nlocal"
+	if string(data) != want {
+		t.Fatalf("content = %q, want %q", data, want)
+	}
+}
+
+func TestRunAppendRuleHandlesSingleActiveLayer(t *testing.T) {
+	cases := []struct {
+		name     string
+		profile  string
+		profiles []string
+	}{
+		{name: "base only", profile: "base"},
+		{name: "profile only", profile: "work", profiles: []string{"work"}},
+		{name: "local only", profile: "local"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := t.TempDir()
+			target := t.TempDir()
+			writeFile(t, filepath.Join(src, "rc.olay."+tc.profile), tc.profile)
+
+			err := Run(Options{
+				Settings: discover.Settings{
+					SourceDirs: []string{src},
+					TargetDir:  target,
+					Profiles:   tc.profiles,
+					Ignore:     discover.NoopIgnorer(),
+				},
+				RenderRules: []config.RenderRule{{Path: "rc", Strategy: config.RenderStrategyAppend}},
+				Logger:      newTestLogger(),
+			})
+			if err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			data, err := os.ReadFile(filepath.Join(target, "rc"))
+			if err != nil {
+				t.Fatalf("read output: %v", err)
+			}
+			if string(data) != tc.profile {
+				t.Fatalf("content = %q, want %q", data, tc.profile)
+			}
+		})
+	}
+}
+
+func TestRunAppendRuleNewlineBoundaries(t *testing.T) {
+	cases := []struct {
+		name string
+		base string
+		work string
+		want string
+	}{
+		{name: "base newline work non-empty", base: "base\n", work: "work", want: "base\nwork"},
+		{name: "base no newline work non-empty", base: "base", work: "work", want: "base\nwork"},
+		{name: "base newline work empty", base: "base\n", work: "", want: "base\n"},
+		{name: "base empty work non-empty", base: "", work: "work", want: "work"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := t.TempDir()
+			target := t.TempDir()
+			writeFile(t, filepath.Join(src, "rc.olay.base"), tc.base)
+			writeFile(t, filepath.Join(src, "rc.olay.work"), tc.work)
+
+			err := Run(Options{
+				Settings: discover.Settings{
+					SourceDirs: []string{src},
+					TargetDir:  target,
+					Profiles:   []string{"work"},
+					Ignore:     discover.NoopIgnorer(),
+				},
+				RenderRules: []config.RenderRule{{Path: "rc", Strategy: config.RenderStrategyAppend}},
+				Logger:      newTestLogger(),
+			})
+			if err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			data, err := os.ReadFile(filepath.Join(target, "rc"))
+			if err != nil {
+				t.Fatalf("read output: %v", err)
+			}
+			if string(data) != tc.want {
+				t.Fatalf("content = %q, want %q", data, tc.want)
+			}
+		})
+	}
+}
+
+func TestRunCopyRuleForJSON(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "settings.olay.base.json"), `{"a":1}`)
+	writeFile(t, filepath.Join(src, "settings.olay.work.json"), `{"b":2}`)
+
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Profiles:   []string{"work"},
+			Ignore:     discover.NoopIgnorer(),
+		},
+		RenderRules: []config.RenderRule{{Path: "settings.json", Strategy: config.RenderStrategyCopy}},
+		Logger:      newTestLogger(),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(target, "settings.json"))
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	if string(data) != `{"b":2}` {
+		t.Fatalf("content = %q, want work layer", data)
+	}
+}
+
+func TestRunRuleSourceRelativeNameDoesNotMatch(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "dot-npmrc.olay.base"), "base")
+	writeFile(t, filepath.Join(src, "dot-npmrc.olay.work"), "work")
+
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			DotPrefix:  true,
+			Profiles:   []string{"work"},
+			Ignore:     discover.NoopIgnorer(),
+		},
+		RenderRules: []config.RenderRule{{Path: "dot-npmrc", Strategy: config.RenderStrategyAppend}},
+		Logger:      newTestLogger(),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(target, ".npmrc"))
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	if string(data) != "work" {
+		t.Fatalf("content = %q, want default copy winner", data)
 	}
 }
 

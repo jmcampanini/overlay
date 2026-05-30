@@ -12,6 +12,7 @@ import (
 
 	"charm.land/log/v2"
 
+	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/jmcampanini/overlay/internal/discover"
 	"github.com/jmcampanini/overlay/internal/logging"
 	"github.com/jmcampanini/overlay/internal/render"
@@ -22,6 +23,7 @@ type Options struct {
 	Settings         discover.Settings
 	ContinueOnError  bool
 	TOMLIndentTables bool
+	RenderRules      []config.RenderRule
 	Logger           *log.Logger
 	Out              io.Writer // diff output goes here; defaults to os.Stdout
 }
@@ -38,6 +40,9 @@ func Run(opts Options) (bool, error) {
 	if opts.Out == nil {
 		opts.Out = os.Stdout
 	}
+	if err := config.ValidateRenderRules(opts.RenderRules); err != nil {
+		return false, err
+	}
 
 	result, err := discover.WalkDetailed(opts.Settings)
 	if err != nil {
@@ -53,7 +58,11 @@ func Run(opts Options) (bool, error) {
 		return false, nil
 	}
 
-	mergeOptions := render.MergeOptions{TOMLIndentTables: opts.TOMLIndentTables}
+	mergeOptions := render.MergeOptions{
+		TOMLIndentTables: opts.TOMLIndentTables,
+		RenderRules:      opts.RenderRules,
+		TargetDir:        opts.Settings.TargetDir,
+	}
 	var anyDiffer bool
 	var failed int
 	for _, g := range groups {

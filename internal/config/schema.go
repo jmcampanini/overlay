@@ -86,6 +86,48 @@ FIELDS
     When true, overlay respects .gitignore rules while walking each source
     directory. This is off by default to keep walking cheap and predictable.
 
+  [[render_rules]]
+    type:    repeated table
+    default: []
+    Optional per-target rules that choose an explicit render strategy. A rule
+    matches the rendered target-relative path after normal target mapping,
+    including dot_prefix behavior. For example, with dot_prefix = true:
+
+      npm/dot-npmrc.olay.base -> <target>/.npmrc
+
+    is matched by:
+
+      [[render_rules]]
+      path = ".npmrc"
+      strategy = "append"
+
+    Fields:
+
+      path = ".npmrc"
+        Required. Exact rendered target-relative path. Use slash-separated paths
+        such as ".ssh/config" or ".claude/settings.json". The source-relative
+        overlay name, such as "dot-npmrc", is not the matching API.
+
+      strategy = "append"
+        Required. Supported values are exactly:
+          append  append active layers in layer order
+          copy    copy the highest-precedence active layer
+
+    Without a matching render rule, defaults are unchanged:
+      .json/.toml -> merge
+      other files -> copy
+
+    Append preserves each active layer's content and appends in normal layer
+    order: base, then active profiles, then local. It inserts one newline
+    between adjacent non-empty layers only when the previous layer does not
+    already end with a newline. It does not trim, de-duplicate, parse syntax, or
+    force a final newline.
+
+    Validation rejects missing or empty paths, absolute paths, paths containing
+    "..", missing strategies, unsupported strategies, and duplicate normalized
+    paths. Valid rules that do not match the current source/profile selection
+    are allowed silently.
+
 CONFIG-BACKED ENVIRONMENT VARIABLES
 
   OVERLAY_SOURCES    overrides sources (comma-separated)
@@ -134,7 +176,7 @@ The stem is required and may contain dots. The profile name "base" is always
 first, "local" is always last, and any other name is a user profile. If an
 extension is present, it must be one filename segment with no additional dots.
 
-JSON and TOML overlays are mergeable structured formats:
+By default, JSON and TOML overlays are mergeable structured formats:
 
   dot-claude/settings.olay.base.json      -> base layer (always first)
   dot-claude/settings.olay.work.json      -> "work" profile layer
@@ -144,8 +186,8 @@ With dot_prefix = true and target = "~/", those layers merge into:
 
   ~/.claude/settings.json
 
-Valid overlays with any other extension, or no extension, are copied through as
-whole files. The highest-precedence active layer wins:
+By default, valid overlays with any other extension, or no extension, are copied
+through as whole files. The highest-precedence active layer wins:
 
   bin/tool.olay.base.sh
   bin/tool.olay.work.sh                  -> ~/bin/tool.sh copies work

@@ -277,6 +277,9 @@ func validateEffectiveConfig(raw rawLoadedConfig, effective effectiveConfig) []e
 	if err := config.ValidateProfiles(effective.Profiles); err != nil {
 		errors = append(errors, effectiveConfigError{Field: configPathProfiles, Err: err})
 	}
+	if err := config.ValidateRenderRules(raw.Config.RenderRules); err != nil {
+		errors = append(errors, effectiveConfigError{Field: "render_rules", Err: err})
+	}
 	return errors
 }
 

@@ -100,6 +100,9 @@ func TestWalkBasicBaseAndProfile(t *testing.T) {
 	if g.TargetPath != wantTarget {
 		t.Errorf("TargetPath = %q, want %q", g.TargetPath, wantTarget)
 	}
+	if g.TargetRelPath != filepath.ToSlash(filepath.Join(".claude", "settings.json")) {
+		t.Errorf("TargetRelPath = %q", g.TargetRelPath)
+	}
 }
 
 func TestWalkMultipleSourceRootsAreRelativeToEachRoot(t *testing.T) {
@@ -433,6 +436,9 @@ func TestWalkCopyThroughFile(t *testing.T) {
 	wantTarget := filepath.Join("/tmp/out", "bin", "tool.sh")
 	if g.TargetPath != wantTarget {
 		t.Fatalf("TargetPath = %q, want %q", g.TargetPath, wantTarget)
+	}
+	if g.TargetRelPath != filepath.ToSlash(filepath.Join("bin", "tool.sh")) {
+		t.Fatalf("TargetRelPath = %q", g.TargetRelPath)
 	}
 	got := []string{}
 	for _, l := range g.Layers {
