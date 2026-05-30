@@ -35,6 +35,25 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
+func unsetEnv(t *testing.T, key string) {
+	t.Helper()
+	old, ok := os.LookupEnv(key)
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatalf("Unsetenv(%q): %v", key, err)
+	}
+	t.Cleanup(func() {
+		if ok {
+			if err := os.Setenv(key, old); err != nil {
+				t.Fatalf("restore env %s: %v", key, err)
+			}
+			return
+		}
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatalf("clear env %s: %v", key, err)
+		}
+	})
+}
+
 func TestResolveFlagsOnly(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -652,13 +671,54 @@ env_profiles = "TEST_EXTRA_PROFILES"
 	}
 }
 
-func TestPrintRawConfigReportsRawValues(t *testing.T) {
+func TestResolveRejectsInvalidIgnorePatternDuringEffectiveValidation(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+ignore = ["[bad"]
+`)
+	cmd, g := setupCmd(t, nil)
+	_, err := Resolve(cmd, g)
+	if err == nil {
+		t.Fatal("expected invalid ignore pattern error")
+	}
+	if !strings.Contains(err.Error(), `invalid ignore pattern "[bad"`) {
+		t.Fatalf("error = %v, want invalid ignore pattern", err)
+	}
+}
+
+func TestResolveCarriesNormalizedRenderRules(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+
+[[render_rules]]
+path = "./.npmrc"
+strategy = "append"
+`)
+	cmd, g := setupCmd(t, nil)
+	r, err := Resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Effective.RenderRules) != 1 {
+		t.Fatalf("render rules = %#v, want one rule", r.Effective.RenderRules)
+	}
+	got := r.Effective.RenderRules[0]
+	if got.Path != ".npmrc" || got.Strategy != "append" {
+		t.Fatalf("render rule = %#v, want normalized .npmrc append", got)
+	}
+}
+
+func TestPrintConfigReportsRawAndEffectiveValues(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	cfgPath := filepath.Join(dir, ".overlay.toml")
 	writeFile(t, cfgPath, `
 sources = ["pkgs"]
-target = "~/out"
+target = "out"
 profiles = ["work"]
 env_profiles = "DOTFILES_PROFILE"
 `)
@@ -669,27 +729,150 @@ env_profiles = "DOTFILES_PROFILE"
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := printRawConfig(&buf, raw); err != nil {
+	if err := printConfig(&buf, raw); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
 	for _, want := range []string{
 		`sources = ["pkgs"]`,
-		`target = "~/out"`,
+		`target = "out"`,
 		`profiles = ["work"]`,
 		`env_profiles = "DOTFILES_PROFILE"`,
 		"# provenance",
+		`# loaded_files = ["` + cfgPath + `"]`,
+		`# effective_source_dirs = ["` + filepath.Join(dir, "pkgs") + `"]`,
+		`# effective_target_dir = "` + filepath.Join(dir, "out") + `"`,
+		`# effective_profiles = ["work", "vpn"]`,
 	} {
 		if !strings.Contains(out, want) {
-			t.Fatalf("raw config output missing %q:\n%s", want, out)
+			t.Fatalf("config output missing %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "vpn") {
-		t.Fatalf("raw config output should not include effective env profile:\n%s", out)
+	for _, line := range strings.Split(out, "\n") {
+		if line == `profiles = ["work", "vpn"]` {
+			t.Fatalf("raw TOML should not include effective env profile:\n%s", out)
+		}
 	}
 }
 
-func TestPrintRawConfigDoesNotRequireTarget(t *testing.T) {
+func TestPrintConfigReportsEffectiveErrors(t *testing.T) {
+	missingSourceEnv := "OVERLAY_TEST_MISSING_SOURCE"
+	missingTargetEnv := "OVERLAY_TEST_MISSING_TARGET"
+	unsetEnv(t, missingSourceEnv)
+	unsetEnv(t, missingTargetEnv)
+
+	tests := []struct {
+		name string
+		toml string
+		env  map[string]string
+		want []string
+	}{
+		{
+			name: "empty sources",
+			toml: `
+sources = []
+target = "/tmp/out"
+`,
+			want: []string{
+				`sources = []`,
+				`# effective_source_dirs = []`,
+				`# effective_errors:`,
+				`# sources = "sources is empty"`,
+			},
+		},
+		{
+			name: "blank source",
+			toml: `
+sources = [" "]
+target = "/tmp/out"
+`,
+			want: []string{
+				`sources = [" "]`,
+				`# sources = "sources contains an empty source directory"`,
+			},
+		},
+		{
+			name: "reserved env profile",
+			toml: `
+target = "/tmp/out"
+profiles = ["work"]
+env_profiles = "OVERLAY_TEST_EXTRA_PROFILES"
+`,
+			env: map[string]string{"OVERLAY_TEST_EXTRA_PROFILES": "base"},
+			want: []string{
+				`profiles = ["work"]`,
+				`# effective_profiles = ["work", "base"]`,
+				`# profiles = "profile name \"base\" is reserved`,
+			},
+		},
+		{
+			name: "undefined source env var",
+			toml: `
+sources = ["$OVERLAY_TEST_MISSING_SOURCE"]
+target = "/tmp/out"
+`,
+			want: []string{
+				`# effective_source_dirs = ["$OVERLAY_TEST_MISSING_SOURCE"]`,
+				`# sources = "expand sources: undefined environment variable(s): OVERLAY_TEST_MISSING_SOURCE"`,
+			},
+		},
+		{
+			name: "undefined target env var",
+			toml: `
+sources = ["pkgs"]
+target = "$OVERLAY_TEST_MISSING_TARGET/out"
+`,
+			want: []string{
+				`# effective_target_dir = "$OVERLAY_TEST_MISSING_TARGET/out"`,
+				`# target = "expand target: undefined environment variable(s): OVERLAY_TEST_MISSING_TARGET"`,
+			},
+		},
+		{
+			name: "invalid ignore pattern",
+			toml: `
+target = "/tmp/out"
+ignore = ["[bad"]
+`,
+			want: []string{
+				`ignore = ["[bad"]`,
+				`# ignore = "invalid ignore pattern \"[bad\"`,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Chdir(dir)
+			cfgPath := filepath.Join(dir, ".overlay.toml")
+			writeFile(t, cfgPath, tt.toml)
+			for key, value := range tt.env {
+				t.Setenv(key, value)
+			}
+			cmd, g := setupCmd(t, []string{"--config", cfgPath})
+			raw, err := loadRawConfig(cmd, g)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var buf bytes.Buffer
+			if err := printConfig(&buf, raw); err != nil {
+				t.Fatal(err)
+			}
+			out := buf.String()
+			wants := append([]string{
+				"# provenance",
+				`# loaded_files = ["` + cfgPath + `"]`,
+			}, tt.want...)
+			for _, want := range wants {
+				if !strings.Contains(out, want) {
+					t.Fatalf("config output missing %q:\n%s", want, out)
+				}
+			}
+		})
+	}
+}
+
+func TestPrintConfigDoesNotRequireTarget(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	cmd, g := setupCmd(t, nil)
@@ -698,10 +881,65 @@ func TestPrintRawConfigDoesNotRequireTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := printRawConfig(&buf, raw); err != nil {
+	if err := printConfig(&buf, raw); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), `target = ""`) {
-		t.Fatalf("raw config output should include empty raw target:\n%s", buf.String())
+	out := buf.String()
+	for _, want := range []string{
+		`target = ""`,
+		`# target = "target is required (set in .overlay.toml or pass --target)"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("config output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRunConfigValidateRejectsInvalidIgnorePattern(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".overlay.toml")
+	writeFile(t, cfgPath, `
+target = "/tmp/out"
+ignore = ["[bad"]
+`)
+	cmd, _ := setupCmd(t, nil)
+	err := runConfigValidate(cmd, cfgPath)
+	if err == nil {
+		t.Fatal("expected invalid ignore pattern error")
+	}
+	if !strings.Contains(err.Error(), `ignore: invalid ignore pattern "[bad"`) {
+		t.Fatalf("error = %v, want invalid ignore pattern", err)
+	}
+}
+
+func TestRunConfigValidateUsesEnvAndConfigBackedFlags(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".overlay.toml")
+	writeFile(t, cfgPath, `
+sources = []
+`)
+	t.Setenv("OVERLAY_TARGET", "/env/out")
+	cmd, _ := setupCmd(t, []string{"--source", "flag-src"})
+	if err := runConfigValidate(cmd, cfgPath); err != nil {
+		t.Fatalf("runConfigValidate() error = %v, want env target and flag source to satisfy validation", err)
+	}
+}
+
+func TestRunConfigValidateReportsAllEffectiveErrors(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".overlay.toml")
+	writeFile(t, cfgPath, `
+sources = []
+ignore = ["[bad"]
+`)
+	cmd, _ := setupCmd(t, nil)
+	err := runConfigValidate(cmd, cfgPath)
+	if err == nil {
+		t.Fatal("expected effective validation errors")
+	}
+	for _, want := range []string{"sources: sources is empty", "target: target is required", `ignore: invalid ignore pattern "[bad"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q:\n%v", want, err)
+		}
 	}
 }

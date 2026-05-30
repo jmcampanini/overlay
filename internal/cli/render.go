@@ -19,8 +19,8 @@ func newRenderCmd() *cobra.Command {
 			return render.Run(render.Options{
 				Settings:         r.Settings,
 				ContinueOnError:  r.ContinueOnError,
-				TOMLIndentTables: r.RawConfig.TOMLIndentTables,
-				RenderRules:      r.RawConfig.RenderRules,
+				TOMLIndentTables: r.Effective.TOMLIndentTables,
+				RenderRules:      r.Effective.RenderRules,
 				Logger:           r.Logger,
 			})
 		},

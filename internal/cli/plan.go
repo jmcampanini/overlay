@@ -34,7 +34,7 @@ func newPlanCmd() *cobra.Command {
 				r.Settings.Profiles,
 				r.SourceLabels,
 				r.Settings.TargetDir,
-				plan.Options{RenderRules: r.RawConfig.RenderRules},
+				plan.Options{RenderRules: r.Effective.RenderRules},
 			)
 		},
 	}

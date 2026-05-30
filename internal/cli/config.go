@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/jmcampanini/go-config-loader/configreporter"
@@ -20,37 +21,50 @@ var configValidate string
 func newConfigCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
-		Short: "Show the raw loaded configuration, or validate a file.",
-		Long: `Show the raw loaded configuration after applying defaults, config file,
+		Short: "Show loaded configuration, provenance, and effective runtime values.",
+		Long: `Show loaded configuration after applying defaults, config file,
 environment variables, and config-backed flags. The report uses GoConfigLoader
-provenance and does not include Overlay runtime-derived values such as effective
-profiles or expanded paths.
+provenance, then adds Overlay runtime-derived comments such as effective
+profiles and expanded paths.
 
-With --validate <path>, parse and schema-check the given file without
-merging any flags or env vars. Exits 0 on success, 1 on any error.
+With --validate <path>, parse the given file, merge environment variables and
+config-backed flags, and validate the effective runtime configuration. Exits 0
+on success, 1 on any error.
 
 For the full schema reference with field descriptions, run: overlay docs`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if configValidate != "" {
-				return config.ValidateFile(configValidate)
+				return runConfigValidate(cmd, configValidate)
 			}
 			raw, err := loadRawConfig(cmd, &globals)
 			if err != nil {
 				return err
 			}
-			return printRawConfig(os.Stdout, raw)
+			return printConfig(os.Stdout, raw)
 		},
 	}
-	cmd.Flags().StringVar(&configValidate, "validate", "", "validate the given .overlay.toml file and exit")
+	cmd.Flags().StringVar(&configValidate, "validate", "", "validate the given .overlay.toml as effective runtime config and exit")
 	return cmd
 }
 
-func printRawConfig(w io.Writer, raw rawLoadedConfig) error {
+func runConfigValidate(cmd *cobra.Command, path string) error {
+	raw, err := loadRawConfigFromPath(cmd, path, true)
+	if err != nil {
+		return err
+	}
+	effective := deriveEffectiveConfig(raw)
+	return effectiveConfigErrors(validateEffectiveConfig(raw, effective)).Err()
+}
+
+func printConfig(w io.Writer, raw rawLoadedConfig) error {
+	effective := deriveEffectiveConfig(raw)
+	effectiveErrors := validateEffectiveConfig(raw, effective)
+
 	notFound := ""
 	if len(raw.Report.LoadedFiles) == 0 {
 		notFound = " (not found)"
 	}
-	if _, err := fmt.Fprintf(w, "# overlay configuration (raw)\n# config file: %s%s\n\n", raw.ConfigPath, notFound); err != nil {
+	if _, err := fmt.Fprintf(w, "# overlay configuration\n# config file: %s%s\n\n", raw.ConfigPath, notFound); err != nil {
 		return err
 	}
 
@@ -58,6 +72,13 @@ func printRawConfig(w io.Writer, raw rawLoadedConfig) error {
 	if err := reporter.WriteTOML(w); err != nil {
 		return err
 	}
+	if err := writeConfigProvenance(w, reporter, raw.Report.LoadedFiles); err != nil {
+		return err
+	}
+	return writeEffectiveConfig(w, effective, effectiveErrors)
+}
+
+func writeConfigProvenance(w io.Writer, reporter configreporter.Reporter[config.Config], loadedFiles []string) error {
 	if _, err := fmt.Fprintln(w, "\n# provenance"); err != nil {
 		return err
 	}
@@ -72,5 +93,46 @@ func printRawConfig(w io.Writer, raw rawLoadedConfig) error {
 			return err
 		}
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "# loaded_files = [%s]\n", quoteList(loadedFiles)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func writeEffectiveConfig(w io.Writer, effective effectiveConfig, effectiveErrors []effectiveConfigError) error {
+	if _, err := fmt.Fprintln(w, "\n# effective:"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "# effective_source_dirs = [%s]\n", quoteList(effective.SourceDirs)); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "# effective_target_dir = %q\n", effective.TargetDir); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "# effective_profiles = [%s]\n", quoteList(effective.Profiles)); err != nil {
+		return err
+	}
+	if len(effectiveErrors) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w, "# effective_errors:"); err != nil {
+		return err
+	}
+	for _, effectiveErr := range effectiveErrors {
+		if _, err := fmt.Fprintf(w, "# %s = %q\n", effectiveErr.Field, effectiveErr.Err.Error()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func quoteList(values []string) string {
+	quoted := make([]string, len(values))
+	for i, value := range values {
+		quoted[i] = fmt.Sprintf("%q", value)
+	}
+	return strings.Join(quoted, ", ")
 }
