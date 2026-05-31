@@ -11,18 +11,33 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func newTestCmd() (*cobra.Command, *GlobalFlags) {
+	g := &GlobalFlags{}
+	cmd := &cobra.Command{Use: "test", RunE: func(*cobra.Command, []string) error { return nil }}
+	g.Bind(cmd)
+	return cmd, g
+}
+
 // setupCmd builds a dummy cobra command with the global flags bound,
 // applies the given args, and returns the resulting command and flags.
 func setupCmd(t *testing.T, args []string) (*cobra.Command, *GlobalFlags) {
 	t.Helper()
-	g := &GlobalFlags{}
-	cmd := &cobra.Command{Use: "test", RunE: func(*cobra.Command, []string) error { return nil }}
-	g.Bind(cmd)
+	cmd, g := newTestCmd()
 	cmd.SetArgs(args)
 	if err := cmd.ParseFlags(args); err != nil {
 		t.Fatalf("ParseFlags: %v", err)
 	}
 	return cmd, g
+}
+
+func assertRawAndEffectiveProfiles(t *testing.T, r Resolved, want []string) {
+	t.Helper()
+	if !reflect.DeepEqual(r.RawConfig.Profiles, want) {
+		t.Errorf("raw profiles = %v, want %v", r.RawConfig.Profiles, want)
+	}
+	if !reflect.DeepEqual(r.Settings.Profiles, want) {
+		t.Errorf("Profiles = %v, want %v", r.Settings.Profiles, want)
+	}
 }
 
 func writeFile(t *testing.T, path, content string) {
@@ -194,12 +209,7 @@ profiles = ["from_config"]
 		t.Fatal(err)
 	}
 	want := []string{"work"}
-	if !reflect.DeepEqual(r.RawConfig.Profiles, want) {
-		t.Errorf("raw profiles = %v, want %v", r.RawConfig.Profiles, want)
-	}
-	if !reflect.DeepEqual(r.Settings.Profiles, want) {
-		t.Errorf("Profiles = %v, want %v", r.Settings.Profiles, want)
-	}
+	assertRawAndEffectiveProfiles(t, r, want)
 	if r.Provenance.Profiles != ProvFlag {
 		t.Errorf("ProfilesFrom = %v, want flag", r.Provenance.Profiles)
 	}
@@ -214,12 +224,7 @@ func TestResolveRepeatedSingularProfileFlagPreservesOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"work", "personal"}
-	if !reflect.DeepEqual(r.RawConfig.Profiles, want) {
-		t.Errorf("raw profiles = %v, want %v", r.RawConfig.Profiles, want)
-	}
-	if !reflect.DeepEqual(r.Settings.Profiles, want) {
-		t.Errorf("Profiles = %v, want %v", r.Settings.Profiles, want)
-	}
+	assertRawAndEffectiveProfiles(t, r, want)
 }
 
 func TestResolveMixedProfileFlagsCanonicalThenSingular(t *testing.T) {
@@ -236,18 +241,11 @@ func TestResolveMixedProfileFlagsCanonicalThenSingular(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"work", "personal", "client"}
-	if !reflect.DeepEqual(r.RawConfig.Profiles, want) {
-		t.Errorf("raw profiles = %v, want %v", r.RawConfig.Profiles, want)
-	}
-	if !reflect.DeepEqual(r.Settings.Profiles, want) {
-		t.Errorf("Profiles = %v, want %v", r.Settings.Profiles, want)
-	}
+	assertRawAndEffectiveProfiles(t, r, want)
 }
 
 func TestResolveRejectsEmptySingularProfileFlag(t *testing.T) {
-	g := &GlobalFlags{}
-	cmd := &cobra.Command{Use: "test", RunE: func(*cobra.Command, []string) error { return nil }}
-	g.Bind(cmd)
+	cmd, _ := newTestCmd()
 	err := cmd.ParseFlags([]string{"--profile="})
 	if err == nil {
 		t.Fatal("expected --profile= to fail during flag parsing")
