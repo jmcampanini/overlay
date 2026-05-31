@@ -11,18 +11,33 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func newTestCmd() (*cobra.Command, *GlobalFlags) {
+	g := &GlobalFlags{}
+	cmd := &cobra.Command{Use: "test", RunE: func(*cobra.Command, []string) error { return nil }}
+	g.Bind(cmd)
+	return cmd, g
+}
+
 // setupCmd builds a dummy cobra command with the global flags bound,
 // applies the given args, and returns the resulting command and flags.
 func setupCmd(t *testing.T, args []string) (*cobra.Command, *GlobalFlags) {
 	t.Helper()
-	g := &GlobalFlags{}
-	cmd := &cobra.Command{Use: "test", RunE: func(*cobra.Command, []string) error { return nil }}
-	g.Bind(cmd)
+	cmd, g := newTestCmd()
 	cmd.SetArgs(args)
 	if err := cmd.ParseFlags(args); err != nil {
 		t.Fatalf("ParseFlags: %v", err)
 	}
 	return cmd, g
+}
+
+func assertRawAndEffectiveProfiles(t *testing.T, r Resolved, want []string) {
+	t.Helper()
+	if !reflect.DeepEqual(r.RawConfig.Profiles, want) {
+		t.Errorf("raw profiles = %v, want %v", r.RawConfig.Profiles, want)
+	}
+	if !reflect.DeepEqual(r.Settings.Profiles, want) {
+		t.Errorf("Profiles = %v, want %v", r.Settings.Profiles, want)
+	}
 }
 
 func writeFile(t *testing.T, path, content string) {
@@ -180,6 +195,66 @@ profiles = ["from_config"]
 	}
 }
 
+func TestResolveSingularProfileFlagOverridesConfigAndEnv(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+profiles = ["from_config"]
+`)
+	t.Setenv("OVERLAY_PROFILES", "from_env")
+	cmd, g := setupCmd(t, []string{"--profile", "work"})
+	r, err := Resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"work"}
+	assertRawAndEffectiveProfiles(t, r, want)
+	if r.Provenance.Profiles != ProvFlag {
+		t.Errorf("ProfilesFrom = %v, want flag", r.Provenance.Profiles)
+	}
+}
+
+func TestResolveRepeatedSingularProfileFlagPreservesOrder(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	cmd, g := setupCmd(t, []string{"--target", "/tmp/out", "--profile", "work", "--profile", "personal"})
+	r, err := Resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"work", "personal"}
+	assertRawAndEffectiveProfiles(t, r, want)
+}
+
+func TestResolveMixedProfileFlagsCanonicalThenSingular(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	cmd, g := setupCmd(t, []string{
+		"--target", "/tmp/out",
+		"--profiles", "work,personal",
+		"--profile", "personal",
+		"--profile", "client",
+	})
+	r, err := Resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"work", "personal", "client"}
+	assertRawAndEffectiveProfiles(t, r, want)
+}
+
+func TestResolveRejectsEmptySingularProfileFlag(t *testing.T) {
+	cmd, _ := newTestCmd()
+	err := cmd.ParseFlags([]string{"--profile="})
+	if err == nil {
+		t.Fatal("expected --profile= to fail during flag parsing")
+	}
+	if !strings.Contains(err.Error(), "empty values") {
+		t.Fatalf("error = %v, want empty value error", err)
+	}
+}
+
 func TestResolveConfigBackedProfilesEnv(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -194,6 +269,25 @@ func TestResolveConfigBackedProfilesEnv(t *testing.T) {
 	}
 	if r.Provenance.Profiles != ProvEnv {
 		t.Errorf("ProfilesFrom = %v", r.Provenance.Profiles)
+	}
+}
+
+func TestResolveSingularProfileEnvironmentVariableIgnored(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	unsetEnv(t, "OVERLAY_PROFILES")
+	t.Setenv("OVERLAY_TARGET", "/tmp/out")
+	t.Setenv("OVERLAY_PROFILE", "work")
+	cmd, g := setupCmd(t, nil)
+	r, err := Resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.RawConfig.Profiles) != 0 || len(r.Settings.Profiles) != 0 {
+		t.Errorf("profiles raw/effective = %v/%v, want none", r.RawConfig.Profiles, r.Settings.Profiles)
+	}
+	if r.Provenance.Profiles != ProvDefault {
+		t.Errorf("ProfilesFrom = %v, want default", r.Provenance.Profiles)
 	}
 }
 
@@ -510,7 +604,7 @@ func TestResolveTargetRelativeFromConfig(t *testing.T) {
 
 func TestGlobalFlagsRegistered(t *testing.T) {
 	cmd, _ := setupCmd(t, nil)
-	for _, name := range []string{"config", "sources", "source", "target", "profiles", "continue", "quiet", "verbose"} {
+	for _, name := range []string{"config", "sources", "source", "target", "profiles", "profile", "continue", "quiet", "verbose"} {
 		if cmd.Flags().Lookup(name) == nil {
 			t.Errorf("expected --%s to be registered", name)
 		}

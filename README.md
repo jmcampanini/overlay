@@ -127,10 +127,15 @@ variables, and config-backed flags, with later sources overriding earlier ones.
 For profiles, the raw `profiles` value is chosen from these sources, highest to
 lowest:
 
-1. `--profiles a,b,c` on the command line.
+1. `--profiles a,b,c` or repeated `--profile a --profile b` on the command line.
 2. `OVERLAY_PROFILES=a,b,c` in the environment.
 3. `profiles = [...]` in `.overlay.toml`.
 4. the default empty list.
+
+`--profile` is a pflag-only singular alias: there is no `profile` TOML key and
+no `OVERLAY_PROFILE` environment variable. When `--profiles` and `--profile` are
+both used, `--profiles` values are applied first, then repeated `--profile`
+values. Duplicates are removed, preserving first occurrence.
 
 After raw loading, Overlay appends the comma-split value of the env var named by
 `env_profiles` (if set). Duplicates are removed, preserving first occurrence.
@@ -160,6 +165,10 @@ DOTFILES_PROFILE=work overlay plan
 # Scenario 3: CLI flag sets raw profiles, then env_profiles appends
 # → ["personal", "work"]
 DOTFILES_PROFILE=work overlay --profiles personal plan
+
+# Scenario 4: repeated --profile flags set raw profiles in order
+# → ["personal", "client"]
+overlay --profile personal --profile client plan
 ```
 
 Run `overlay config` to see loaded values, GoConfigLoader provenance, and commented effective runtime values.
@@ -208,9 +217,10 @@ Run `overlay docs` for the full schema including `sources`, `dot_prefix`,
 `traverse_hidden`, `respect_gitignore`, and `render_rules`.
 
 Config-backed environment variables are `OVERLAY_SOURCES`, `OVERLAY_TARGET`,
-`OVERLAY_PROFILES`, and `OVERLAY_CONTINUE`. `sources` and `target` path expansion
-(`~`, `$VAR`, and config-file-relative TOML paths) happens at runtime; the
-`overlay config` reports the loaded strings and comments the expanded effective paths.
+`OVERLAY_PROFILES`, and `OVERLAY_CONTINUE`. There is no `OVERLAY_PROFILE`;
+`--profile` is CLI-only. `sources` and `target` path expansion (`~`, `$VAR`, and
+config-file-relative TOML paths) happens at runtime; the `overlay config` reports
+the loaded strings and comments the expanded effective paths.
 
 ## Notes
 

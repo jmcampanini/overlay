@@ -14,7 +14,7 @@ type Config struct {
 	Sources          []string     `toml:"sources" config:"sources" pflag_singular:"source" help:"override source directories from config"`
 	Target           string       `toml:"target" config:"target" help:"override target directory from config"`
 	DotPrefix        bool         `toml:"dot_prefix"`
-	Profiles         []string     `toml:"profiles" config:"profiles" help:"comma-separated profile list"`
+	Profiles         []string     `toml:"profiles" config:"profiles" pflag_singular:"profile" help:"profile list; --profiles accepts comma-separated values"`
 	EnvProfiles      string       `toml:"env_profiles"`
 	ContinueOnError  bool         `toml:"continue_on_error" config:"continue" help:"continue past invalid source files"`
 	TOMLIndentTables bool         `toml:"toml_indent_tables"`

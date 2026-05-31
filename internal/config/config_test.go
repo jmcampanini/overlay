@@ -112,6 +112,22 @@ target = "~/out"
 	}
 }
 
+func TestLoadRejectsSingularProfileKey(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".overlay.toml")
+	writeFile(t, path, `
+profile = "work"
+target = "~/out"
+`)
+	_, _, _, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "unknown") || !strings.Contains(err.Error(), "profile") {
+		t.Errorf("error should mention unknown profile key: %v", err)
+	}
+}
+
 func TestLoadMalformed(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".overlay.toml")
