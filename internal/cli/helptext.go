@@ -26,14 +26,16 @@ Profile resolution:
 
   Raw profiles are loaded with normal config precedence:
 
-    1. --profiles a,b,c
+    1. --profiles a,b,c or repeated --profile NAME flags
     2. OVERLAY_PROFILES=a,b,c
     3. .overlay.toml profiles
     4. default []
 
-  After raw loading, the comma-split value of the env var named by
-  env_profiles (if set) is appended. Duplicates are removed, first occurrence
-  kept.
+  --profile is pflag-only; there is no profile TOML key or OVERLAY_PROFILE.
+  If both CLI forms are used, --profiles values are applied first, then repeated
+  --profile values. After raw loading, the comma-split value of the env var
+  named by env_profiles (if set) is appended. Duplicates are removed, first
+  occurrence kept.
 
 Within the effective set, the layer order is always:
 

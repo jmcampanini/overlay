@@ -40,9 +40,11 @@ FIELDS
     type:    array of strings
     default: []
     Raw profiles to activate, in layer order. This value can be overridden
-    by OVERLAY_PROFILES or --profiles. After raw loading, env_profiles may
-    append more profiles. The names "base" and "local" are reserved and
-    cannot appear in the effective list.
+    by OVERLAY_PROFILES, --profiles, or repeated --profile NAME flags. The
+    --profile flag is pflag-only; there is no singular TOML key or environment
+    variable. After raw loading, env_profiles may append more profiles. The
+    names "base" and "local" are reserved and cannot appear in the effective
+    list.
 
   env_profiles = "DOTFILES_PROFILE"    # example
     type:    string
@@ -135,6 +137,9 @@ CONFIG-BACKED ENVIRONMENT VARIABLES
   OVERLAY_PROFILES   overrides raw profiles (comma-separated)
   OVERLAY_CONTINUE   overrides continue_on_error
 
+There is no OVERLAY_PROFILE. Use repeated --profile NAME flags for singular CLI
+profile selection.
+
 SOURCE RESOLUTION PRECEDENCE
 
 Source roots are loaded from these sources, highest to lowest:
@@ -154,13 +159,15 @@ PROFILE RESOLUTION PRECEDENCE
 
 Raw profiles are loaded from these sources, highest to lowest:
 
-  1. --profiles CLI flag
+  1. --profiles CLI flag or repeated --profile NAME flags
   2. OVERLAY_PROFILES env var
   3. .overlay.toml profiles
   4. default []
 
-After raw loading, Overlay appends the comma-split value of the env var named
-by env_profiles (if set). Duplicates are removed, preserving first occurrence.
+When both CLI forms are used, --profiles values are applied first, then repeated
+--profile values. After raw loading, Overlay appends the comma-split value of
+the env var named by env_profiles (if set). Duplicates are removed, preserving
+first occurrence.
 
 Within the effective set, the layer order is always:
   base (if present) -> each profile in list order -> local (if present)
