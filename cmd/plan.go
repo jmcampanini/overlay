@@ -1,10 +1,11 @@
-package cli
+package cmd
 
 import (
 	"os"
 
 	"github.com/spf13/cobra"
 
+	"github.com/jmcampanini/overlay/internal/cli"
 	"github.com/jmcampanini/overlay/internal/discover"
 	"github.com/jmcampanini/overlay/internal/logging"
 	"github.com/jmcampanini/overlay/internal/plan"
@@ -16,7 +17,7 @@ func newPlanCmd() *cobra.Command {
 		Short: "Show what files would be generated without writing anything.",
 		Long:  "Print an aligned table of target paths, render modes, and active layers\nfor the current profile selection. Does not write any files. Positional sources select package roots for this run.\n" + sourceSelectionHelp + "\n" + profilePrecedenceHelp,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			r, err := Resolve(cmd, &globals, args...)
+			r, err := cli.Resolve(cmd, &globals, args...)
 			if err != nil {
 				return err
 			}

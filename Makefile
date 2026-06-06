@@ -2,12 +2,12 @@
 
 BUILD_DIR   := build
 BINARY      := $(BUILD_DIR)/overlay
-CMD         := ./cmd/overlay
+CMD         := .
 PKG         := ./...
-GOFMT_FILES := $(shell git ls-files '*.go')
+GOFMT_FILES := $(shell git ls-files --cached --others --exclude-standard '*.go' | while IFS= read -r file; do [ -f "$$file" ] && printf '%s\n' "$$file"; done)
 
 VERSION := $(shell git describe --tags --dirty --always 2>/dev/null || date -u '+%Y-%m-%dT%H:%M:%SZ')
-LDFLAGS := -ldflags "-X github.com/jmcampanini/overlay/internal/cli.Version=$(VERSION)"
+LDFLAGS := -ldflags "-X github.com/jmcampanini/overlay/cmd.Version=$(VERSION)"
 
 .DEFAULT_GOAL := help
 

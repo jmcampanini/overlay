@@ -1,12 +1,9 @@
-// Package cli wires the cobra commands for the overlay binary and
-// resolves config + env + flags into the Settings consumed by the
-// render, diff, and plan packages.
+// Package cli contains Cobra-coupled configuration resolution helpers for the command package.
 package cli
 
 import (
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"text/tabwriter"
 
@@ -16,35 +13,20 @@ import (
 	"github.com/jmcampanini/overlay/internal/config"
 )
 
-var configValidate string
+// TODO: split config reporting and validation out of this Cobra-coupled helper package.
 
-func newConfigCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "config",
-		Short: "Show loaded configuration, provenance, and effective runtime values.",
-		Long: `Show loaded configuration after applying defaults, config file,
-environment variables, and config-backed flags. The report uses GoConfigLoader
-provenance, then adds Overlay runtime-derived comments such as effective
-profiles and expanded paths.
-
-With --validate <path>, parse the given file, merge environment variables and
-config-backed flags, and validate the effective runtime configuration. Exits 0
-on success, 1 on any error.
-
-For the full schema reference with field descriptions, run: overlay docs`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if configValidate != "" {
-				return runConfigValidate(cmd, configValidate)
-			}
-			raw, err := loadRawConfig(cmd, &globals)
-			if err != nil {
-				return err
-			}
-			return printConfig(os.Stdout, raw)
-		},
+// PrintConfig loads runtime configuration and writes the config report.
+func PrintConfig(cmd *cobra.Command, g *GlobalFlags, w io.Writer) error {
+	raw, err := loadRawConfig(cmd, g)
+	if err != nil {
+		return err
 	}
-	cmd.Flags().StringVar(&configValidate, "validate", "", "validate the given .overlay.toml as effective runtime config and exit")
-	return cmd
+	return printConfig(w, raw)
+}
+
+// ValidateConfig validates path as an effective runtime configuration.
+func ValidateConfig(cmd *cobra.Command, path string) error {
+	return runConfigValidate(cmd, path)
 }
 
 func runConfigValidate(cmd *cobra.Command, path string) error {

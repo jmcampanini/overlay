@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/jmcampanini/overlay/internal/cli"
+	"github.com/jmcampanini/overlay/cmd"
 )
 
 func main() {
-	if err := cli.Execute(); err != nil {
-		var code cli.DiffExitCode
+	if err := cmd.Execute(); err != nil {
+		var code cmd.DiffExitCode
 		if errors.As(err, &code) {
 			os.Exit(int(code))
 		}

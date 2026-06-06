@@ -1,4 +1,4 @@
-package cli
+package cmd
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/jmcampanini/overlay/internal/cli"
 	"github.com/jmcampanini/overlay/internal/diff"
 )
 
@@ -22,7 +23,7 @@ func newDiffCmd() *cobra.Command {
 		Short: "Show a unified diff between rendered output and existing target files.",
 		Long:  "Render each overlay group in memory and print a unified diff against the\nexisting target files. Positional sources select package roots for this run.\n" + sourceSelectionHelp + "\n" + diffOutputHelp + "\n" + profilePrecedenceHelp,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			r, err := Resolve(cmd, &globals, args...)
+			r, err := cli.Resolve(cmd, &globals, args...)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "overlay:", err)
 				return DiffExitCode(2)
