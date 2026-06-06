@@ -7,17 +7,13 @@ import (
 	"github.com/jmcampanini/overlay/internal/cli"
 )
 
-// globals holds the flag values across all subcommands.
-var globals cli.GlobalFlags
-
 // Execute parses the command line and runs the requested subcommand.
 func Execute() error {
-	root := newRootCmd()
-	return root.Execute()
+	return newRootCmd().Execute()
 }
 
 func newRootCmd() *cobra.Command {
-	globals = cli.GlobalFlags{}
+	globalFlags := &cli.GlobalFlags{}
 	root := &cobra.Command{
 		Use:           "overlay",
 		Short:         "Merge layered JSON/TOML configuration files by profile.",
@@ -25,11 +21,11 @@ func newRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	globals.Bind(root)
-	root.AddCommand(newRenderCmd())
-	root.AddCommand(newDiffCmd())
-	root.AddCommand(newPlanCmd())
-	root.AddCommand(newConfigCmd())
+	globalFlags.Bind(root)
+	root.AddCommand(newRenderCmd(globalFlags))
+	root.AddCommand(newDiffCmd(globalFlags))
+	root.AddCommand(newPlanCmd(globalFlags))
+	root.AddCommand(newConfigCmd(globalFlags))
 	root.AddCommand(newDocsCmd())
 	return root
 }

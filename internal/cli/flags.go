@@ -1,7 +1,5 @@
 package cli
 
-// TODO: move flag binding into cmd after resolution accepts a Cobra-free flag snapshot.
-
 import (
 	"github.com/jmcampanini/go-config-loader/pflagloader"
 	"github.com/spf13/cobra"

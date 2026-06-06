@@ -8,8 +8,8 @@ import (
 	"github.com/jmcampanini/overlay/internal/cli"
 )
 
-func newConfigCmd() *cobra.Command {
-	var configValidate string
+func newConfigCmd(globalFlags *cli.GlobalFlags) *cobra.Command {
+	var validatePath string
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Show loaded configuration, provenance, and effective runtime values.",
@@ -23,13 +23,13 @@ config-backed flags, and validate the effective runtime configuration. Exits 0
 on success, 1 on any error.
 
 For the full schema reference with field descriptions, run: overlay docs`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if configValidate != "" {
-				return cli.ValidateConfig(cmd, configValidate)
+		RunE: func(command *cobra.Command, _ []string) error {
+			if validatePath != "" {
+				return cli.ValidateConfig(command, validatePath)
 			}
-			return cli.PrintConfig(cmd, &globals, os.Stdout)
+			return cli.PrintConfig(command, globalFlags, os.Stdout)
 		},
 	}
-	cmd.Flags().StringVar(&configValidate, "validate", "", "validate the given .overlay.toml as effective runtime config and exit")
+	cmd.Flags().StringVar(&validatePath, "validate", "", "validate the given .overlay.toml as effective runtime config and exit")
 	return cmd
 }

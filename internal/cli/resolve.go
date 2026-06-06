@@ -1,8 +1,6 @@
 // Package cli contains Cobra-coupled configuration resolution helpers for the command package.
 package cli
 
-// TODO: split Cobra flag loading from runtime config derivation so commands can depend on a clean internal API.
-
 import (
 	"fmt"
 	"os"

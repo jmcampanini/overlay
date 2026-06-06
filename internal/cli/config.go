@@ -13,8 +13,6 @@ import (
 	"github.com/jmcampanini/overlay/internal/config"
 )
 
-// TODO: split config reporting and validation out of this Cobra-coupled helper package.
-
 // PrintConfig loads runtime configuration and writes the config report.
 func PrintConfig(cmd *cobra.Command, g *GlobalFlags, w io.Writer) error {
 	raw, err := loadRawConfig(cmd, g)
