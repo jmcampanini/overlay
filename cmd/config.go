@@ -4,11 +4,9 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-
-	"github.com/jmcampanini/overlay/internal/cli"
 )
 
-func newConfigCmd(globalFlags *cli.GlobalFlags) *cobra.Command {
+func newConfigCmd(globalFlags *globalFlags) *cobra.Command {
 	var validatePath string
 	cmd := &cobra.Command{
 		Use:   "config",
@@ -25,9 +23,9 @@ on success, 1 on any error.
 For the full schema reference with field descriptions, run: overlay docs`,
 		RunE: func(command *cobra.Command, _ []string) error {
 			if validatePath != "" {
-				return cli.ValidateConfig(command, validatePath)
+				return validateConfig(command, validatePath)
 			}
-			return cli.PrintConfig(command, globalFlags, os.Stdout)
+			return printLoadedConfig(command, globalFlags, os.Stdout)
 		},
 	}
 	cmd.Flags().StringVar(&validatePath, "validate", "", "validate the given .overlay.toml as effective runtime config and exit")

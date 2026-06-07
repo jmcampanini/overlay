@@ -1,5 +1,4 @@
-// Package cli contains Cobra-coupled configuration resolution helpers for the command package.
-package cli
+package cmd
 
 import (
 	"fmt"
@@ -132,12 +131,12 @@ type sourceResolution struct {
 	derivationErrors []effectiveConfigError
 }
 
-// Resolve merges config file, environment variables, and CLI flags into a
+// resolve merges config file, environment variables, and CLI flags into a
 // runtime settings bundle. It returns an error when Overlay-specific runtime
 // validation fails.
-func Resolve(cmd *cobra.Command, g *GlobalFlags, positionalSources ...string) (Resolved, error) {
+func resolve(cmd *cobra.Command, g *globalFlags, positionalSources ...string) (Resolved, error) {
 	r := Resolved{
-		Logger: logging.Setup(g.Quiet, g.Verbose),
+		Logger: logging.Setup(g.quiet, g.verbose),
 	}
 
 	raw, err := loadRawConfig(cmd, g)
@@ -173,8 +172,8 @@ func Resolve(cmd *cobra.Command, g *GlobalFlags, positionalSources ...string) (R
 	return r, nil
 }
 
-func loadRawConfig(cmd *cobra.Command, g *GlobalFlags) (rawLoadedConfig, error) {
-	cfgPath := g.Config
+func loadRawConfig(cmd *cobra.Command, g *globalFlags) (rawLoadedConfig, error) {
+	cfgPath := g.config
 	configExplicit := changed(cmd, "config")
 	if cfgPath == "" {
 		cfgPath = config.DefaultFilename

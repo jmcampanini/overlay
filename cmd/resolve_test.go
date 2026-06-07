@@ -1,4 +1,4 @@
-package cli
+package cmd
 
 import (
 	"bytes"
@@ -8,19 +8,28 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jmcampanini/go-config-loader/pflagloader"
 	"github.com/spf13/cobra"
+
+	"github.com/jmcampanini/overlay/internal/config"
 )
 
-func newTestCmd() (*cobra.Command, *GlobalFlags) {
-	g := &GlobalFlags{}
+func newTestCmd() (*cobra.Command, *globalFlags) {
+	g := &globalFlags{}
 	cmd := &cobra.Command{Use: "test", RunE: func(*cobra.Command, []string) error { return nil }}
-	g.Bind(cmd)
+	f := cmd.PersistentFlags()
+	f.StringVar(&g.config, "config", "", "path to .overlay.toml (default: ./.overlay.toml)")
+	f.BoolVarP(&g.quiet, "quiet", "q", false, "suppress INFO logs (show WARN and above)")
+	f.BoolVarP(&g.verbose, "verbose", "v", false, "enable DEBUG logging")
+	if err := pflagloader.Register[config.Config](f); err != nil {
+		panic(err)
+	}
 	return cmd, g
 }
 
 // setupCmd builds a dummy cobra command with the global flags bound,
 // applies the given args, and returns the resulting command and flags.
-func setupCmd(t *testing.T, args []string) (*cobra.Command, *GlobalFlags) {
+func setupCmd(t *testing.T, args []string) (*cobra.Command, *globalFlags) {
 	t.Helper()
 	cmd, g := newTestCmd()
 	cmd.SetArgs(args)
@@ -73,7 +82,7 @@ func TestResolveFlagsOnly(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	cmd, g := setupCmd(t, []string{"--target", "/tmp/out", "--profiles", "a,b,c"})
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +105,7 @@ target = "/tmp/out"
 profiles = ["work"]
 `)
 	cmd, g := setupCmd(t, nil)
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +127,7 @@ env_profiles = "TEST_EXTRA_PROFILES"
 `)
 	t.Setenv("TEST_EXTRA_PROFILES", "alpha,beta")
 	cmd, g := setupCmd(t, nil)
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +151,7 @@ env_profiles = "TEST_NEVER_SET_ENV"
 `)
 	// TEST_NEVER_SET_ENV is intentionally not set.
 	cmd, g := setupCmd(t, nil)
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +174,7 @@ env_profiles = "TEST_EMPTY_CSV"
 `)
 	t.Setenv("TEST_EMPTY_CSV", " , , ")
 	cmd, g := setupCmd(t, nil)
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +192,7 @@ target = "/tmp/out"
 profiles = ["from_config"]
 `)
 	cmd, g := setupCmd(t, []string{"--profiles", "override"})
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +213,7 @@ profiles = ["from_config"]
 `)
 	t.Setenv("OVERLAY_PROFILES", "from_env")
 	cmd, g := setupCmd(t, []string{"--profile", "work"})
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +228,7 @@ func TestResolveRepeatedSingularProfileFlagPreservesOrder(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	cmd, g := setupCmd(t, []string{"--target", "/tmp/out", "--profile", "work", "--profile", "personal"})
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +245,7 @@ func TestResolveMixedProfileFlagsCanonicalThenSingular(t *testing.T) {
 		"--profile", "personal",
 		"--profile", "client",
 	})
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,7 +269,7 @@ func TestResolveConfigBackedProfilesEnv(t *testing.T) {
 	t.Chdir(dir)
 	t.Setenv("OVERLAY_PROFILES", "auto1,auto2")
 	cmd, g := setupCmd(t, []string{"--target", "/tmp/out"})
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +288,7 @@ func TestResolveSingularProfileEnvironmentVariableIgnored(t *testing.T) {
 	t.Setenv("OVERLAY_TARGET", "/tmp/out")
 	t.Setenv("OVERLAY_PROFILE", "work")
 	cmd, g := setupCmd(t, nil)
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +304,7 @@ func TestResolveMissingTargetErrors(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	cmd, g := setupCmd(t, nil)
-	if _, err := Resolve(cmd, g); err == nil {
+	if _, err := resolve(cmd, g); err == nil {
 		t.Error("expected error for missing target")
 	}
 }
@@ -304,7 +313,7 @@ func TestResolveReservedProfileErrors(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	cmd, g := setupCmd(t, []string{"--target", "/tmp/out", "--profiles", "base"})
-	if _, err := Resolve(cmd, g); err == nil {
+	if _, err := resolve(cmd, g); err == nil {
 		t.Error("expected error for reserved profile")
 	}
 }
@@ -320,7 +329,7 @@ path = ".npmrc"
 strategy = "merge"
 `)
 	cmd, g := setupCmd(t, nil)
-	_, err := Resolve(cmd, g)
+	_, err := resolve(cmd, g)
 	if err == nil {
 		t.Fatal("expected invalid render rule error")
 	}
@@ -333,7 +342,7 @@ func TestResolveProfileDedupe(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	cmd, g := setupCmd(t, []string{"--target", "/tmp/out", "--profiles", "a,b,a,c,b"})
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -355,7 +364,7 @@ sources = ["pkgs"]
 target = "/tmp/out"
 `)
 	cmd, g := setupCmd(t, []string{"--config", cfgPath})
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,7 +389,7 @@ sources = ["pi", "codex"]
 target = "/tmp/out"
 `)
 	cmd, g := setupCmd(t, []string{"--config", cfgPath})
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -404,7 +413,7 @@ target = "/tmp/out"
 		"--config", cfgPath,
 		"--source", "/absolute/override",
 	})
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -429,7 +438,7 @@ target = "/tmp/out"
 		"--source", "pi",
 		"--source", "codex",
 	})
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -453,7 +462,7 @@ target = "/tmp/out"
 		"--config", cfgPath,
 		"--sources", "pi,codex",
 	})
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -471,7 +480,7 @@ sources = ["from-config"]
 target = "/tmp/out"
 `)
 	cmd, g := setupCmd(t, []string{"--config", cfgPath})
-	r, err := Resolve(cmd, g, "pi", "codex")
+	r, err := resolve(cmd, g, "pi", "codex")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -495,7 +504,7 @@ sources = [""]
 target = "/tmp/out"
 `)
 	cmd, g := setupCmd(t, []string{"--config", cfgPath})
-	r, err := Resolve(cmd, g, "pi")
+	r, err := resolve(cmd, g, "pi")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -515,7 +524,7 @@ env_profiles = "TEST_INJECT_RESERVED"
 `)
 	t.Setenv("TEST_INJECT_RESERVED", "local")
 	cmd, g := setupCmd(t, []string{"--config", cfgPath})
-	if _, err := Resolve(cmd, g); err == nil {
+	if _, err := resolve(cmd, g); err == nil {
 		t.Error("expected error when env_profiles injects a reserved profile")
 	}
 }
@@ -524,7 +533,7 @@ func TestResolveExplicitMissingConfigErrors(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	cmd, g := setupCmd(t, []string{"--config", filepath.Join(dir, "missing.toml"), "--target", "/tmp/out"})
-	if _, err := Resolve(cmd, g); err == nil {
+	if _, err := resolve(cmd, g); err == nil {
 		t.Error("expected error for explicit --config pointing at missing file")
 	}
 }
@@ -538,7 +547,7 @@ target = "/tmp/out"
 continue_on_error = true
 `)
 	cmd, g := setupCmd(t, []string{"--config", cfgPath, "--continue=false"})
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -558,7 +567,7 @@ func TestResolveExpandsSourceTilde(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	cmd, g := setupCmd(t, []string{"--source", "~/", "--target", "/tmp/out"})
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -573,7 +582,7 @@ func TestResolveExpandsSourceEnvVar(t *testing.T) {
 	t.Chdir(dir)
 	t.Setenv("OVERLAY_TEST_SRC", "/custom/src")
 	cmd, g := setupCmd(t, []string{"--source", "$OVERLAY_TEST_SRC", "--target", "/tmp/out"})
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -592,7 +601,7 @@ func TestResolveTargetRelativeFromConfig(t *testing.T) {
 	cfgPath := filepath.Join(sub, ".overlay.toml")
 	writeFile(t, cfgPath, `target = "out"`)
 	cmd, g := setupCmd(t, []string{"--config", cfgPath})
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -602,7 +611,7 @@ func TestResolveTargetRelativeFromConfig(t *testing.T) {
 	}
 }
 
-func TestGlobalFlagsRegistered(t *testing.T) {
+func TestRootFlagsRegistered(t *testing.T) {
 	cmd, _ := setupCmd(t, nil)
 	for _, name := range []string{"config", "sources", "source", "target", "profiles", "profile", "continue", "quiet", "verbose"} {
 		if cmd.Flags().Lookup(name) == nil {
@@ -624,7 +633,7 @@ func TestResolveEnvironmentTaggedFields(t *testing.T) {
 	t.Setenv("OVERLAY_PROFILES", "env-a,env-b")
 	t.Setenv("OVERLAY_CONTINUE", "true")
 	cmd, g := setupCmd(t, nil)
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -660,7 +669,7 @@ func TestResolveTomlOnlyEnvironmentVariablesDoNotLoad(t *testing.T) {
 	t.Setenv("OVERLAY_ENV_PROFILES", "SOME_VAR")
 	t.Setenv("OVERLAY_RENDER_RULES", "not-a-rule")
 	cmd, g := setupCmd(t, nil)
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -704,7 +713,7 @@ continue_on_error = true
 		"--profiles", "flag-a,flag-b",
 		"--continue=false",
 	})
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -732,7 +741,7 @@ env_profiles = "TEST_EXTRA_PROFILES"
 `)
 	t.Setenv("TEST_EXTRA_PROFILES", "work")
 	cmd, g := setupCmd(t, []string{"--config", cfgPath, "--profiles", "personal"})
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -755,7 +764,7 @@ env_profiles = "TEST_EXTRA_PROFILES"
 `)
 	t.Setenv("TEST_EXTRA_PROFILES", "b,c,a")
 	cmd, g := setupCmd(t, nil)
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -773,7 +782,7 @@ target = "/tmp/out"
 ignore = ["[bad"]
 `)
 	cmd, g := setupCmd(t, nil)
-	_, err := Resolve(cmd, g)
+	_, err := resolve(cmd, g)
 	if err == nil {
 		t.Fatal("expected invalid ignore pattern error")
 	}
@@ -793,7 +802,7 @@ path = "./.npmrc"
 strategy = "append"
 `)
 	cmd, g := setupCmd(t, nil)
-	r, err := Resolve(cmd, g)
+	r, err := resolve(cmd, g)
 	if err != nil {
 		t.Fatal(err)
 	}

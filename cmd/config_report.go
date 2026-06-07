@@ -1,5 +1,4 @@
-// Package cli contains Cobra-coupled configuration resolution helpers for the command package.
-package cli
+package cmd
 
 import (
 	"fmt"
@@ -13,8 +12,8 @@ import (
 	"github.com/jmcampanini/overlay/internal/config"
 )
 
-// PrintConfig loads runtime configuration and writes the config report.
-func PrintConfig(cmd *cobra.Command, g *GlobalFlags, w io.Writer) error {
+// printLoadedConfig loads runtime configuration and writes the config report.
+func printLoadedConfig(cmd *cobra.Command, g *globalFlags, w io.Writer) error {
 	raw, err := loadRawConfig(cmd, g)
 	if err != nil {
 		return err
@@ -22,8 +21,8 @@ func PrintConfig(cmd *cobra.Command, g *GlobalFlags, w io.Writer) error {
 	return printConfig(w, raw)
 }
 
-// ValidateConfig validates path as an effective runtime configuration.
-func ValidateConfig(cmd *cobra.Command, path string) error {
+// validateConfig validates path as an effective runtime configuration.
+func validateConfig(cmd *cobra.Command, path string) error {
 	return runConfigValidate(cmd, path)
 }
 
