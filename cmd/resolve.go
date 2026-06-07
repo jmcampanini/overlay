@@ -13,7 +13,6 @@ import (
 
 	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/jmcampanini/overlay/internal/discover"
-	"github.com/jmcampanini/overlay/internal/logging"
 )
 
 const (
@@ -135,8 +134,20 @@ type sourceResolution struct {
 // runtime settings bundle. It returns an error when Overlay-specific runtime
 // validation fails.
 func resolve(cmd *cobra.Command, g *globalFlags, positionalSources ...string) (Resolved, error) {
+	logger := log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: false,
+	})
+	switch {
+	case g.verbose:
+		logger.SetLevel(log.DebugLevel)
+	case g.quiet:
+		logger.SetLevel(log.WarnLevel)
+	default:
+		logger.SetLevel(log.InfoLevel)
+	}
+
 	r := Resolved{
-		Logger: logging.Setup(g.quiet, g.verbose),
+		Logger: logger,
 	}
 
 	raw, err := loadRawConfig(cmd, g)

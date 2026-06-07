@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/jmcampanini/overlay/internal/discover"
-	"github.com/jmcampanini/overlay/internal/logging"
 	"github.com/jmcampanini/overlay/internal/plan"
 )
 
@@ -24,7 +23,9 @@ func newPlanCmd(globalFlags *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			logging.WarnMissingSources(r.Logger, result.MissingSources)
+			for _, source := range result.MissingSources {
+				r.Logger.Warnf("source %q not found, skipping", source)
+			}
 			for _, stem := range result.Inactive {
 				r.Logger.Infof("skipping %s (no active layers)", stem)
 			}

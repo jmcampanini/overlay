@@ -14,7 +14,6 @@ import (
 
 	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/jmcampanini/overlay/internal/discover"
-	"github.com/jmcampanini/overlay/internal/logging"
 	"github.com/jmcampanini/overlay/internal/render"
 )
 
@@ -48,7 +47,9 @@ func Run(opts Options) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("discover: %w", err)
 	}
-	logging.WarnMissingSources(opts.Logger, result.MissingSources)
+	for _, source := range result.MissingSources {
+		opts.Logger.Warnf("source %q not found, skipping", source)
+	}
 	for _, stem := range result.Inactive {
 		opts.Logger.Infof("skipping %s (no active layers)", stem)
 	}
