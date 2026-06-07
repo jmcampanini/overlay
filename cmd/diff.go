@@ -16,13 +16,13 @@ type DiffExitCode int
 // Error satisfies the error interface.
 func (e DiffExitCode) Error() string { return fmt.Sprintf("diff exit code %d", int(e)) }
 
-func newDiffCmd(globalFlags *globalFlags) *cobra.Command {
+func newDiffCmd(flags *globalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "diff [source...]",
 		Short: "Show a unified diff between rendered output and existing target files.",
 		Long:  "Render each overlay group in memory and print a unified diff against the\nexisting target files. Positional sources select package roots for this run.\n" + sourceSelectionHelp + "\n" + diffOutputHelp + "\n" + profilePrecedenceHelp,
 		RunE: func(command *cobra.Command, args []string) error {
-			r, err := resolve(command, globalFlags, args...)
+			r, err := resolve(command, flags, args...)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "overlay:", err)
 				return DiffExitCode(2)

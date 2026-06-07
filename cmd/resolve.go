@@ -133,14 +133,14 @@ type sourceResolution struct {
 // resolve merges config file, environment variables, and CLI flags into a
 // runtime settings bundle. It returns an error when Overlay-specific runtime
 // validation fails.
-func resolve(cmd *cobra.Command, g *globalFlags, positionalSources ...string) (Resolved, error) {
+func resolve(command *cobra.Command, flags *globalFlags, positionalSources ...string) (Resolved, error) {
 	logger := log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: false,
 	})
 	switch {
-	case g.verbose:
+	case flags.verbose:
 		logger.SetLevel(log.DebugLevel)
-	case g.quiet:
+	case flags.quiet:
 		logger.SetLevel(log.WarnLevel)
 	default:
 		logger.SetLevel(log.InfoLevel)
@@ -150,7 +150,7 @@ func resolve(cmd *cobra.Command, g *globalFlags, positionalSources ...string) (R
 		Logger: logger,
 	}
 
-	raw, err := loadRawConfig(cmd, g)
+	raw, err := loadRawConfig(command, flags)
 	if err != nil {
 		return r, err
 	}
@@ -183,16 +183,16 @@ func resolve(cmd *cobra.Command, g *globalFlags, positionalSources ...string) (R
 	return r, nil
 }
 
-func loadRawConfig(cmd *cobra.Command, g *globalFlags) (rawLoadedConfig, error) {
-	cfgPath := g.config
-	configExplicit := changed(cmd, "config")
+func loadRawConfig(command *cobra.Command, flags *globalFlags) (rawLoadedConfig, error) {
+	cfgPath := flags.config
+	configExplicit := changed(command, "config")
 	if cfgPath == "" {
 		cfgPath = config.DefaultFilename
 	}
-	return loadRawConfigFromPath(cmd, cfgPath, configExplicit)
+	return loadRawConfigFromPath(command, cfgPath, configExplicit)
 }
 
-func loadRawConfigFromPath(cmd *cobra.Command, cfgPath string, required bool) (rawLoadedConfig, error) {
+func loadRawConfigFromPath(command *cobra.Command, cfgPath string, required bool) (rawLoadedConfig, error) {
 	fileLoader, err := config.NewFileLoader(cfgPath, required)
 	if err != nil {
 		return rawLoadedConfig{}, err
@@ -201,7 +201,7 @@ func loadRawConfigFromPath(cmd *cobra.Command, cfgPath string, required bool) (r
 	if err != nil {
 		return rawLoadedConfig{}, err
 	}
-	flagLoader, err := pflagloader.NewLoader[config.Config](cmd.Flags())
+	flagLoader, err := pflagloader.NewLoader[config.Config](command.Flags())
 	if err != nil {
 		return rawLoadedConfig{}, err
 	}

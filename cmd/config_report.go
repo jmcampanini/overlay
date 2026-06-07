@@ -12,16 +12,16 @@ import (
 	"github.com/jmcampanini/overlay/internal/config"
 )
 
-func printLoadedConfig(cmd *cobra.Command, g *globalFlags, w io.Writer) error {
-	raw, err := loadRawConfig(cmd, g)
+func printLoadedConfig(command *cobra.Command, flags *globalFlags, w io.Writer) error {
+	raw, err := loadRawConfig(command, flags)
 	if err != nil {
 		return err
 	}
 	return printConfig(w, raw)
 }
 
-func runConfigValidate(cmd *cobra.Command, path string) error {
-	raw, err := loadRawConfigFromPath(cmd, path, true)
+func runConfigValidate(command *cobra.Command, path string) error {
+	raw, err := loadRawConfigFromPath(command, path, true)
 	if err != nil {
 		return err
 	}

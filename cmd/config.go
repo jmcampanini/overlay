@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newConfigCmd(globalFlags *globalFlags) *cobra.Command {
+func newConfigCmd(flags *globalFlags) *cobra.Command {
 	var validatePath string
 	cmd := &cobra.Command{
 		Use:   "config",
@@ -25,7 +25,7 @@ For the full schema reference with field descriptions, run: overlay docs`,
 			if validatePath != "" {
 				return runConfigValidate(command, validatePath)
 			}
-			return printLoadedConfig(command, globalFlags, os.Stdout)
+			return printLoadedConfig(command, flags, os.Stdout)
 		},
 	}
 	cmd.Flags().StringVar(&validatePath, "validate", "", "validate the given .overlay.toml as effective runtime config and exit")

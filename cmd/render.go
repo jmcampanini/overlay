@@ -6,13 +6,13 @@ import (
 	"github.com/jmcampanini/overlay/internal/render"
 )
 
-func newRenderCmd(globalFlags *globalFlags) *cobra.Command {
+func newRenderCmd(flags *globalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "render [source...]",
 		Short: "Render overlay layers and write the output files.",
 		Long:  "Walk the source directories, render each group's active layers, and write the\nresult to the target directory. Positional sources select package roots for this run.\n" + sourceSelectionHelp + "\n" + profilePrecedenceHelp,
 		RunE: func(command *cobra.Command, args []string) error {
-			r, err := resolve(command, globalFlags, args...)
+			r, err := resolve(command, flags, args...)
 			if err != nil {
 				return err
 			}
