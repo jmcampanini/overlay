@@ -12,18 +12,12 @@ import (
 	"github.com/jmcampanini/overlay/internal/config"
 )
 
-// printLoadedConfig loads runtime configuration and writes the config report.
 func printLoadedConfig(cmd *cobra.Command, g *globalFlags, w io.Writer) error {
 	raw, err := loadRawConfig(cmd, g)
 	if err != nil {
 		return err
 	}
 	return printConfig(w, raw)
-}
-
-// validateConfig validates path as an effective runtime configuration.
-func validateConfig(cmd *cobra.Command, path string) error {
-	return runConfigValidate(cmd, path)
 }
 
 func runConfigValidate(cmd *cobra.Command, path string) error {

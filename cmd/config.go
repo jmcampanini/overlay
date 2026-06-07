@@ -23,7 +23,7 @@ on success, 1 on any error.
 For the full schema reference with field descriptions, run: overlay docs`,
 		RunE: func(command *cobra.Command, _ []string) error {
 			if validatePath != "" {
-				return validateConfig(command, validatePath)
+				return runConfigValidate(command, validatePath)
 			}
 			return printLoadedConfig(command, globalFlags, os.Stdout)
 		},

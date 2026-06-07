@@ -20,7 +20,7 @@ func Execute() error {
 }
 
 func newRootCmd() *cobra.Command {
-	globalFlags := &globalFlags{}
+	flags := &globalFlags{}
 	root := &cobra.Command{
 		Use:           "overlay",
 		Short:         "Merge layered JSON/TOML configuration files by profile.",
@@ -28,21 +28,26 @@ func newRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	flags.bindPersistentFlags(root)
 
-	f := root.PersistentFlags()
-	f.StringVar(&globalFlags.config, "config", "", "path to .overlay.toml (default: ./.overlay.toml)")
-	f.BoolVarP(&globalFlags.quiet, "quiet", "q", false, "suppress INFO logs (show WARN and above)")
-	f.BoolVarP(&globalFlags.verbose, "verbose", "v", false, "enable DEBUG logging")
+	root.AddCommand(
+		newRenderCmd(flags),
+		newDiffCmd(flags),
+		newPlanCmd(flags),
+		newConfigCmd(flags),
+		newDocsCmd(),
+	)
+	return root
+}
+
+func (g *globalFlags) bindPersistentFlags(cmd *cobra.Command) {
+	f := cmd.PersistentFlags()
+	f.StringVar(&g.config, "config", "", "path to .overlay.toml (default: ./.overlay.toml)")
+	f.BoolVarP(&g.quiet, "quiet", "q", false, "suppress INFO logs (show WARN and above)")
+	f.BoolVarP(&g.verbose, "verbose", "v", false, "enable DEBUG logging")
 	if err := pflagloader.Register[config.Config](f); err != nil {
 		panic(err)
 	}
-
-	root.AddCommand(newRenderCmd(globalFlags))
-	root.AddCommand(newDiffCmd(globalFlags))
-	root.AddCommand(newPlanCmd(globalFlags))
-	root.AddCommand(newConfigCmd(globalFlags))
-	root.AddCommand(newDocsCmd())
-	return root
 }
 
 func changed(cmd *cobra.Command, name string) bool {

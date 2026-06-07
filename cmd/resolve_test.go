@@ -8,22 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jmcampanini/go-config-loader/pflagloader"
 	"github.com/spf13/cobra"
-
-	"github.com/jmcampanini/overlay/internal/config"
 )
 
 func newTestCmd() (*cobra.Command, *globalFlags) {
 	g := &globalFlags{}
 	cmd := &cobra.Command{Use: "test", RunE: func(*cobra.Command, []string) error { return nil }}
-	f := cmd.PersistentFlags()
-	f.StringVar(&g.config, "config", "", "path to .overlay.toml (default: ./.overlay.toml)")
-	f.BoolVarP(&g.quiet, "quiet", "q", false, "suppress INFO logs (show WARN and above)")
-	f.BoolVarP(&g.verbose, "verbose", "v", false, "enable DEBUG logging")
-	if err := pflagloader.Register[config.Config](f); err != nil {
-		panic(err)
-	}
+	g.bindPersistentFlags(cmd)
 	return cmd, g
 }
 
