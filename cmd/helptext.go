@@ -1,4 +1,4 @@
-package cli
+package cmd
 
 // sourceSelectionHelp documents how source roots are resolved for commands
 // that walk overlay source files.

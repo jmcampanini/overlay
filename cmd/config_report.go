@@ -1,12 +1,8 @@
-// Package cli wires the cobra commands for the overlay binary and
-// resolves config + env + flags into the Settings consumed by the
-// render, diff, and plan packages.
-package cli
+package cmd
 
 import (
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"text/tabwriter"
 
@@ -16,39 +12,16 @@ import (
 	"github.com/jmcampanini/overlay/internal/config"
 )
 
-var configValidate string
-
-func newConfigCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "config",
-		Short: "Show loaded configuration, provenance, and effective runtime values.",
-		Long: `Show loaded configuration after applying defaults, config file,
-environment variables, and config-backed flags. The report uses GoConfigLoader
-provenance, then adds Overlay runtime-derived comments such as effective
-profiles and expanded paths.
-
-With --validate <path>, parse the given file, merge environment variables and
-config-backed flags, and validate the effective runtime configuration. Exits 0
-on success, 1 on any error.
-
-For the full schema reference with field descriptions, run: overlay docs`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if configValidate != "" {
-				return runConfigValidate(cmd, configValidate)
-			}
-			raw, err := loadRawConfig(cmd, &globals)
-			if err != nil {
-				return err
-			}
-			return printConfig(os.Stdout, raw)
-		},
+func printLoadedConfig(command *cobra.Command, flags *globalFlags, w io.Writer) error {
+	raw, err := loadRawConfig(command, flags)
+	if err != nil {
+		return err
 	}
-	cmd.Flags().StringVar(&configValidate, "validate", "", "validate the given .overlay.toml as effective runtime config and exit")
-	return cmd
+	return printConfig(w, raw)
 }
 
-func runConfigValidate(cmd *cobra.Command, path string) error {
-	raw, err := loadRawConfigFromPath(cmd, path, true)
+func runConfigValidate(command *cobra.Command, path string) error {
+	raw, err := loadRawConfigFromPath(command, path, true)
 	if err != nil {
 		return err
 	}
@@ -85,11 +58,11 @@ func writeConfigProvenance(w io.Writer, reporter configreporter.Reporter[config.
 
 	headers := reporter.ProvenanceHeaders()
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintf(tw, "# %s\t%s\n", headers[0], headers[1]); err != nil {
+	if _, err := fmt.Fprintf(tw, "# %s\n", strings.Join(headers, "\t")); err != nil {
 		return err
 	}
 	for _, row := range reporter.ProvenanceRows() {
-		if _, err := fmt.Fprintf(tw, "# %s\t%s\n", row[0], row[1]); err != nil {
+		if _, err := fmt.Fprintf(tw, "# %s\n", strings.Join(row, "\t")); err != nil {
 			return err
 		}
 	}

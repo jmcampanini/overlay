@@ -1,4 +1,4 @@
-package cli
+package cmd
 
 import (
 	"os"
@@ -6,17 +6,16 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/jmcampanini/overlay/internal/discover"
-	"github.com/jmcampanini/overlay/internal/logging"
 	"github.com/jmcampanini/overlay/internal/plan"
 )
 
-func newPlanCmd() *cobra.Command {
+func newPlanCmd(flags *globalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "plan [source...]",
 		Short: "Show what files would be generated without writing anything.",
 		Long:  "Print an aligned table of target paths, render modes, and active layers\nfor the current profile selection. Does not write any files. Positional sources select package roots for this run.\n" + sourceSelectionHelp + "\n" + profilePrecedenceHelp,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			r, err := Resolve(cmd, &globals, args...)
+		RunE: func(command *cobra.Command, args []string) error {
+			r, err := resolve(command, flags, args...)
 			if err != nil {
 				return err
 			}
@@ -24,7 +23,9 @@ func newPlanCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			logging.WarnMissingSources(r.Logger, result.MissingSources)
+			for _, source := range result.MissingSources {
+				r.Logger.Warnf("source %q not found, skipping", source)
+			}
 			for _, stem := range result.Inactive {
 				r.Logger.Infof("skipping %s (no active layers)", stem)
 			}

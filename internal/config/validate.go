@@ -80,10 +80,8 @@ func NormalizeRenderRulePath(p string) (string, error) {
 	if filepath.IsAbs(p) || path.IsAbs(slash) {
 		return "", fmt.Errorf("path must be target-relative")
 	}
-	for _, part := range strings.Split(slash, "/") {
-		if part == ".." {
-			return "", fmt.Errorf("path must not contain '..'")
-		}
+	if slices.Contains(strings.Split(slash, "/"), "..") {
+		return "", fmt.Errorf("path must not contain '..'")
 	}
 	return path.Clean(slash), nil
 }

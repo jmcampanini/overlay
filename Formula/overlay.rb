@@ -6,8 +6,8 @@ class Overlay < Formula
   depends_on "go" => :build
 
   def install
-    ldflags = "-s -w -X github.com/jmcampanini/overlay/internal/cli.Version=HEAD-#{Utils.git_short_head}"
-    system "go", "build", *std_go_args(output: bin/"overlay", ldflags: ldflags), "./cmd/overlay"
+    ldflags = "-s -w -X github.com/jmcampanini/overlay/cmd.Version=HEAD-#{Utils.git_short_head}"
+    system "go", "build", *std_go_args(output: bin/"overlay", ldflags: ldflags), "."
     generate_completions_from_executable(bin/"overlay", "completion")
   end
 
