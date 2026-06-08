@@ -30,17 +30,7 @@ func parseYAML(data []byte) (any, error) {
 		return nil, err
 	}
 
-	root, err := yamlDocumentRoot(&doc)
-	if err != nil {
-		return nil, err
-	}
-	if yamlEmptyRoot(root) {
-		return map[string]any{}, nil
-	}
-	if yamlNullRoot(root) {
-		return nil, fmt.Errorf("YAML root null is unsupported")
-	}
-	return yamlNodeToValue(root, "$")
+	return yamlDocumentToValue(&doc, "$")
 }
 
 func yamlDocumentRoot(n *yaml.Node) (*yaml.Node, error) {
@@ -60,27 +50,37 @@ func yamlDocumentRoot(n *yaml.Node) (*yaml.Node, error) {
 }
 
 func yamlEmptyRoot(n *yaml.Node) bool {
-	return n == nil || n.Kind == yaml.ScalarNode && n.ShortTag() == "!!null" && n.Value == "" && n.Style == 0
+	if n == nil {
+		return true
+	}
+	return n.Kind == yaml.ScalarNode && n.ShortTag() == "!!null" && n.Value == "" && n.Style == 0
 }
 
 func yamlNullRoot(n *yaml.Node) bool {
-	return n != nil && n.Kind == yaml.ScalarNode && n.ShortTag() == "!!null"
+	if n == nil {
+		return false
+	}
+	return n.Kind == yaml.ScalarNode && n.ShortTag() == "!!null"
+}
+
+func yamlDocumentToValue(n *yaml.Node, path string) (any, error) {
+	root, err := yamlDocumentRoot(n)
+	if err != nil {
+		return nil, err
+	}
+	if yamlEmptyRoot(root) {
+		return map[string]any{}, nil
+	}
+	if yamlNullRoot(root) {
+		return nil, fmt.Errorf("YAML root null is unsupported")
+	}
+	return yamlNodeToValue(root, path)
 }
 
 func yamlNodeToValue(n *yaml.Node, path string) (any, error) {
 	switch n.Kind {
 	case yaml.DocumentNode:
-		root, err := yamlDocumentRoot(n)
-		if err != nil {
-			return nil, err
-		}
-		if yamlEmptyRoot(root) {
-			return map[string]any{}, nil
-		}
-		if yamlNullRoot(root) {
-			return nil, fmt.Errorf("YAML root null is unsupported")
-		}
-		return yamlNodeToValue(root, path)
+		return yamlDocumentToValue(n, path)
 	case yaml.MappingNode:
 		if n.ShortTag() != "!!map" {
 			return nil, fmt.Errorf("unsupported YAML mapping tag %s at %s", n.ShortTag(), path)
@@ -158,10 +158,11 @@ func yamlScalarToValue(n *yaml.Node, path string) (any, error) {
 }
 
 func yamlPath(parent, key string) string {
+	quotedKey := fmt.Sprintf("%q", key)
 	if parent == "$" {
-		return "$[" + fmt.Sprintf("%q", key) + "]"
+		return "$[" + quotedKey + "]"
 	}
-	return parent + "[" + fmt.Sprintf("%q", key) + "]"
+	return parent + "[" + quotedKey + "]"
 }
 
 func serializeYAML(v any) ([]byte, error) {
