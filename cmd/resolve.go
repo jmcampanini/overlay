@@ -220,8 +220,8 @@ func deriveSourceDirs(positional []string, cfg config.Config, report configloade
 		return deriveSourceValues(positional, configExists, configBase)
 	}
 
-	sourcesSource := report.Updates[configPathSources]
-	anchor := sourceIsFile(sourcesSource) || (sourcesSource == configloader.SourceDefault && configExists)
+	configSource := report.Updates[configPathSources]
+	anchor := sourceIsFile(configSource) || (configSource == configloader.SourceDefault && configExists)
 	return deriveSourceValues(cfg.Sources, anchor, configBase)
 }
 
@@ -254,9 +254,9 @@ func deriveSourceValues(values []string, anchor bool, configBase string) sourceR
 }
 
 func derivePath(name, value string, report configloader.LoadReport, configBase string, configExists bool) (string, []effectiveConfigError) {
-	source := report.Updates[name]
+	configSource := report.Updates[name]
 	p := value
-	if sourceIsFile(source) || (source == configloader.SourceDefault && configExists) {
+	if sourceIsFile(configSource) || (configSource == configloader.SourceDefault && configExists) {
 		p = resolveRelative(value, configBase)
 	}
 	expanded, err := discover.ExpandPath(p)
@@ -303,13 +303,11 @@ func validateEffectiveConfig(raw rawLoadedConfig, effective effectiveConfig) []e
 }
 
 func effectiveProfiles(cfg config.Config) []string {
-	out := append([]string{}, cfg.Profiles...)
-	if cfg.EnvProfiles == "" {
-		return dedupe(out)
+	profiles := append([]string{}, cfg.Profiles...)
+	if cfg.EnvProfiles != "" {
+		profiles = append(profiles, splitCSV(os.Getenv(cfg.EnvProfiles))...)
 	}
-	extra := splitCSV(os.Getenv(cfg.EnvProfiles))
-	out = append(out, extra...)
-	return dedupe(out)
+	return dedupe(profiles)
 }
 
 func splitCSV(s string) []string {

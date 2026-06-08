@@ -135,7 +135,7 @@ env_profiles = "TEST_EXTRA_PROFILES"
 	}
 }
 
-func TestResolveEnvProfilesDeclaredButUnsetIsConfig(t *testing.T) {
+func TestResolveEnvProfilesDeclaredButUnsetKeepsConfiguredProfiles(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
@@ -154,7 +154,7 @@ env_profiles = "TEST_NEVER_SET_ENV"
 	}
 }
 
-func TestResolveEnvProfilesDeclaredButEmptyIsConfig(t *testing.T) {
+func TestResolveEnvProfilesDeclaredButEmptyKeepsConfiguredProfiles(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
