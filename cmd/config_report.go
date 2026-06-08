@@ -58,11 +58,11 @@ func writeConfigProvenance(w io.Writer, reporter configreporter.Reporter[config.
 
 	headers := reporter.ProvenanceHeaders()
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintf(tw, "# %s\t%s\n", headers[0], headers[1]); err != nil {
+	if _, err := fmt.Fprintf(tw, "# %s\n", strings.Join(headers, "\t")); err != nil {
 		return err
 	}
 	for _, row := range reporter.ProvenanceRows() {
-		if _, err := fmt.Fprintf(tw, "# %s\t%s\n", row[0], row[1]); err != nil {
+		if _, err := fmt.Fprintf(tw, "# %s\n", strings.Join(row, "\t")); err != nil {
 			return err
 		}
 	}

@@ -16,49 +16,12 @@ import (
 )
 
 const (
-	configPathSources         = "sources"
-	configPathTarget          = "target"
-	configPathProfiles        = "profiles"
-	configPathContinueOnError = "continueonerror"
-	configPathIgnore          = "ignore"
-	configPathRenderRules     = "render_rules"
+	configPathSources     = "sources"
+	configPathTarget      = "target"
+	configPathProfiles    = "profiles"
+	configPathIgnore      = "ignore"
+	configPathRenderRules = "render_rules"
 )
-
-// Provenance identifies which raw source produced a setting's value.
-type Provenance int
-
-// Provenance constants. The integer values are not compared anywhere;
-// the constants exist solely as discriminated tags.
-const (
-	ProvDefault   Provenance = iota // built-in default
-	ProvEnv                         // environment variable
-	ProvConfig                      // .overlay.toml
-	ProvConfigEnv                   // raw profiles plus env_profiles contribution
-	ProvFlag                        // CLI flag override
-)
-
-// String returns a display label for the provenance.
-func (p Provenance) String() string {
-	switch p {
-	case ProvFlag:
-		return "flag"
-	case ProvConfigEnv:
-		return "config+env"
-	case ProvConfig:
-		return "config"
-	case ProvEnv:
-		return "env"
-	}
-	return "default"
-}
-
-// Provenances records where each runtime setting's raw value came from.
-type Provenances struct {
-	Source          Provenance
-	Target          Provenance
-	Profiles        Provenance
-	ContinueOnError Provenance
-}
 
 // Resolved is the runtime settings bundle after raw config loading and
 // Overlay-specific derivation/validation.
@@ -66,7 +29,6 @@ type Resolved struct {
 	Settings        discover.Settings
 	ContinueOnError bool
 	Logger          *log.Logger
-	Provenance      Provenances
 	RawConfig       config.Config
 	Effective       effectiveConfig
 	SourceLabels    []string
@@ -90,7 +52,6 @@ type effectiveConfig struct {
 	TraverseHidden   bool
 	RespectGitignore bool
 	RenderRules      []config.RenderRule
-	Provenance       Provenances
 	DerivationErrors []effectiveConfigError
 }
 
@@ -126,7 +87,6 @@ func (errs effectiveConfigErrors) Error() string {
 type sourceResolution struct {
 	dirs             []string
 	labels           []string
-	provenance       Provenance
 	derivationErrors []effectiveConfigError
 }
 
@@ -158,7 +118,6 @@ func resolve(command *cobra.Command, flags *globalFlags, positionalSources ...st
 
 	effective := deriveEffectiveConfig(raw, positionalSources...)
 	r.Effective = effective
-	r.Provenance = effective.Provenance
 	r.SourceLabels = effective.SourceLabels
 	effectiveErrors := effectiveConfigErrors(validateEffectiveConfig(raw, effective))
 	if err := effectiveErrors.FirstError(); err != nil {
@@ -185,10 +144,10 @@ func resolve(command *cobra.Command, flags *globalFlags, positionalSources ...st
 
 func loadRawConfig(command *cobra.Command, flags *globalFlags) (rawLoadedConfig, error) {
 	cfgPath := flags.config
-	configExplicit := changed(command, "config")
 	if cfgPath == "" {
 		cfgPath = config.DefaultFilename
 	}
+	configExplicit := changed(command, "config")
 	return loadRawConfigFromPath(command, cfgPath, configExplicit)
 }
 
@@ -230,8 +189,8 @@ func deriveEffectiveConfig(raw rawLoadedConfig, positionalSources ...string) eff
 	cfg := raw.Config
 
 	sources := deriveSourceDirs(positionalSources, cfg, raw.Report, configBase, configExists)
-	target, targetProv, targetErrors := derivePath(configPathTarget, cfg.Target, raw.Report, configBase, configExists)
-	profiles, envContributed := effectiveProfiles(cfg)
+	target, targetErrors := derivePath(configPathTarget, cfg.Target, raw.Report, configBase, configExists)
+	profiles := effectiveProfiles(cfg)
 	ignore, ignoreErrors := deriveIgnorePatterns(cfg.Ignore)
 	renderRules, renderRuleErrors := deriveRenderRules(cfg.RenderRules)
 
@@ -253,26 +212,20 @@ func deriveEffectiveConfig(raw rawLoadedConfig, positionalSources ...string) eff
 		RespectGitignore: cfg.RespectGitignore,
 		RenderRules:      renderRules,
 		DerivationErrors: derivationErrors,
-		Provenance: Provenances{
-			Source:          sources.provenance,
-			Target:          targetProv,
-			Profiles:        profilesProvenance(raw.Report, envContributed),
-			ContinueOnError: provenanceFromReport(raw.Report, configPathContinueOnError),
-		},
 	}
 }
 
 func deriveSourceDirs(positional []string, cfg config.Config, report configloader.LoadReport, configBase string, configExists bool) sourceResolution {
 	if len(positional) > 0 {
-		return deriveSourceValues(positional, ProvFlag, configExists, configBase)
+		return deriveSourceValues(positional, configExists, configBase)
 	}
 
 	sourcesSource := report.Updates[configPathSources]
 	anchor := sourceIsFile(sourcesSource) || (sourcesSource == configloader.SourceDefault && configExists)
-	return deriveSourceValues(cfg.Sources, provenanceFromSource(sourcesSource), anchor, configBase)
+	return deriveSourceValues(cfg.Sources, anchor, configBase)
 }
 
-func deriveSourceValues(values []string, prov Provenance, anchor bool, configBase string) sourceResolution {
+func deriveSourceValues(values []string, anchor bool, configBase string) sourceResolution {
 	dirs := make([]string, 0, len(values))
 	var derivationErrors []effectiveConfigError
 	for _, value := range values {
@@ -296,23 +249,21 @@ func deriveSourceValues(values []string, prov Provenance, anchor bool, configBas
 	return sourceResolution{
 		dirs:             dirs,
 		labels:           append([]string(nil), values...),
-		provenance:       prov,
 		derivationErrors: derivationErrors,
 	}
 }
 
-func derivePath(name, value string, report configloader.LoadReport, configBase string, configExists bool) (string, Provenance, []effectiveConfigError) {
+func derivePath(name, value string, report configloader.LoadReport, configBase string, configExists bool) (string, []effectiveConfigError) {
 	source := report.Updates[name]
 	p := value
 	if sourceIsFile(source) || (source == configloader.SourceDefault && configExists) {
 		p = resolveRelative(value, configBase)
 	}
-	prov := provenanceFromSource(source)
 	expanded, err := discover.ExpandPath(p)
 	if err != nil {
-		return p, prov, []effectiveConfigError{{Field: name, Err: fmt.Errorf("expand %s: %w", name, err)}}
+		return p, []effectiveConfigError{{Field: name, Err: fmt.Errorf("expand %s: %w", name, err)}}
 	}
-	return expanded, prov, nil
+	return expanded, nil
 }
 
 func deriveIgnorePatterns(patterns []string) ([]string, []effectiveConfigError) {
@@ -351,38 +302,14 @@ func validateEffectiveConfig(raw rawLoadedConfig, effective effectiveConfig) []e
 	return errors
 }
 
-func effectiveProfiles(cfg config.Config) ([]string, bool) {
+func effectiveProfiles(cfg config.Config) []string {
 	out := append([]string{}, cfg.Profiles...)
 	if cfg.EnvProfiles == "" {
-		return dedupe(out), false
+		return dedupe(out)
 	}
 	extra := splitCSV(os.Getenv(cfg.EnvProfiles))
 	out = append(out, extra...)
-	return dedupe(out), len(extra) > 0
-}
-
-func profilesProvenance(report configloader.LoadReport, envContributed bool) Provenance {
-	if envContributed {
-		return ProvConfigEnv
-	}
-	return provenanceFromReport(report, configPathProfiles)
-}
-
-func provenanceFromReport(report configloader.LoadReport, path string) Provenance {
-	return provenanceFromSource(report.Updates[path])
-}
-
-func provenanceFromSource(source string) Provenance {
-	switch source {
-	case pflagloader.SourcePFlag:
-		return ProvFlag
-	case configloader.SourceEnv:
-		return ProvEnv
-	case "", configloader.SourceDefault:
-		return ProvDefault
-	default:
-		return ProvConfig
-	}
+	return dedupe(out)
 }
 
 func splitCSV(s string) []string {

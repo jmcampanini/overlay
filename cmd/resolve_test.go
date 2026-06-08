@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jmcampanini/go-config-loader/configloader"
+	"github.com/jmcampanini/go-config-loader/pflagloader"
 	"github.com/spf13/cobra"
 )
 
@@ -69,6 +71,17 @@ func unsetEnv(t *testing.T, key string) {
 	})
 }
 
+func assertProvenanceRow(t *testing.T, out, path, value, source string) {
+	t.Helper()
+	want := []string{"#", path, value, source}
+	for _, line := range strings.Split(out, "\n") {
+		if reflect.DeepEqual(strings.Fields(line), want) {
+			return
+		}
+	}
+	t.Fatalf("provenance row %v not found:\n%s", want, out)
+}
+
 func TestResolveFlagsOnly(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -82,9 +95,6 @@ func TestResolveFlagsOnly(t *testing.T) {
 	}
 	if !reflect.DeepEqual(r.Settings.Profiles, []string{"a", "b", "c"}) {
 		t.Errorf("Profiles = %v", r.Settings.Profiles)
-	}
-	if r.Provenance.Profiles != ProvFlag {
-		t.Errorf("ProfilesFrom = %v", r.Provenance.Profiles)
 	}
 }
 
@@ -102,9 +112,6 @@ profiles = ["work"]
 	}
 	if !reflect.DeepEqual(r.Settings.Profiles, []string{"work"}) {
 		t.Errorf("Profiles = %v", r.Settings.Profiles)
-	}
-	if r.Provenance.Profiles != ProvConfig {
-		t.Errorf("ProfilesFrom = %v, want config (no env contributed)", r.Provenance.Profiles)
 	}
 }
 
@@ -126,10 +133,6 @@ env_profiles = "TEST_EXTRA_PROFILES"
 	if !reflect.DeepEqual(r.Settings.Profiles, want) {
 		t.Errorf("Profiles = %v, want %v", r.Settings.Profiles, want)
 	}
-	// The headline guarantee: ProvConfigEnv only when env actually contributed.
-	if r.Provenance.Profiles != ProvConfigEnv {
-		t.Errorf("ProfilesProv = %v, want config+env", r.Provenance.Profiles)
-	}
 }
 
 func TestResolveEnvProfilesDeclaredButUnsetIsConfig(t *testing.T) {
@@ -149,10 +152,6 @@ env_profiles = "TEST_NEVER_SET_ENV"
 	if !reflect.DeepEqual(r.Settings.Profiles, []string{"work"}) {
 		t.Errorf("Profiles = %v", r.Settings.Profiles)
 	}
-	// env_profiles is declared but contributed nothing -> ProvConfig, not ProvConfigEnv.
-	if r.Provenance.Profiles != ProvConfig {
-		t.Errorf("ProfilesProv = %v, want config (env_profiles unset, no contribution)", r.Provenance.Profiles)
-	}
 }
 
 func TestResolveEnvProfilesDeclaredButEmptyIsConfig(t *testing.T) {
@@ -169,9 +168,8 @@ env_profiles = "TEST_EMPTY_CSV"
 	if err != nil {
 		t.Fatal(err)
 	}
-	// env var is set but splitCSV strips empties, so nothing was contributed.
-	if r.Provenance.Profiles != ProvConfig {
-		t.Errorf("ProfilesProv = %v, want config (env var stripped to nothing)", r.Provenance.Profiles)
+	if !reflect.DeepEqual(r.Settings.Profiles, []string{"work"}) {
+		t.Errorf("Profiles = %v", r.Settings.Profiles)
 	}
 }
 
@@ -190,9 +188,6 @@ profiles = ["from_config"]
 	if !reflect.DeepEqual(r.Settings.Profiles, []string{"override"}) {
 		t.Errorf("Profiles = %v", r.Settings.Profiles)
 	}
-	if r.Provenance.Profiles != ProvFlag {
-		t.Errorf("ProfilesFrom = %v", r.Provenance.Profiles)
-	}
 }
 
 func TestResolveSingularProfileFlagOverridesConfigAndEnv(t *testing.T) {
@@ -210,9 +205,6 @@ profiles = ["from_config"]
 	}
 	want := []string{"work"}
 	assertRawAndEffectiveProfiles(t, r, want)
-	if r.Provenance.Profiles != ProvFlag {
-		t.Errorf("ProfilesFrom = %v, want flag", r.Provenance.Profiles)
-	}
 }
 
 func TestResolveRepeatedSingularProfileFlagPreservesOrder(t *testing.T) {
@@ -267,9 +259,6 @@ func TestResolveConfigBackedProfilesEnv(t *testing.T) {
 	if !reflect.DeepEqual(r.Settings.Profiles, []string{"auto1", "auto2"}) {
 		t.Errorf("Profiles = %v", r.Settings.Profiles)
 	}
-	if r.Provenance.Profiles != ProvEnv {
-		t.Errorf("ProfilesFrom = %v", r.Provenance.Profiles)
-	}
 }
 
 func TestResolveSingularProfileEnvironmentVariableIgnored(t *testing.T) {
@@ -285,9 +274,6 @@ func TestResolveSingularProfileEnvironmentVariableIgnored(t *testing.T) {
 	}
 	if len(r.RawConfig.Profiles) != 0 || len(r.Settings.Profiles) != 0 {
 		t.Errorf("profiles raw/effective = %v/%v, want none", r.RawConfig.Profiles, r.Settings.Profiles)
-	}
-	if r.Provenance.Profiles != ProvDefault {
-		t.Errorf("ProfilesFrom = %v, want default", r.Provenance.Profiles)
 	}
 }
 
@@ -363,9 +349,6 @@ target = "/tmp/out"
 	if !reflect.DeepEqual(r.Settings.SourceDirs, want) {
 		t.Errorf("SourceDirs = %v, want %v", r.Settings.SourceDirs, want)
 	}
-	if r.Provenance.Source != ProvConfig {
-		t.Errorf("SourceFrom = %v, want config", r.Provenance.Source)
-	}
 }
 
 func TestResolveMultipleSourcesRelativeFromConfig(t *testing.T) {
@@ -412,9 +395,6 @@ target = "/tmp/out"
 	if !reflect.DeepEqual(r.Settings.SourceDirs, want) {
 		t.Errorf("SourceDirs = %v, want %v", r.Settings.SourceDirs, want)
 	}
-	if r.Provenance.Source != ProvFlag {
-		t.Errorf("SourceFrom = %v, want flag", r.Provenance.Source)
-	}
 }
 
 func TestResolveRepeatedSourceFlagReplacesConfig(t *testing.T) {
@@ -436,9 +416,6 @@ target = "/tmp/out"
 	want := []string{"pi", "codex"}
 	if !reflect.DeepEqual(r.Settings.SourceDirs, want) {
 		t.Errorf("SourceDirs = %v, want %v", r.Settings.SourceDirs, want)
-	}
-	if r.Provenance.Source != ProvFlag {
-		t.Errorf("SourceFrom = %v, want flag", r.Provenance.Source)
 	}
 }
 
@@ -481,9 +458,6 @@ target = "/tmp/out"
 	}
 	if !reflect.DeepEqual(r.SourceLabels, []string{"pi", "codex"}) {
 		t.Errorf("SourceLabels = %v", r.SourceLabels)
-	}
-	if r.Provenance.Source != ProvFlag {
-		t.Errorf("SourceFrom = %v, want flag", r.Provenance.Source)
 	}
 }
 
@@ -544,9 +518,6 @@ continue_on_error = true
 	}
 	if r.ContinueOnError {
 		t.Error("--continue=false should override continue_on_error = true in config")
-	}
-	if r.Provenance.ContinueOnError != ProvFlag {
-		t.Errorf("ContinueFrom = %v, want flag", r.Provenance.ContinueOnError)
 	}
 }
 
@@ -644,9 +615,6 @@ func TestResolveEnvironmentTaggedFields(t *testing.T) {
 	if !r.ContinueOnError {
 		t.Error("ContinueOnError should come from OVERLAY_CONTINUE")
 	}
-	if r.Provenance.Source != ProvEnv || r.Provenance.Target != ProvEnv || r.Provenance.Profiles != ProvEnv || r.Provenance.ContinueOnError != ProvEnv {
-		t.Errorf("provenance = %+v, want env for tagged fields", r.Provenance)
-	}
 }
 
 func TestResolveTomlOnlyEnvironmentVariablesDoNotLoad(t *testing.T) {
@@ -716,9 +684,6 @@ continue_on_error = true
 	}
 	if r.RawConfig.ContinueOnError {
 		t.Error("--continue=false should override file/env true")
-	}
-	if r.Provenance.Source != ProvFlag || r.Provenance.Target != ProvFlag || r.Provenance.Profiles != ProvFlag || r.Provenance.ContinueOnError != ProvFlag {
-		t.Errorf("provenance = %+v, want flag for overridden fields", r.Provenance)
 	}
 }
 
@@ -847,6 +812,29 @@ env_profiles = "DOTFILES_PROFILE"
 			t.Fatalf("raw TOML should not include effective env profile:\n%s", out)
 		}
 	}
+}
+
+func TestPrintConfigProvenanceIncludesSourceColumn(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	cfgPath := filepath.Join(dir, ".overlay.toml")
+	writeFile(t, cfgPath, `profiles = ["file"]`)
+	t.Setenv("OVERLAY_CONTINUE", "true")
+	cmd, g := setupCmd(t, []string{"--config", cfgPath, "--target", "flag-target"})
+	raw, err := loadRawConfig(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := printConfig(&buf, raw); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	assertProvenanceRow(t, out, "Path", "Value", "Source")
+	assertProvenanceRow(t, out, "profiles", `["file"]`, cfgPath)
+	assertProvenanceRow(t, out, "continueonerror", "true", configloader.SourceEnv)
+	assertProvenanceRow(t, out, "dotprefix", "true", configloader.SourceDefault)
+	assertProvenanceRow(t, out, "target", `"flag-target"`, pflagloader.SourcePFlag)
 }
 
 func TestPrintConfigReportsEffectiveErrors(t *testing.T) {
