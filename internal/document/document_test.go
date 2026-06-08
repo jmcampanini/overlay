@@ -268,6 +268,71 @@ func TestYAMLSerializeBlockStyleWithTwoSpaceIndent(t *testing.T) {
 	}
 }
 
+func TestYAMLEmptyDocumentsAreNoop(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+	}{
+		{name: "empty", input: ""},
+		{name: "comments only", input: "# comment\n# another\n"},
+		{name: "document marker only", input: "---\n"},
+		{name: "document marker plus comments", input: "---\n# comment\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := Parse([]byte(tc.input), FormatYAML)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			want := map[string]any{}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("Parse = %#v, want %#v", got, want)
+			}
+		})
+	}
+}
+
+func TestYAMLRejectsExplicitRootNull(t *testing.T) {
+	cases := []string{"null\n", "~\n"}
+	for _, input := range cases {
+		t.Run(strings.TrimSpace(input), func(t *testing.T) {
+			_, err := Parse([]byte(input), FormatYAML)
+			if err == nil || !strings.Contains(err.Error(), "root null") {
+				t.Fatalf("Parse error = %v, want root-null error", err)
+			}
+		})
+	}
+}
+
+func TestYAMLAllowsNestedNull(t *testing.T) {
+	got, err := Parse([]byte("value: null\n"), FormatYAML)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	want := map[string]any{"value": nil}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Parse = %#v, want %#v", got, want)
+	}
+}
+
+func TestYAMLTimestampScalarsParseAsStrings(t *testing.T) {
+	got, err := Parse([]byte("releaseDate: 2026-06-08\n"), FormatYAML)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	want := map[string]any{"releaseDate": "2026-06-08"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Parse = %#v, want %#v", got, want)
+	}
+	out, err := Serialize(got, FormatYAML)
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+	if !strings.Contains(string(out), "2026-06-08") {
+		t.Fatalf("serialized YAML missing date string:\n%s", out)
+	}
+}
+
 func TestYAMLRejectsMultipleDocuments(t *testing.T) {
 	_, err := Parse([]byte("a: 1\n---\nb: 2\n"), FormatYAML)
 	if err == nil || !strings.Contains(err.Error(), "multiple documents") {
@@ -300,5 +365,24 @@ func TestYAMLRejectsCustomTags(t *testing.T) {
 	_, err := Parse([]byte("value: !secret token\n"), FormatYAML)
 	if err == nil || !strings.Contains(err.Error(), "unsupported YAML scalar tag") {
 		t.Fatalf("Parse error = %v, want custom-tag error", err)
+	}
+}
+
+func TestYAMLRejectsUncommonStandardTags(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "binary", input: "blob: !!binary SGVsbG8=\n", want: "unsupported YAML scalar tag"},
+		{name: "set", input: "value: !!set {a: null}\n", want: "unsupported YAML mapping tag"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Parse([]byte(tc.input), FormatYAML)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Parse error = %v, want %q", err, tc.want)
+			}
+		})
 	}
 }

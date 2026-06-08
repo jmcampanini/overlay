@@ -30,16 +30,57 @@ func parseYAML(data []byte) (any, error) {
 		return nil, err
 	}
 
-	return yamlNodeToValue(&doc, "$")
+	root, err := yamlDocumentRoot(&doc)
+	if err != nil {
+		return nil, err
+	}
+	if yamlEmptyRoot(root) {
+		return map[string]any{}, nil
+	}
+	if yamlNullRoot(root) {
+		return nil, fmt.Errorf("YAML root null is unsupported")
+	}
+	return yamlNodeToValue(root, "$")
+}
+
+func yamlDocumentRoot(n *yaml.Node) (*yaml.Node, error) {
+	if n.Kind == 0 {
+		return nil, nil
+	}
+	if n.Kind != yaml.DocumentNode {
+		return n, nil
+	}
+	if len(n.Content) == 0 {
+		return nil, nil
+	}
+	if len(n.Content) != 1 {
+		return nil, fmt.Errorf("invalid YAML document: expected one root node, got %d", len(n.Content))
+	}
+	return n.Content[0], nil
+}
+
+func yamlEmptyRoot(n *yaml.Node) bool {
+	return n == nil || n.Kind == yaml.ScalarNode && n.ShortTag() == "!!null" && n.Value == "" && n.Style == 0
+}
+
+func yamlNullRoot(n *yaml.Node) bool {
+	return n != nil && n.Kind == yaml.ScalarNode && n.ShortTag() == "!!null"
 }
 
 func yamlNodeToValue(n *yaml.Node, path string) (any, error) {
 	switch n.Kind {
 	case yaml.DocumentNode:
-		if len(n.Content) == 0 {
+		root, err := yamlDocumentRoot(n)
+		if err != nil {
+			return nil, err
+		}
+		if yamlEmptyRoot(root) {
 			return map[string]any{}, nil
 		}
-		return yamlNodeToValue(n.Content[0], path)
+		if yamlNullRoot(root) {
+			return nil, fmt.Errorf("YAML root null is unsupported")
+		}
+		return yamlNodeToValue(root, path)
 	case yaml.MappingNode:
 		if n.ShortTag() != "!!map" {
 			return nil, fmt.Errorf("unsupported YAML mapping tag %s at %s", n.ShortTag(), path)
@@ -97,7 +138,7 @@ func yamlScalarToValue(n *yaml.Node, path string) (any, error) {
 	switch n.ShortTag() {
 	case "!!null":
 		return nil, nil
-	case "!!str":
+	case "!!str", "!!timestamp":
 		return n.Value, nil
 	case "!!bool":
 		var v bool
