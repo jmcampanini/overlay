@@ -118,7 +118,9 @@ only when needed. `copy` forces whole-file copy behavior, including for JSON,
 TOML, or YAML targets that would otherwise merge.
 
 Output is deterministic: keys are alphabetized in JSON, TOML, and YAML so
-`overlay diff` stays trustworthy and golden-file tests are stable.
+`overlay diff` stays trustworthy and golden-file tests are stable. JSON and YAML
+numeric output is normalized; whole-valued floats such as `1.0` may render as
+`1`.
 
 ## Profile resolution precedence
 
@@ -228,10 +230,12 @@ the loaded strings and comments the expanded effective paths.
   — it keeps `overlay diff` stable and makes golden-file tests cheap. If
   your source files had a hand-curated key order, it will not be
   preserved in the merged output.
-- **YAML output is normalized.** Rendered YAML uses deterministic block style
-  with 2-space indentation. Comments, source formatting, and source key order
-  are not preserved; multi-document streams, non-string or complex mapping keys,
-  aliases, and custom tags are rejected.
+- **YAML input and output are normalized.** YAML merge inputs must be
+  single-document root mappings; empty/comment-only YAML layers are accepted as
+  no-op empty maps. Rendered YAML uses deterministic block style with 2-space
+  indentation. Comments, source formatting, and source key order are not
+  preserved; root sequences/scalars, explicit root null, multi-document streams,
+  non-string or complex mapping keys, aliases, and custom tags are rejected.
 - **TOML tables are unindented by default.** Set `toml_indent_tables = true`
   to ask the TOML encoder to indent nested tables and array-table values.
 - **Hidden directories are skipped by default.** Set

@@ -74,7 +74,30 @@ func yamlDocumentToValue(n *yaml.Node, path string) (any, error) {
 	if yamlNullRoot(root) {
 		return nil, fmt.Errorf("YAML root null is unsupported")
 	}
+	if root.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("YAML root must be a mapping, got %s", yamlNodeKind(root))
+	}
 	return yamlNodeToValue(root, path)
+}
+
+func yamlNodeKind(n *yaml.Node) string {
+	if n == nil {
+		return "empty"
+	}
+	switch n.Kind {
+	case yaml.DocumentNode:
+		return "document"
+	case yaml.MappingNode:
+		return "mapping"
+	case yaml.SequenceNode:
+		return "sequence"
+	case yaml.ScalarNode:
+		return "scalar"
+	case yaml.AliasNode:
+		return "alias"
+	default:
+		return fmt.Sprintf("node kind %d", n.Kind)
+	}
 }
 
 func yamlNodeToValue(n *yaml.Node, path string) (any, error) {

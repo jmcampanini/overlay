@@ -304,6 +304,25 @@ func TestYAMLRejectsExplicitRootNull(t *testing.T) {
 	}
 }
 
+func TestYAMLRejectsNonMappingRoots(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "sequence", input: "- one\n- two\n", want: "got sequence"},
+		{name: "scalar", input: "hello\n", want: "got scalar"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Parse([]byte(tc.input), FormatYAML)
+			if err == nil || !strings.Contains(err.Error(), "root must be a mapping") || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Parse error = %v, want root mapping error containing %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestYAMLAllowsNestedNull(t *testing.T) {
 	got, err := Parse([]byte("value: null\n"), FormatYAML)
 	if err != nil {

@@ -195,9 +195,14 @@ With dot_prefix = true and target = "~/", those layers merge into:
 
   ~/.claude/settings.json
 
-YAML inputs must be single-document config-style YAML. String-keyed mappings,
-sequences, and scalar values are supported. Multi-document streams, non-string
-or complex mapping keys, aliases, and custom tags are rejected with errors.
+YAML inputs must be single-document config-style YAML with a root mapping.
+Empty/comment-only YAML layers are accepted as no-op empty maps. Mapping values
+may be sequences and scalar values. Root sequences/scalars, explicit root null,
+multi-document streams, non-string or complex mapping keys, aliases, and custom
+tags are rejected with errors.
+
+JSON and YAML numeric output is normalized by their encoders; whole-valued
+floats such as 1.0 may render as 1.
 
 By default, valid overlays with any other extension, or no extension, are copied
 through as whole files. The highest-precedence active layer wins:
