@@ -116,7 +116,7 @@ FIELDS
           copy    copy the highest-precedence active layer
 
     Without a matching render rule, defaults are unchanged:
-      .json/.toml -> merge
+      .json/.toml/.yaml/.yml -> merge
       other files -> copy
 
     Append preserves each active layer's content and appends in normal layer
@@ -183,15 +183,21 @@ The stem is required and may contain dots. The profile name "base" is always
 first, "local" is always last, and any other name is a user profile. If an
 extension is present, it must be one filename segment with no additional dots.
 
-By default, JSON and TOML overlays are mergeable structured formats:
+By default, JSON, TOML, and YAML overlays are mergeable structured formats:
 
   dot-claude/settings.olay.base.json      -> base layer (always first)
   dot-claude/settings.olay.work.json      -> "work" profile layer
   dot-claude/settings.olay.local.json     -> local layer (always last)
+  lazygit/config.olay.base.yml            -> YAML base layer
+  lazygit/config.olay.dark.yml            -> YAML "dark" profile layer
 
 With dot_prefix = true and target = "~/", those layers merge into:
 
   ~/.claude/settings.json
+
+YAML inputs must be single-document config-style YAML. String-keyed mappings,
+sequences, and scalar values are supported. Multi-document streams, non-string
+or complex mapping keys, aliases, and custom tags are rejected with errors.
 
 By default, valid overlays with any other extension, or no extension, are copied
 through as whole files. The highest-precedence active layer wins:

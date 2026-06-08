@@ -1,4 +1,4 @@
-// Command overlay merges layered JSON/TOML configuration files by profile.
+// Command overlay merges layered JSON/TOML/YAML configuration files by profile.
 package main
 
 import (

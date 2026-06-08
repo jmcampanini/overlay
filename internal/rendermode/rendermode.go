@@ -15,7 +15,7 @@ import (
 type Mode string
 
 const (
-	// ModeMerge structurally merges JSON or TOML layers.
+	// ModeMerge structurally merges JSON, TOML, or YAML layers.
 	ModeMerge Mode = "merge"
 	// ModeCopy copies the highest-precedence active layer.
 	ModeCopy Mode = "copy"
@@ -67,7 +67,7 @@ func ForGroup(g discover.Group, targetDir string, rules []config.RenderRule) (Mo
 // DefaultForFormat returns Overlay's default mode for a discovered format.
 func DefaultForFormat(f document.Format) Mode {
 	switch f {
-	case document.FormatJSON, document.FormatTOML:
+	case document.FormatJSON, document.FormatTOML, document.FormatYAML:
 		return ModeMerge
 	default:
 		return ModeCopy

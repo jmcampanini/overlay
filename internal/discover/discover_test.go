@@ -164,6 +164,37 @@ func TestWalkDetectsTargetPathCollisionAcrossSourceRoots(t *testing.T) {
 	}
 }
 
+func TestWalkYAMLStructuredFormats(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "config.olay.base.yaml"), `app: base`)
+	writeTestFile(t, filepath.Join(dir, "theme.olay.base.yml"), `name: dark`)
+
+	active, inactive, err := Walk(Settings{
+		SourceDirs: []string{dir},
+		TargetDir:  "/tmp/out",
+		Ignore:     NoopIgnorer(),
+	})
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if len(inactive) != 0 {
+		t.Fatalf("expected no inactive groups, got %d", len(inactive))
+	}
+	if len(active) != 2 {
+		t.Fatalf("expected 2 active groups, got %d", len(active))
+	}
+	for _, g := range active {
+		if g.Format != document.FormatYAML {
+			t.Fatalf("Format = %s, want yaml", g.Format)
+		}
+	}
+	got := []string{active[0].TargetPath, active[1].TargetPath}
+	want := []string{filepath.Join("/tmp/out", "config.yaml"), filepath.Join("/tmp/out", "theme.yml")}
+	if !slices.Equal(got, want) {
+		t.Fatalf("targets = %v, want %v", got, want)
+	}
+}
+
 func TestWalkOnlyProfileNoBase(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, filepath.Join(dir, "config.olay.work.toml"), `key = "work"`)

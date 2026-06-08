@@ -1,5 +1,5 @@
 class Overlay < Formula
-  desc "Merge layered JSON/TOML configuration files by profile"
+  desc "Merge layered JSON/TOML/YAML configuration files by profile"
   homepage "https://github.com/jmcampanini/overlay"
   head "https://github.com/jmcampanini/overlay.git", branch: "main"
 

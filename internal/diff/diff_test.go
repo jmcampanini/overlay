@@ -95,6 +95,34 @@ func TestDiffMissingTarget(t *testing.T) {
 	}
 }
 
+func TestDiffYAMLDeterministic(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "config.olay.base.yaml"), "z: 1\na: 2\n")
+	writeFile(t, filepath.Join(target, "config.yaml"), "z: 1\na: 2\n")
+
+	var buf bytes.Buffer
+	differ, err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
+		},
+		Logger: silentLogger(),
+		Out:    &buf,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !differ {
+		t.Fatal("expected deterministic YAML render to differ from source key order")
+	}
+	out := buf.String()
+	if !strings.Contains(out, "-z: 1") || !strings.Contains(out, "+z: 1") {
+		t.Fatalf("expected rendered YAML ordering diff:\n%s", out)
+	}
+}
+
 func TestDiffCopyThroughChanged(t *testing.T) {
 	src := t.TempDir()
 	target := t.TempDir()

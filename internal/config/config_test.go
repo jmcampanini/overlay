@@ -219,7 +219,7 @@ func TestSchemaDocsDescribeRenderRules(t *testing.T) {
 		"[[render_rules]]",
 		"path = \".npmrc\"",
 		"strategy = \"append\"",
-		".json/.toml -> merge",
+		".json/.toml/.yaml/.yml -> merge",
 		"Valid rules that do not match",
 	} {
 		if !strings.Contains(SchemaDocs, want) {

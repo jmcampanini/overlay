@@ -1,13 +1,13 @@
 # overlay
 
-A small Go CLI that merges layered JSON/TOML configuration files by profile
+A small Go CLI that merges layered JSON/TOML/YAML configuration files by profile
 and renders other profile-specific files as whole-file overlays.
 
 `overlay` walks one or more source directories for files matching
 `<stem>.olay.<profile>[.<ext>]`, groups them by target path, renders the
 active layers, and writes the result to a target directory. By default,
-JSON/TOML layers are merged; other extensions and extensionless overlays copy
-the highest precedence active layer. It's useful for dotfiles layouts where you
+JSON/TOML/YAML layers are merged; other extensions and extensionless overlays
+copy the highest precedence active layer. It's useful for dotfiles layouts where you
 want a base file, a machine profile, and a machine-local override to compose
 into a single rendered file.
 
@@ -81,8 +81,8 @@ overlay render pi codex
 ```
 
 - `<ext>` is optional. If present, it must be a single filename segment.
-- By default, `json` and `toml` overlays are merged; every other extension,
-  plus extensionless overlays, is copied through as a whole file.
+- By default, `json`, `toml`, `yaml`, and `yml` overlays are merged; every other
+  extension, plus extensionless overlays, is copied through as a whole file.
 - `<profile>` names the layer. `base` and `local` are **reserved**:
   `base` always merges first, `local` always merges last, with any active
   user profiles in between. User profiles can be named anything else.
@@ -114,10 +114,10 @@ strategy = "append"
 Rules match the final target-relative path after `dot_prefix` mapping, so
 `dot-npmrc.olay.base` matches `path = ".npmrc"`. `append` concatenates active
 layers in Overlay order, inserting one newline between adjacent non-empty layers
-only when needed. `copy` forces whole-file copy behavior, including for JSON or
-TOML targets that would otherwise merge.
+only when needed. `copy` forces whole-file copy behavior, including for JSON,
+TOML, or YAML targets that would otherwise merge.
 
-Output is deterministic: keys are alphabetized in both JSON and TOML so
+Output is deterministic: keys are alphabetized in JSON, TOML, and YAML so
 `overlay diff` stays trustworthy and golden-file tests are stable.
 
 ## Profile resolution precedence
@@ -224,10 +224,14 @@ the loaded strings and comments the expanded effective paths.
 
 ## Notes
 
-- **JSON and TOML keys are alphabetized on output.** This is deliberate
+- **JSON, TOML, and YAML keys are alphabetized on output.** This is deliberate
   — it keeps `overlay diff` stable and makes golden-file tests cheap. If
   your source files had a hand-curated key order, it will not be
   preserved in the merged output.
+- **YAML output is normalized.** Rendered YAML uses deterministic block style
+  with 2-space indentation. Comments, source formatting, and source key order
+  are not preserved; multi-document streams, non-string or complex mapping keys,
+  aliases, and custom tags are rejected.
 - **TOML tables are unindented by default.** Set `toml_indent_tables = true`
   to ask the TOML encoder to indent nested tables and array-table values.
 - **Hidden directories are skipped by default.** Set

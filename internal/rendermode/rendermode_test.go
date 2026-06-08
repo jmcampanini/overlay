@@ -15,6 +15,7 @@ func TestForGroupDefaults(t *testing.T) {
 	}{
 		{format: document.FormatJSON, want: ModeMerge},
 		{format: document.FormatTOML, want: ModeMerge},
+		{format: document.FormatYAML, want: ModeMerge},
 		{format: document.FormatCopy, want: ModeCopy},
 	}
 	for _, tc := range cases {

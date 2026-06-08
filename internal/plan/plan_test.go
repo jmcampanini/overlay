@@ -63,6 +63,28 @@ func TestRenderBasic(t *testing.T) {
 	}
 }
 
+func TestRenderYAMLShowsMergeMode(t *testing.T) {
+	groups := []discover.Group{
+		{
+			Stem:       "config",
+			Format:     document.FormatYAML,
+			TargetPath: "/tmp/out/config.yml",
+			Layers: []discover.Layer{
+				{Profile: "base"},
+				{Profile: "dark"},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	if err := Render(&buf, groups, []string{"dark"}, []string{"./src"}, "/tmp/out"); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "config.yml") || !strings.Contains(out, "merge") {
+		t.Fatalf("missing YAML merge row:\n%s", out)
+	}
+}
+
 func TestRenderCopyThroughShowsWinner(t *testing.T) {
 	groups := []discover.Group{
 		{
