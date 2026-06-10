@@ -3,6 +3,7 @@ package render
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"charm.land/log/v2"
@@ -109,10 +110,11 @@ trust_level = "trusted"
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(filepath.Join(target, "config.toml"))
-	if !contains(data, `model = 'gpt-5.4'`) && !contains(data, `model = "gpt-5.4"`) {
+	content := string(data)
+	if !strings.Contains(content, `model = 'gpt-5.4'`) && !strings.Contains(content, `model = "gpt-5.4"`) {
 		t.Errorf("missing model: %s", data)
 	}
-	if !contains(data, "trust_level") {
+	if !strings.Contains(content, "trust_level") {
 		t.Errorf("missing trust_level: %s", data)
 	}
 }
@@ -235,6 +237,7 @@ authorColors:
 	if err != nil {
 		t.Fatalf("read output: %v", err)
 	}
+	content := string(data)
 	for _, want := range []string{
 		`authorColors:
   '*': '#b4befe'`,
@@ -243,7 +246,7 @@ authorColors:
 		"activeBorderColor:\n      - '#cba6f7'\n      - bold",
 		"pager: delta --paging=never --line-numbers",
 	} {
-		if !contains(data, want) {
+		if !strings.Contains(content, want) {
 			t.Errorf("missing %q:\n%s", want, data)
 		}
 	}
@@ -300,7 +303,8 @@ trust_level = "trusted"
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(filepath.Join(target, "config.toml"))
-	if !contains(data, "  [projects.'/path']") || !contains(data, "    trust_level = 'trusted'") {
+	content := string(data)
+	if !strings.Contains(content, "  [projects.'/path']") || !strings.Contains(content, "    trust_level = 'trusted'") {
 		t.Errorf("expected indented TOML tables:\n%s", data)
 	}
 }
@@ -664,17 +668,4 @@ func writeFile(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func contains(data []byte, s string) bool {
-	return len(data) > 0 && len(s) > 0 && indexOf(data, s) >= 0
-}
-
-func indexOf(haystack []byte, needle string) int {
-	for i := 0; i+len(needle) <= len(haystack); i++ {
-		if string(haystack[i:i+len(needle)]) == needle {
-			return i
-		}
-	}
-	return -1
 }
