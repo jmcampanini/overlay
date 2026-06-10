@@ -13,8 +13,10 @@ func TestDetectFormat(t *testing.T) {
 	}{
 		{"foo.json", FormatJSON},
 		{"foo.toml", FormatTOML},
+		{"foo.yaml", FormatYAML},
+		{"foo.yml", FormatYAML},
 		{"foo.JSON", FormatJSON},
-		{"path/to/config.toml", FormatTOML},
+		{"path/to/config.YML", FormatYAML},
 	}
 	for _, tc := range cases {
 		got, err := DetectFormat(tc.name)
@@ -29,9 +31,6 @@ func TestDetectFormat(t *testing.T) {
 }
 
 func TestDetectFormatUnknown(t *testing.T) {
-	if _, err := DetectFormat("foo.yaml"); err == nil {
-		t.Error("expected error for yaml")
-	}
 	if _, err := DetectFormat("foo"); err == nil {
 		t.Error("expected error for no extension")
 	}
@@ -210,5 +209,199 @@ func TestJSONObjectArrays(t *testing.T) {
 	}
 	if len(hooks) != 2 {
 		t.Errorf("got %d hooks, want 2", len(hooks))
+	}
+}
+
+func TestYAMLRoundTrip(t *testing.T) {
+	input := []byte(`app:
+  name: overlay
+  features:
+    - json
+    - yaml
+  debug: true
+`)
+	v, err := Parse(input, FormatYAML)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	out, err := Serialize(v, FormatYAML)
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+	roundTripped, err := Parse(out, FormatYAML)
+	if err != nil {
+		t.Fatalf("re-Parse: %v", err)
+	}
+	if !reflect.DeepEqual(v, roundTripped) {
+		t.Errorf("round-trip mismatch:\noriginal: %v\nfinal:    %v", v, roundTripped)
+	}
+}
+
+func TestYAMLSerializeAlphabetizesKeys(t *testing.T) {
+	v := map[string]any{"zebra": 1, "alpha": 2, "mango": 3}
+	out, err := Serialize(v, FormatYAML)
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+	s := string(out)
+	alphaIdx := strings.Index(s, "alpha")
+	mangoIdx := strings.Index(s, "mango")
+	zebraIdx := strings.Index(s, "zebra")
+	if alphaIdx >= mangoIdx || mangoIdx >= zebraIdx {
+		t.Errorf("YAML keys not alphabetized:\n%s", s)
+	}
+}
+
+func TestYAMLSerializeBlockStyleWithTwoSpaceIndent(t *testing.T) {
+	v := map[string]any{
+		"app": map[string]any{
+			"features": []any{"json", "yaml"},
+		},
+	}
+	out, err := Serialize(v, FormatYAML)
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+	want := "app:\n  features:\n    - json\n    - yaml\n"
+	if string(out) != want {
+		t.Errorf("YAML output mismatch:\ngot:\n%s\nwant:\n%s", out, want)
+	}
+}
+
+func TestYAMLEmptyDocumentsAreNoop(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+	}{
+		{name: "empty", input: ""},
+		{name: "comments only", input: "# comment\n# another\n"},
+		{name: "document marker only", input: "---\n"},
+		{name: "document marker plus comments", input: "---\n# comment\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := Parse([]byte(tc.input), FormatYAML)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			want := map[string]any{}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("Parse = %#v, want %#v", got, want)
+			}
+		})
+	}
+}
+
+func TestYAMLRejectsExplicitRootNull(t *testing.T) {
+	cases := []string{"null\n", "~\n"}
+	for _, input := range cases {
+		t.Run(strings.TrimSpace(input), func(t *testing.T) {
+			_, err := Parse([]byte(input), FormatYAML)
+			if err == nil || !strings.Contains(err.Error(), "root null") {
+				t.Fatalf("Parse error = %v, want root-null error", err)
+			}
+		})
+	}
+}
+
+func TestYAMLRejectsNonMappingRoots(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "sequence", input: "- one\n- two\n", want: "got sequence"},
+		{name: "scalar", input: "hello\n", want: "got scalar"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Parse([]byte(tc.input), FormatYAML)
+			if err == nil || !strings.Contains(err.Error(), "root must be a mapping") || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Parse error = %v, want root mapping error containing %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestYAMLAllowsNestedNull(t *testing.T) {
+	got, err := Parse([]byte("value: null\n"), FormatYAML)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	want := map[string]any{"value": nil}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Parse = %#v, want %#v", got, want)
+	}
+}
+
+func TestYAMLTimestampScalarsParseAsStrings(t *testing.T) {
+	got, err := Parse([]byte("releaseDate: 2026-06-08\n"), FormatYAML)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	want := map[string]any{"releaseDate": "2026-06-08"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Parse = %#v, want %#v", got, want)
+	}
+	out, err := Serialize(got, FormatYAML)
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+	if !strings.Contains(string(out), "2026-06-08") {
+		t.Fatalf("serialized YAML missing date string:\n%s", out)
+	}
+}
+
+func TestYAMLRejectsMultipleDocuments(t *testing.T) {
+	_, err := Parse([]byte("a: 1\n---\nb: 2\n"), FormatYAML)
+	if err == nil || !strings.Contains(err.Error(), "multiple documents") {
+		t.Fatalf("Parse error = %v, want multiple documents", err)
+	}
+}
+
+func TestYAMLRejectsNonStringMappingKeys(t *testing.T) {
+	_, err := Parse([]byte("1: one\n"), FormatYAML)
+	if err == nil || !strings.Contains(err.Error(), "must be a string") {
+		t.Fatalf("Parse error = %v, want string-key error", err)
+	}
+}
+
+func TestYAMLRejectsComplexMappingKeys(t *testing.T) {
+	_, err := Parse([]byte("? [a, b]\n: c\n"), FormatYAML)
+	if err == nil || !strings.Contains(err.Error(), "complex YAML mapping keys") {
+		t.Fatalf("Parse error = %v, want complex-key error", err)
+	}
+}
+
+func TestYAMLRejectsInvalidSyntax(t *testing.T) {
+	_, err := Parse([]byte("a: [1,\n"), FormatYAML)
+	if err == nil {
+		t.Fatal("expected invalid YAML error")
+	}
+}
+
+func TestYAMLRejectsCustomTags(t *testing.T) {
+	_, err := Parse([]byte("value: !secret token\n"), FormatYAML)
+	if err == nil || !strings.Contains(err.Error(), "unsupported YAML scalar tag") {
+		t.Fatalf("Parse error = %v, want custom-tag error", err)
+	}
+}
+
+func TestYAMLRejectsUncommonStandardTags(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "binary", input: "blob: !!binary SGVsbG8=\n", want: "unsupported YAML scalar tag"},
+		{name: "set", input: "value: !!set {a: null}\n", want: "unsupported YAML mapping tag"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Parse([]byte(tc.input), FormatYAML)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Parse error = %v, want %q", err, tc.want)
+			}
+		})
 	}
 }

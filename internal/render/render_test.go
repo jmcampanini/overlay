@@ -3,6 +3,7 @@ package render
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"charm.land/log/v2"
@@ -109,11 +110,174 @@ trust_level = "trusted"
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(filepath.Join(target, "config.toml"))
-	if !contains(data, `model = 'gpt-5.4'`) && !contains(data, `model = "gpt-5.4"`) {
+	content := string(data)
+	if !strings.Contains(content, `model = 'gpt-5.4'`) && !strings.Contains(content, `model = "gpt-5.4"`) {
 		t.Errorf("missing model: %s", data)
 	}
-	if !contains(data, "trust_level") {
+	if !strings.Contains(content, "trust_level") {
 		t.Errorf("missing trust_level: %s", data)
+	}
+}
+
+func TestRunYAML(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "config.olay.base.yaml"), `app:
+  name: overlay
+  features:
+    - json
+    - toml
+`)
+	writeFile(t, filepath.Join(src, "config.olay.dark.yaml"), `app:
+  features:
+    - toml
+    - yaml
+  debug: true
+`)
+
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Profiles:   []string{"dark"},
+			Ignore:     discover.NoopIgnorer(),
+		},
+		Logger: newTestLogger(),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(target, "config.yaml"))
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	want := `app:
+  debug: true
+  features:
+    - json
+    - toml
+    - yaml
+  name: overlay
+`
+	if string(data) != want {
+		t.Errorf("content mismatch:\ngot:\n%s\nwant:\n%s", data, want)
+	}
+}
+
+func TestRunYML(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "config.olay.base.yml"), `name: base`)
+	writeFile(t, filepath.Join(src, "config.olay.work.yml"), `debug: true`)
+
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Profiles:   []string{"work"},
+			Ignore:     discover.NoopIgnorer(),
+		},
+		Logger: newTestLogger(),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(target, "config.yml"))
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	want := "debug: true\nname: base\n"
+	if string(data) != want {
+		t.Errorf("content mismatch:\ngot:\n%s\nwant:\n%s", data, want)
+	}
+}
+
+func TestRunYAMLLazyGitInspired(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "lazygit", "config.olay.base.yml"), `gui:
+  nerdFontsVersion: "3"
+filterMode: fuzzy
+git:
+  mainBranches:
+    - main
+    - develop
+    - master
+  pagers:
+    - colorArg: always
+      pager: delta --paging=never --line-numbers
+`)
+	writeFile(t, filepath.Join(src, "lazygit", "config.olay.catppuccin.yml"), `gui:
+  theme:
+    activeBorderColor:
+      - "#cba6f7"
+      - bold
+    selectedLineBgColor:
+      - "#313244"
+authorColors:
+  "*": "#b4befe"
+`)
+
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Profiles:   []string{"catppuccin"},
+			Ignore:     discover.NoopIgnorer(),
+		},
+		Logger: newTestLogger(),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(target, "lazygit", "config.yml"))
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	content := string(data)
+	for _, want := range []string{
+		`authorColors:
+  '*': '#b4befe'`,
+		"filterMode: fuzzy",
+		"nerdFontsVersion: \"3\"",
+		"activeBorderColor:\n      - '#cba6f7'\n      - bold",
+		"pager: delta --paging=never --line-numbers",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("missing %q:\n%s", want, data)
+		}
+	}
+}
+
+func TestRunYAMLCopyRule(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "config.olay.base.yaml"), "a: 1\n")
+	writeFile(t, filepath.Join(src, "config.olay.work.yaml"), "b: 2\n")
+
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Profiles:   []string{"work"},
+			Ignore:     discover.NoopIgnorer(),
+		},
+		RenderRules: []config.RenderRule{{Path: "config.yaml", Strategy: config.RenderStrategyCopy}},
+		Logger:      newTestLogger(),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(target, "config.yaml"))
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	if string(data) != "b: 2\n" {
+		t.Fatalf("content = %q, want work layer", data)
 	}
 }
 
@@ -139,7 +303,8 @@ trust_level = "trusted"
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(filepath.Join(target, "config.toml"))
-	if !contains(data, "  [projects.'/path']") || !contains(data, "    trust_level = 'trusted'") {
+	content := string(data)
+	if !strings.Contains(content, "  [projects.'/path']") || !strings.Contains(content, "    trust_level = 'trusted'") {
 		t.Errorf("expected indented TOML tables:\n%s", data)
 	}
 }
@@ -503,17 +668,4 @@ func writeFile(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func contains(data []byte, s string) bool {
-	return len(data) > 0 && len(s) > 0 && indexOf(data, s) >= 0
-}
-
-func indexOf(haystack []byte, needle string) int {
-	for i := 0; i+len(needle) <= len(haystack); i++ {
-		if string(haystack[i:i+len(needle)]) == needle {
-			return i
-		}
-	}
-	return -1
 }

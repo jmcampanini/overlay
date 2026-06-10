@@ -376,6 +376,8 @@ func formatForExtension(ext string) document.Format {
 		return document.FormatJSON
 	case "toml":
 		return document.FormatTOML
+	case "yaml", "yml":
+		return document.FormatYAML
 	}
 	return document.FormatCopy
 }
