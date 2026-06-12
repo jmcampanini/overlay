@@ -121,7 +121,7 @@ func TestResolveConfigPlusEnvProfiles(t *testing.T) {
 	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
 target = "/tmp/out"
 profiles = ["base_env_check"]
-env_profiles = "TEST_EXTRA_PROFILES"
+env_profiles = ["TEST_EXTRA_PROFILES"]
 `)
 	t.Setenv("TEST_EXTRA_PROFILES", "alpha,beta")
 	cmd, g := setupCmd(t, nil)
@@ -132,44 +132,6 @@ env_profiles = "TEST_EXTRA_PROFILES"
 	want := []string{"base_env_check", "alpha", "beta"}
 	if !reflect.DeepEqual(r.Settings.Profiles, want) {
 		t.Errorf("Profiles = %v, want %v", r.Settings.Profiles, want)
-	}
-}
-
-func TestResolveEnvProfilesDeclaredButUnsetKeepsConfiguredProfiles(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
-target = "/tmp/out"
-profiles = ["work"]
-env_profiles = "TEST_NEVER_SET_ENV"
-`)
-	// TEST_NEVER_SET_ENV is intentionally not set.
-	cmd, g := setupCmd(t, nil)
-	r, err := resolve(cmd, g)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(r.Settings.Profiles, []string{"work"}) {
-		t.Errorf("Profiles = %v", r.Settings.Profiles)
-	}
-}
-
-func TestResolveEnvProfilesDeclaredButEmptyKeepsConfiguredProfiles(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
-target = "/tmp/out"
-profiles = ["work"]
-env_profiles = "TEST_EMPTY_CSV"
-`)
-	t.Setenv("TEST_EMPTY_CSV", " , , ")
-	cmd, g := setupCmd(t, nil)
-	r, err := resolve(cmd, g)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(r.Settings.Profiles, []string{"work"}) {
-		t.Errorf("Profiles = %v", r.Settings.Profiles)
 	}
 }
 
@@ -485,12 +447,16 @@ func TestResolveRejectsEnvInjectedReservedProfile(t *testing.T) {
 	cfgPath := filepath.Join(dir, ".overlay.toml")
 	writeFile(t, cfgPath, `
 target = "/tmp/out"
-env_profiles = "TEST_INJECT_RESERVED"
+env_profiles = ["TEST_INJECT_RESERVED"]
 `)
 	t.Setenv("TEST_INJECT_RESERVED", "local")
 	cmd, g := setupCmd(t, []string{"--config", cfgPath})
-	if _, err := resolve(cmd, g); err == nil {
-		t.Error("expected error when env_profiles injects a reserved profile")
+	_, err := resolve(cmd, g)
+	if err == nil {
+		t.Fatal("expected error when env_profiles injects a reserved profile")
+	}
+	if !strings.Contains(err.Error(), "reserved") {
+		t.Errorf("error should mention reserved profile: %v", err)
 	}
 }
 
@@ -644,8 +610,8 @@ func TestResolveTomlOnlyEnvironmentVariablesDoNotLoad(t *testing.T) {
 	if r.RawConfig.RespectGitignore {
 		t.Error("OVERLAY_RESPECT_GITIGNORE should not load")
 	}
-	if r.RawConfig.EnvProfiles != "" {
-		t.Errorf("OVERLAY_ENV_PROFILES should not load, got %q", r.RawConfig.EnvProfiles)
+	if len(r.RawConfig.EnvProfiles) != 0 {
+		t.Errorf("OVERLAY_ENV_PROFILES should not load, got %v", r.RawConfig.EnvProfiles)
 	}
 	if len(r.RawConfig.RenderRules) != 0 {
 		t.Errorf("OVERLAY_RENDER_RULES should not load, got %v", r.RawConfig.RenderRules)
@@ -693,7 +659,7 @@ func TestResolveCLIProfilesPlusEnvProfiles(t *testing.T) {
 	cfgPath := filepath.Join(dir, ".overlay.toml")
 	writeFile(t, cfgPath, `
 target = "/tmp/out"
-env_profiles = "TEST_EXTRA_PROFILES"
+env_profiles = ["TEST_EXTRA_PROFILES"]
 `)
 	t.Setenv("TEST_EXTRA_PROFILES", "work")
 	cmd, g := setupCmd(t, []string{"--config", cfgPath, "--profiles", "personal"})
@@ -716,7 +682,7 @@ func TestResolveEnvProfilesDedupePreservesFirstOccurrence(t *testing.T) {
 	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
 target = "/tmp/out"
 profiles = ["a", "b"]
-env_profiles = "TEST_EXTRA_PROFILES"
+env_profiles = ["TEST_EXTRA_PROFILES"]
 `)
 	t.Setenv("TEST_EXTRA_PROFILES", "b,c,a")
 	cmd, g := setupCmd(t, nil)
@@ -727,6 +693,66 @@ env_profiles = "TEST_EXTRA_PROFILES"
 	want := []string{"a", "b", "c"}
 	if !reflect.DeepEqual(r.Settings.Profiles, want) {
 		t.Errorf("effective profiles = %v, want %v", r.Settings.Profiles, want)
+	}
+}
+
+func TestResolveMultipleEnvProfilesAppendInListOrderAndDedupe(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+profiles = ["base-tools"]
+env_profiles = ["TEST_FIRST_VAR", "TEST_SECOND_VAR"]
+`)
+	t.Setenv("TEST_FIRST_VAR", "alpha,beta")
+	t.Setenv("TEST_SECOND_VAR", "gamma,alpha")
+	cmd, g := setupCmd(t, nil)
+	r, err := resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"base-tools", "alpha", "beta", "gamma"}
+	if !reflect.DeepEqual(r.Settings.Profiles, want) {
+		t.Errorf("effective profiles = %v, want %v", r.Settings.Profiles, want)
+	}
+}
+
+func TestResolveMultipleEnvProfilesSkipUnsetAndEmptyVars(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+profiles = ["work"]
+env_profiles = ["TEST_UNSET_VAR", "TEST_EMPTY_VAR", "TEST_SET_VAR"]
+`)
+	unsetEnv(t, "TEST_UNSET_VAR")
+	t.Setenv("TEST_EMPTY_VAR", " , , ")
+	t.Setenv("TEST_SET_VAR", "laptop")
+	cmd, g := setupCmd(t, nil)
+	r, err := resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"work", "laptop"}
+	if !reflect.DeepEqual(r.Settings.Profiles, want) {
+		t.Errorf("effective profiles = %v, want %v", r.Settings.Profiles, want)
+	}
+}
+
+func TestResolveRejectsBlankEnvProfilesEntry(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+env_profiles = ["TEST_OK_VAR", " "]
+`)
+	cmd, g := setupCmd(t, nil)
+	_, err := resolve(cmd, g)
+	if err == nil {
+		t.Fatal("expected error for blank env_profiles entry")
+	}
+	if !strings.Contains(err.Error(), "env_profiles contains an empty environment variable name") {
+		t.Errorf("error should mention empty env_profiles entry: %v", err)
 	}
 }
 
@@ -779,7 +805,7 @@ func TestPrintConfigReportsRawAndEffectiveValues(t *testing.T) {
 sources = ["pkgs"]
 target = "out"
 profiles = ["work"]
-env_profiles = "DOTFILES_PROFILE"
+env_profiles = ["DOTFILES_PROFILE"]
 `)
 	t.Setenv("DOTFILES_PROFILE", "vpn")
 	cmd, g := setupCmd(t, []string{"--config", cfgPath})
@@ -796,7 +822,7 @@ env_profiles = "DOTFILES_PROFILE"
 		`sources = ["pkgs"]`,
 		`target = "out"`,
 		`profiles = ["work"]`,
-		`env_profiles = "DOTFILES_PROFILE"`,
+		`env_profiles = ["DOTFILES_PROFILE"]`,
 		"# provenance",
 		`# loaded_files = ["` + cfgPath + `"]`,
 		`# effective_source_dirs = ["` + filepath.Join(dir, "pkgs") + `"]`,
@@ -878,7 +904,7 @@ target = "/tmp/out"
 			toml: `
 target = "/tmp/out"
 profiles = ["work"]
-env_profiles = "OVERLAY_TEST_EXTRA_PROFILES"
+env_profiles = ["OVERLAY_TEST_EXTRA_PROFILES"]
 `,
 			env: map[string]string{"OVERLAY_TEST_EXTRA_PROFILES": "base"},
 			want: []string{

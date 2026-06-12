@@ -139,8 +139,9 @@ no `OVERLAY_PROFILE` environment variable. When `--profiles` and `--profile` are
 both used, `--profiles` values are applied first, then repeated `--profile`
 values. Duplicates are removed, preserving first occurrence.
 
-After raw loading, Overlay appends the comma-split value of the env var named by
-`env_profiles` (if set). Duplicates are removed, preserving first occurrence.
+After raw loading, Overlay appends the comma-split value of each env var listed
+in `env_profiles`, in list order; unset or empty-valued vars are skipped.
+Duplicates are removed, preserving first occurrence.
 
 Within the effective set, the merge layer order is always:
 
@@ -154,7 +155,7 @@ base → each profile in list order → local
 # ./.overlay.toml
 target = "~/"
 profiles = ["base-tools"]
-env_profiles = "DOTFILES_PROFILE"
+env_profiles = ["DOTFILES_PROFILE", "HOST_PROFILE"]
 ```
 
 ```shell
@@ -171,6 +172,10 @@ DOTFILES_PROFILE=work overlay --profiles personal plan
 # Scenario 4: repeated --profile flags set raw profiles in order
 # → ["personal", "client"]
 overlay --profile personal --profile client plan
+
+# Scenario 5: each env var appends in list order, duplicates keep their
+# first occurrence → ["base-tools", "work", "laptop"]
+DOTFILES_PROFILE=work,laptop HOST_PROFILE=laptop overlay plan
 ```
 
 Run `overlay config` to see loaded values, GoConfigLoader provenance, and commented effective runtime values.

@@ -33,9 +33,9 @@ Profile resolution:
 
   --profile is pflag-only; there is no profile TOML key or OVERLAY_PROFILE.
   If both CLI forms are used, --profiles values are applied first, then repeated
-  --profile values. After raw loading, the comma-split value of the env var
-  named by env_profiles (if set) is appended. Duplicates are removed, first
-  occurrence kept.
+  --profile values. After raw loading, the comma-split values of each env var
+  listed in env_profiles are appended, in list order; unset or empty-valued
+  vars are skipped. Duplicates are removed, first occurrence kept.
 
 Within the effective set, the layer order is always:
 
