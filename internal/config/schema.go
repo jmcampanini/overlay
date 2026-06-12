@@ -46,12 +46,14 @@ FIELDS
     names "base" and "local" are reserved and cannot appear in the effective
     list.
 
-  env_profiles = "DOTFILES_PROFILE"    # example
-    type:    string
-    default: ""
-    Optional environment variable name. If set, overlay reads that env var
-    at runtime and APPENDS its comma-separated value to the 'profiles' list
-    (with duplicates removed, preserving first occurrence).
+  env_profiles = ["DOTFILES_PROFILE"]  # example
+    type:    array of strings
+    default: []
+    Optional environment variable names. At runtime overlay reads each named
+    env var in list order and APPENDS its comma-separated value to the
+    'profiles' list (with duplicates removed, preserving first occurrence).
+    Unset or empty-valued vars are skipped. Blank or whitespace-padded names
+    are invalid.
 
   continue_on_error = false
     type:    boolean
@@ -166,8 +168,8 @@ Raw profiles are loaded from these sources, highest to lowest:
 
 When both CLI forms are used, --profiles values are applied first, then repeated
 --profile values. After raw loading, Overlay appends the comma-split value of
-the env var named by env_profiles (if set). Duplicates are removed, preserving
-first occurrence.
+each env var listed in env_profiles, in list order; unset or empty-valued vars
+are skipped. Duplicates are removed, preserving first occurrence.
 
 Within the effective set, the layer order is always:
   base (if present) -> each profile in list order -> local (if present)

@@ -19,6 +19,7 @@ const (
 	configPathSources     = "sources"
 	configPathTarget      = "target"
 	configPathProfiles    = "profiles"
+	configPathEnvProfiles = "env_profiles"
 	configPathIgnore      = "ignore"
 	configPathRenderRules = "render_rules"
 )
@@ -190,12 +191,13 @@ func deriveEffectiveConfig(raw rawLoadedConfig, positionalSources ...string) eff
 
 	sources := deriveSourceDirs(positionalSources, cfg, raw.Report, configBase, configExists)
 	target, targetErrors := derivePath(configPathTarget, cfg.Target, raw.Report, configBase, configExists)
-	profiles := effectiveProfiles(cfg)
+	profiles, profileErrors := effectiveProfiles(cfg)
 	ignore, ignoreErrors := deriveIgnorePatterns(cfg.Ignore)
 	renderRules, renderRuleErrors := deriveRenderRules(cfg.RenderRules)
 
 	derivationErrors := append([]effectiveConfigError(nil), sources.derivationErrors...)
 	derivationErrors = append(derivationErrors, targetErrors...)
+	derivationErrors = append(derivationErrors, profileErrors...)
 	derivationErrors = append(derivationErrors, ignoreErrors...)
 	derivationErrors = append(derivationErrors, renderRuleErrors...)
 
@@ -302,12 +304,16 @@ func validateEffectiveConfig(raw rawLoadedConfig, effective effectiveConfig) []e
 	return errors
 }
 
-func effectiveProfiles(cfg config.Config) []string {
-	profiles := append([]string{}, cfg.Profiles...)
-	if cfg.EnvProfiles != "" {
-		profiles = append(profiles, splitCSV(os.Getenv(cfg.EnvProfiles))...)
+func effectiveProfiles(cfg config.Config) ([]string, []effectiveConfigError) {
+	var errors []effectiveConfigError
+	if err := config.ValidateEnvProfiles(cfg.EnvProfiles); err != nil {
+		errors = append(errors, effectiveConfigError{Field: configPathEnvProfiles, Err: err})
 	}
-	return dedupe(profiles)
+	profiles := append([]string{}, cfg.Profiles...)
+	for _, name := range cfg.EnvProfiles {
+		profiles = append(profiles, splitCSV(os.Getenv(name))...)
+	}
+	return dedupe(profiles), errors
 }
 
 func splitCSV(s string) []string {

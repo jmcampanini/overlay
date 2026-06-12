@@ -24,13 +24,35 @@ func (c Config) Validate() error {
 			return fmt.Errorf("sources contains an empty source directory")
 		}
 	}
+	if err := ValidateEnvProfiles(c.EnvProfiles); err != nil {
+		return err
+	}
 	if err := ValidateProfiles(c.Profiles); err != nil {
 		return err
 	}
 	return ValidateRenderRules(c.RenderRules)
 }
 
-// ValidateProfiles checks profile names after env_profiles has been applied.
+// ValidateEnvProfiles rejects blank or whitespace-padded environment variable
+// names in env_profiles. Padded names must error rather than be trimmed:
+// os.Getenv looks up the exact string, so a padded name would silently never
+// match.
+func ValidateEnvProfiles(names []string) error {
+	for _, name := range names {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			return fmt.Errorf("env_profiles contains an empty environment variable name")
+		}
+		if name != trimmed {
+			return fmt.Errorf("env_profiles entry %q has leading or trailing whitespace", name)
+		}
+	}
+	return nil
+}
+
+// ValidateProfiles rejects the reserved profile names base and local. Callers
+// run it on both the raw TOML list and the effective list after env_profiles
+// is applied.
 func ValidateProfiles(profiles []string) error {
 	for _, p := range profiles {
 		if slices.Contains(reservedProfiles, p) {
