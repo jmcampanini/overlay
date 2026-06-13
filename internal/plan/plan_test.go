@@ -10,6 +10,7 @@ import (
 	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/jmcampanini/overlay/internal/discover"
 	"github.com/jmcampanini/overlay/internal/document"
+	"github.com/jmcampanini/overlay/internal/substitute"
 )
 
 func TestRenderBasic(t *testing.T) {
@@ -224,5 +225,94 @@ func TestCollapseHomeOutsideHome(t *testing.T) {
 	in := "/tmp/x/y"
 	if got := collapseHome(in); got != in {
 		t.Errorf("collapseHome(%q) = %q, want unchanged", in, got)
+	}
+}
+
+func TestRenderNoVarsColumnWhenDisabled(t *testing.T) {
+	groups := []discover.Group{
+		{
+			Stem:       "theme",
+			Format:     document.FormatCopy,
+			TargetPath: "/tmp/out/theme.conf",
+			Layers:     []discover.Layer{{Profile: "base", Path: "/nonexistent/theme.olay.base.conf"}},
+		},
+	}
+	var buf bytes.Buffer
+	if err := Render(&buf, groups, nil, []string{"./src"}, "/tmp/out"); err != nil {
+		t.Fatalf("plan with substitution off must not read content: %v", err)
+	}
+	if strings.Contains(buf.String(), "VARS") {
+		t.Errorf("VARS column should not appear when substitution is off:\n%s", buf.String())
+	}
+}
+
+func TestRenderVarsColumn(t *testing.T) {
+	src := t.TempDir()
+	layer := filepath.Join(src, "theme.olay.base.conf")
+	if err := os.WriteFile(layer, []byte("bg=${PRE_SET}\nfg=${PRE_GONE}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rawLayer := filepath.Join(src, "raw.olay.base.sh")
+	if err := os.WriteFile(rawLayer, []byte("echo ${PRE_SET}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	groups := []discover.Group{
+		{
+			Stem:          "theme",
+			Format:        document.FormatCopy,
+			TargetPath:    "/tmp/out/theme.conf",
+			TargetRelPath: "theme.conf",
+			Layers:        []discover.Layer{{Profile: "base", Path: layer}},
+		},
+		{
+			Stem:          "raw",
+			Format:        document.FormatCopy,
+			TargetPath:    "/tmp/out/raw.sh",
+			TargetRelPath: "raw.sh",
+			Layers:        []discover.Layer{{Profile: "base", Path: rawLayer}},
+		},
+	}
+	opts := Options{
+		RenderRules: []config.RenderRule{{Path: "raw.sh", Substitute: config.TriStateFalse}},
+		Substituter: substitute.NewResolver([]string{"PRE_"}, map[string]string{"PRE_SET": "v"}, nil),
+	}
+	var buf bytes.Buffer
+	err := RenderWithOptions(&buf, groups, nil, []string{"./src"}, "/tmp/out", opts)
+	if err == nil {
+		t.Fatal("plan should fail when variables are missing")
+	}
+	if !strings.Contains(err.Error(), "PRE_GONE") {
+		t.Errorf("error should name missing variable: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{"VARS", "PRE_SET", "PRE_GONE (missing!)", "—"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("plan output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRenderVarsColumnAllResolved(t *testing.T) {
+	src := t.TempDir()
+	layer := filepath.Join(src, "theme.olay.base.conf")
+	if err := os.WriteFile(layer, []byte("bg=${PRE_SET}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	groups := []discover.Group{
+		{
+			Stem:          "theme",
+			Format:        document.FormatCopy,
+			TargetPath:    "/tmp/out/theme.conf",
+			TargetRelPath: "theme.conf",
+			Layers:        []discover.Layer{{Profile: "base", Path: layer}},
+		},
+	}
+	opts := Options{Substituter: substitute.NewResolver([]string{"PRE_"}, map[string]string{"PRE_SET": "v"}, nil)}
+	var buf bytes.Buffer
+	if err := RenderWithOptions(&buf, groups, nil, []string{"./src"}, "/tmp/out", opts); err != nil {
+		t.Fatalf("all vars resolved, plan should succeed: %v", err)
+	}
+	if !strings.Contains(buf.String(), "PRE_SET") || strings.Contains(buf.String(), "missing") {
+		t.Errorf("unexpected VARS output:\n%s", buf.String())
 	}
 }

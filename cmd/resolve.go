@@ -13,14 +13,17 @@ import (
 
 	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/jmcampanini/overlay/internal/discover"
+	"github.com/jmcampanini/overlay/internal/substitute"
 )
 
 const (
-	configPathSources     = "sources"
-	configPathTarget      = "target"
-	configPathProfiles    = "profiles"
-	configPathIgnore      = "ignore"
-	configPathRenderRules = "render_rules"
+	configPathSources            = "sources"
+	configPathTarget             = "target"
+	configPathProfiles           = "profiles"
+	configPathIgnore             = "ignore"
+	configPathRenderRules        = "render_rules"
+	configPathSubstitutePrefixes = "substitute_prefixes"
+	configPathVars               = "vars"
 )
 
 // Resolved is the runtime settings bundle after raw config loading and
@@ -32,6 +35,7 @@ type Resolved struct {
 	RawConfig       config.Config
 	Effective       effectiveConfig
 	SourceLabels    []string
+	Substituter     *substitute.Resolver
 }
 
 type rawLoadedConfig struct {
@@ -41,18 +45,20 @@ type rawLoadedConfig struct {
 }
 
 type effectiveConfig struct {
-	SourceDirs       []string
-	SourceLabels     []string
-	TargetDir        string
-	DotPrefix        bool
-	Profiles         []string
-	ContinueOnError  bool
-	TOMLIndentTables bool
-	Ignore           []string
-	TraverseHidden   bool
-	RespectGitignore bool
-	RenderRules      []config.RenderRule
-	DerivationErrors []effectiveConfigError
+	SourceDirs         []string
+	SourceLabels       []string
+	TargetDir          string
+	DotPrefix          bool
+	Profiles           []string
+	ContinueOnError    bool
+	TOMLIndentTables   bool
+	Ignore             []string
+	TraverseHidden     bool
+	RespectGitignore   bool
+	RenderRules        []config.RenderRule
+	SubstitutePrefixes []string
+	Pins               map[string]string
+	DerivationErrors   []effectiveConfigError
 }
 
 type effectiveConfigError struct {
@@ -124,6 +130,7 @@ func resolve(command *cobra.Command, flags *globalFlags, positionalSources ...st
 		return r, err
 	}
 	r.ContinueOnError = effective.ContinueOnError
+	r.Substituter = substitute.NewResolver(effective.SubstitutePrefixes, effective.Pins, os.Environ())
 
 	globIgn, err := discover.NewGlobIgnorer(effective.Ignore)
 	if err != nil {
@@ -193,26 +200,54 @@ func deriveEffectiveConfig(raw rawLoadedConfig, positionalSources ...string) eff
 	profiles := effectiveProfiles(cfg)
 	ignore, ignoreErrors := deriveIgnorePatterns(cfg.Ignore)
 	renderRules, renderRuleErrors := deriveRenderRules(cfg.RenderRules)
+	pins, pinErrors := derivePins(cfg.Vars, cfg.SubstitutePrefixes)
 
 	derivationErrors := append([]effectiveConfigError(nil), sources.derivationErrors...)
 	derivationErrors = append(derivationErrors, targetErrors...)
 	derivationErrors = append(derivationErrors, ignoreErrors...)
 	derivationErrors = append(derivationErrors, renderRuleErrors...)
+	derivationErrors = append(derivationErrors, pinErrors...)
 
 	return effectiveConfig{
-		SourceDirs:       sources.dirs,
-		SourceLabels:     sources.labels,
-		TargetDir:        target,
-		DotPrefix:        cfg.DotPrefix,
-		Profiles:         profiles,
-		ContinueOnError:  cfg.ContinueOnError,
-		TOMLIndentTables: cfg.TOMLIndentTables,
-		Ignore:           ignore,
-		TraverseHidden:   cfg.TraverseHidden,
-		RespectGitignore: cfg.RespectGitignore,
-		RenderRules:      renderRules,
-		DerivationErrors: derivationErrors,
+		SourceDirs:         sources.dirs,
+		SourceLabels:       sources.labels,
+		TargetDir:          target,
+		DotPrefix:          cfg.DotPrefix,
+		Profiles:           profiles,
+		ContinueOnError:    cfg.ContinueOnError,
+		TOMLIndentTables:   cfg.TOMLIndentTables,
+		Ignore:             ignore,
+		TraverseHidden:     cfg.TraverseHidden,
+		RespectGitignore:   cfg.RespectGitignore,
+		RenderRules:        renderRules,
+		SubstitutePrefixes: append([]string(nil), cfg.SubstitutePrefixes...),
+		Pins:               pins,
+		DerivationErrors:   derivationErrors,
 	}
+}
+
+// derivePins parses --var/--vars/OVERLAY_VARS entries and rejects pins that
+// can never take effect. The dead-pin check is skipped when the prefixes are
+// themselves invalid so one config mistake does not cascade into two errors.
+func derivePins(entries, prefixes []string) (map[string]string, []effectiveConfigError) {
+	pins, err := substitute.ParsePins(entries)
+	if err != nil {
+		return nil, []effectiveConfigError{{Field: configPathVars, Err: err}}
+	}
+	if len(pins) == 0 || config.ValidateSubstitutePrefixes(prefixes) != nil {
+		return pins, nil
+	}
+	if dead := substitute.DeadPins(pins, prefixes); len(dead) > 0 {
+		hint := "none configured"
+		if len(prefixes) > 0 {
+			hint = strings.Join(prefixes, ", ")
+		}
+		return pins, []effectiveConfigError{{
+			Field: configPathVars,
+			Err:   fmt.Errorf("pinned variables match no substitute_prefixes entry: %s (prefixes: %s)", strings.Join(dead, ", "), hint),
+		}}
+	}
+	return pins, nil
 }
 
 func deriveSourceDirs(positional []string, cfg config.Config, report configloader.LoadReport, configBase string, configExists bool) sourceResolution {
@@ -298,6 +333,12 @@ func validateEffectiveConfig(raw rawLoadedConfig, effective effectiveConfig) []e
 	}
 	if err := config.ValidateProfiles(effective.Profiles); err != nil {
 		errors = append(errors, effectiveConfigError{Field: configPathProfiles, Err: err})
+	}
+	if err := config.ValidateSubstitutePrefixes(effective.SubstitutePrefixes); err != nil {
+		errors = append(errors, effectiveConfigError{Field: configPathSubstitutePrefixes, Err: err})
+	}
+	if err := config.ValidateSubstitution(effective.SubstitutePrefixes, effective.RenderRules); err != nil {
+		errors = append(errors, effectiveConfigError{Field: configPathRenderRules, Err: err})
 	}
 	return errors
 }

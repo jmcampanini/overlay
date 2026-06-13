@@ -31,22 +31,32 @@ func (m Mode) String() string {
 	return string(m)
 }
 
-// ForGroup returns the render mode for g after applying matching rules.
-func ForGroup(g discover.Group, targetDir string, rules []config.RenderRule) (Mode, error) {
+// Decision is the resolved per-target rendering behavior: how layers are
+// composed and whether variable substitution applies.
+type Decision struct {
+	Mode       Mode
+	Substitute bool
+}
+
+// Decide returns the render decision for g after applying matching rules.
+// globalSubstitute is the configuration-wide substitution switch; a matched
+// rule's tri-state substitute field overrides it.
+func Decide(g discover.Group, targetDir string, rules []config.RenderRule, globalSubstitute bool) (Decision, error) {
+	decision := Decision{Mode: DefaultForFormat(g.Format), Substitute: globalSubstitute}
 	if len(rules) == 0 {
-		return DefaultForFormat(g.Format), nil
+		return decision, nil
 	}
 	normalizedRules, err := config.NormalizeRenderRules(rules)
 	if err != nil {
-		return "", err
+		return Decision{}, err
 	}
 	targetRel, err := targetRelativePath(g, targetDir)
 	if err != nil {
-		return "", err
+		return Decision{}, err
 	}
 	normalizedTarget, err := config.NormalizeRenderRulePath(targetRel)
 	if err != nil {
-		return "", fmt.Errorf("normalize target path %q: %w", targetRel, err)
+		return Decision{}, fmt.Errorf("normalize target path %q: %w", targetRel, err)
 	}
 	for _, rule := range normalizedRules {
 		if rule.Path != normalizedTarget {
@@ -54,14 +64,24 @@ func ForGroup(g discover.Group, targetDir string, rules []config.RenderRule) (Mo
 		}
 		switch rule.Strategy {
 		case config.RenderStrategyAppend:
-			return ModeAppend, nil
+			decision.Mode = ModeAppend
 		case config.RenderStrategyCopy:
-			return ModeCopy, nil
+			decision.Mode = ModeCopy
+		case config.RenderStrategyMerge:
+			if DefaultForFormat(g.Format) != ModeMerge {
+				return Decision{}, fmt.Errorf("render rule for %q names strategy %q but the format is not mergeable (json/toml/yaml)", rule.Path, rule.Strategy)
+			}
+		case "":
+			// Absent strategy inherits the format default.
 		default:
-			return "", fmt.Errorf("unsupported render rule strategy %q for %q", rule.Strategy, rule.Path)
+			return Decision{}, fmt.Errorf("unsupported render rule strategy %q for %q", rule.Strategy, rule.Path)
 		}
+		if value, set := rule.Substitute.Bool(); set {
+			decision.Substitute = value
+		}
+		return decision, nil
 	}
-	return DefaultForFormat(g.Format), nil
+	return decision, nil
 }
 
 // DefaultForFormat returns Overlay's default mode for a discovered format.

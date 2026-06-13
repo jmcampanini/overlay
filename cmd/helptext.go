@@ -44,6 +44,26 @@ Within the effective set, the layer order is always:
 The names "base" and "local" are reserved and cannot appear in any
 profile list.`
 
+// varsPrecedenceHelp documents how variable pins are resolved. It is
+// attached to every subcommand that substitutes variables so the rules are
+// always visible in --help output.
+const varsPrecedenceHelp = `
+Variable substitution:
+
+  When .overlay.toml sets substitute_prefixes, ${NAME} references whose names
+  match a listed prefix are replaced in rendered output. Values resolve with
+  this precedence, highest to lowest:
+
+    1. --vars A=1,B=2 then repeated --var NAME=value (later wins per name)
+    2. OVERLAY_VARS=A=1,B=2 (fully replaced when any vars flag is set)
+    3. ambient process environment
+
+  --vars and OVERLAY_VARS are comma-split; values containing commas must use
+  --var. Pins whose names match no configured prefix are errors. A reference
+  to an unset variable fails the run before anything is written; write
+  $${NAME} to emit a literal ${NAME}. See 'overlay docs' for the full
+  reference.`
+
 // diffOutputHelp documents the diff subcommand's output format, exit
 // codes, and suggested pipes.
 const diffOutputHelp = `
@@ -54,7 +74,7 @@ Output format:
 Exit codes:
   0   all target files match the rendered output (no drift)
   1   at least one file differs from its rendered output
-  2   resolution or I/O error
+  2   resolution, render (e.g. missing variables), or I/O error
 
 Suggested pipes for easier reading:
   overlay diff | delta

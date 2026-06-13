@@ -10,7 +10,7 @@ func newRenderCmd(flags *globalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "render [source...]",
 		Short: "Render overlay layers and write the output files.",
-		Long:  "Walk the source directories, render each group's active layers, and write the\nresult to the target directory. Positional sources select package roots for this run.\n" + sourceSelectionHelp + "\n" + profilePrecedenceHelp,
+		Long:  "Walk the source directories, render each group's active layers, and write the\nresult to the target directory. Positional sources select package roots for this run.\n" + sourceSelectionHelp + "\n" + profilePrecedenceHelp + "\n" + varsPrecedenceHelp,
 		RunE: func(command *cobra.Command, args []string) error {
 			r, err := resolve(command, flags, args...)
 			if err != nil {
@@ -21,6 +21,7 @@ func newRenderCmd(flags *globalFlags) *cobra.Command {
 				ContinueOnError:  r.ContinueOnError,
 				TOMLIndentTables: r.Effective.TOMLIndentTables,
 				RenderRules:      r.Effective.RenderRules,
+				Substituter:      r.Substituter,
 				Logger:           r.Logger,
 			})
 		},

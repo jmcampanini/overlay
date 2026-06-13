@@ -1,8 +1,10 @@
 package render
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -10,6 +12,7 @@ import (
 
 	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/jmcampanini/overlay/internal/discover"
+	"github.com/jmcampanini/overlay/internal/substitute"
 )
 
 func newTestLogger() *log.Logger {
@@ -667,5 +670,249 @@ func writeFile(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func newSubstituter(pins map[string]string, environ ...string) *substitute.Resolver {
+	return substitute.NewResolver([]string{"PRE_"}, pins, environ)
+}
+
+func TestRunSubstitutesAcrossModesAndFormats(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "settings.olay.base.json"), `{"color":"${PRE_BG}"}`)
+	writeFile(t, filepath.Join(src, "settings.olay.work.json"), `{"extra":"${PRE_FG}"}`)
+	writeFile(t, filepath.Join(src, "app.olay.base.toml"), `color = "${PRE_BG}"`)
+	writeFile(t, filepath.Join(src, "look.olay.base.yml"), `color: ${PRE_BG}`)
+	writeFile(t, filepath.Join(src, "theme.olay.base.conf"), "bg=${PRE_BG}\nlit=$${PRE_BG}\nhome=${HOME}\n")
+	writeFile(t, filepath.Join(src, "dot-npmrc.olay.base"), "registry=${PRE_BG}\n")
+	writeFile(t, filepath.Join(src, "dot-npmrc.olay.work"), "token=${PRE_FG}\n")
+
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			DotPrefix:  true,
+			Profiles:   []string{"work"},
+			Ignore:     discover.NoopIgnorer(),
+		},
+		RenderRules: []config.RenderRule{{Path: ".npmrc", Strategy: config.RenderStrategyAppend}},
+		Substituter: newSubstituter(map[string]string{"PRE_BG": "dark", "PRE_FG": "light"}),
+		Logger:      newTestLogger(),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	assertContent := func(name, want string) {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(target, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		if string(data) != want {
+			t.Errorf("%s = %q, want %q", name, data, want)
+		}
+	}
+	assertContent("settings.json", "{\n  \"color\": \"dark\",\n  \"extra\": \"light\"\n}\n")
+	// The TOML emitter literal-quotes strings containing ${...}, so the
+	// substituted value keeps those single quotes.
+	assertContent("app.toml", "color = 'dark'\n")
+	assertContent("look.yml", "color: dark\n")
+	assertContent("theme.conf", "bg=dark\nlit=${PRE_BG}\nhome=${HOME}\n")
+	assertContent(".npmrc", "registry=dark\ntoken=light\n")
+}
+
+func TestRunTwoPhaseWritesNothingOnMissingVars(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "good.olay.base.conf"), "ok=${PRE_SET}\n")
+	writeFile(t, filepath.Join(src, "bad.olay.base.conf"), "a=${PRE_GONE}\nb=${PRE_GONE2}\n")
+
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Profiles:   nil,
+			Ignore:     discover.NoopIgnorer(),
+		},
+		Substituter: newSubstituter(map[string]string{"PRE_SET": "v"}),
+		Logger:      newTestLogger(),
+	})
+	if err == nil {
+		t.Fatal("expected missing-vars error")
+	}
+	for _, want := range []string{"bad.conf", "PRE_GONE", "PRE_GONE2", "missing variables"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error missing %q: %v", want, err)
+		}
+	}
+	entries, readErr := os.ReadDir(target)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if len(entries) != 0 {
+		t.Errorf("two-phase render must write nothing on failure, found %v", entries)
+	}
+}
+
+func TestRunTwoPhaseAggregatesAllFailures(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "one.olay.base.conf"), "a=${PRE_GONE}\n")
+	writeFile(t, filepath.Join(src, "two.olay.base.json"), `{not json`)
+
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
+		},
+		Substituter: newSubstituter(nil),
+		Logger:      newTestLogger(),
+	})
+	if err == nil {
+		t.Fatal("expected aggregated failures")
+	}
+	for _, want := range []string{"one.conf", "PRE_GONE", "two.json", "parse"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error missing %q: %v", want, err)
+		}
+	}
+	if entries, _ := os.ReadDir(target); len(entries) != 0 {
+		t.Errorf("nothing should be written, found %v", entries)
+	}
+}
+
+func TestRunContinueWritesCleanTargets(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "good.olay.base.conf"), "ok=${PRE_SET}\n")
+	writeFile(t, filepath.Join(src, "bad.olay.base.conf"), "a=${PRE_GONE}\n")
+
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
+		},
+		ContinueOnError: true,
+		Substituter:     newSubstituter(map[string]string{"PRE_SET": "v"}),
+		Logger:          newTestLogger(),
+	})
+	if err == nil {
+		t.Fatal("expected summary error with --continue")
+	}
+	data, readErr := os.ReadFile(filepath.Join(target, "good.conf"))
+	if readErr != nil {
+		t.Fatalf("clean target should be written: %v", readErr)
+	}
+	if string(data) != "ok=v\n" {
+		t.Errorf("good.conf = %q", data)
+	}
+	if _, statErr := os.Stat(filepath.Join(target, "bad.conf")); statErr == nil {
+		t.Error("failing target must not be written")
+	}
+}
+
+func TestRunSubstituteFalseOptOut(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "raw.olay.base.sh"), "echo ${PRE_SET}\n")
+
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
+		},
+		RenderRules: []config.RenderRule{{Path: "raw.sh", Substitute: config.TriStateFalse}},
+		Substituter: newSubstituter(map[string]string{"PRE_SET": "v"}),
+		Logger:      newTestLogger(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(filepath.Join(target, "raw.sh"))
+	if string(data) != "echo ${PRE_SET}\n" {
+		t.Errorf("opted-out target was substituted: %q", data)
+	}
+}
+
+func TestRunFeatureOffByteIdentical(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	content := "a=${PRE_SET}\nb=$${PRE_SET}\nc=$$\n"
+	writeFile(t, filepath.Join(src, "raw.olay.base.conf"), content)
+
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
+		},
+		Logger: newTestLogger(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(filepath.Join(target, "raw.conf"))
+	if string(data) != content {
+		t.Errorf("feature off must be byte-identical: %q", data)
+	}
+}
+
+func TestRunWarnsUnusedPins(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "a.olay.base.conf"), "x=${PRE_USED}\n")
+
+	var buf strings.Builder
+	logger := log.New(&buf)
+	logger.SetLevel(log.WarnLevel)
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
+		},
+		Substituter: newSubstituter(map[string]string{"PRE_USED": "1", "PRE_UNUSED": "2"}),
+		Logger:      logger,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "PRE_UNUSED") || !strings.Contains(out, "not consumed") {
+		t.Errorf("expected unused-pin warning, got: %q", out)
+	}
+	if strings.Contains(out, "PRE_USED ") {
+		t.Errorf("consumed pin should not warn: %q", out)
+	}
+}
+
+func TestComposeGroupReportsVarsOnFailure(t *testing.T) {
+	src := t.TempDir()
+	writeFile(t, filepath.Join(src, "a.olay.base.conf"), "x=${PRE_GONE}\ny=${PRE_SET}\n")
+	groups, _, err := discover.Walk(discover.Settings{
+		SourceDirs: []string{src},
+		TargetDir:  t.TempDir(),
+		Ignore:     discover.NoopIgnorer(),
+	})
+	if err != nil || len(groups) != 1 {
+		t.Fatalf("walk: %v (%d groups)", err, len(groups))
+	}
+	cg := ComposeGroup(groups[0], MergeOptions{
+		Substituter: newSubstituter(map[string]string{"PRE_SET": "v"}),
+	})
+	var missing *MissingVarsError
+	if !errors.As(cg.Err, &missing) {
+		t.Fatalf("expected MissingVarsError, got %v", cg.Err)
+	}
+	if !reflect.DeepEqual(cg.Vars.Consumed, []string{"PRE_GONE", "PRE_SET"}) {
+		t.Errorf("consumed = %v", cg.Vars.Consumed)
+	}
+	if !reflect.DeepEqual(cg.Vars.Missing, []string{"PRE_GONE"}) {
+		t.Errorf("missing = %v", cg.Vars.Missing)
 	}
 }

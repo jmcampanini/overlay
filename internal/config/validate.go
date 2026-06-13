@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/jmcampanini/overlay/internal/substitute"
 )
 
 // reservedProfiles cannot appear in the profiles list — they name the
@@ -27,7 +29,40 @@ func (c Config) Validate() error {
 	if err := ValidateProfiles(c.Profiles); err != nil {
 		return err
 	}
-	return ValidateRenderRules(c.RenderRules)
+	if err := ValidateRenderRules(c.RenderRules); err != nil {
+		return err
+	}
+	if err := ValidateSubstitutePrefixes(c.SubstitutePrefixes); err != nil {
+		return err
+	}
+	return ValidateSubstitution(c.SubstitutePrefixes, c.RenderRules)
+}
+
+// ValidateSubstitutePrefixes checks that every prefix entry is a non-empty
+// POSIX-shaped name fragment. An empty entry would match every variable,
+// silently turning prefix gating into substitute-everything.
+func ValidateSubstitutePrefixes(prefixes []string) error {
+	for i, p := range prefixes {
+		if !substitute.ValidName(p) {
+			return fmt.Errorf("substitute_prefixes[%d] %q must match [A-Za-z_][A-Za-z0-9_]*", i, p)
+		}
+	}
+	return nil
+}
+
+// ValidateSubstitution rejects rules that force substitution on while the
+// feature is off: with no prefixes configured, no reference can ever match,
+// so the rule is necessarily a mistake.
+func ValidateSubstitution(prefixes []string, rules []RenderRule) error {
+	if len(prefixes) > 0 {
+		return nil
+	}
+	for i, rule := range rules {
+		if value, set := rule.Substitute.Bool(); set && value {
+			return fmt.Errorf("render_rules[%d].substitute is true but substitute_prefixes is empty", i)
+		}
+	}
+	return nil
 }
 
 // ValidateProfiles checks profile names after env_profiles has been applied.
@@ -56,17 +91,17 @@ func NormalizeRenderRules(rules []RenderRule) ([]RenderRule, error) {
 			return nil, fmt.Errorf("render_rules[%d].path: %w", i, err)
 		}
 		switch rule.Strategy {
-		case RenderStrategyAppend, RenderStrategyCopy:
+		case RenderStrategyMerge, RenderStrategyAppend, RenderStrategyCopy:
 		case "":
-			return nil, fmt.Errorf("render_rules[%d].strategy is required", i)
+			// Optional: an absent strategy inherits the format default.
 		default:
-			return nil, fmt.Errorf("render_rules[%d].strategy %q is unsupported (supported: append, copy)", i, rule.Strategy)
+			return nil, fmt.Errorf("render_rules[%d].strategy %q is unsupported (supported: merge, append, copy)", i, rule.Strategy)
 		}
 		if prev, ok := seen[normalizedPath]; ok {
 			return nil, fmt.Errorf("render_rules[%d].path duplicates render_rules[%d].path %q", i, prev, normalizedPath)
 		}
 		seen[normalizedPath] = i
-		normalized = append(normalized, RenderRule{Path: normalizedPath, Strategy: rule.Strategy})
+		normalized = append(normalized, RenderRule{Path: normalizedPath, Strategy: rule.Strategy, Substitute: rule.Substitute})
 	}
 	return normalized, nil
 }
