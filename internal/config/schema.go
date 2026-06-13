@@ -157,8 +157,10 @@ FIELDS
     pattern is matched against the rendered target-relative path (the same
     path render_rules match, e.g. ".config/shell/theme.sh"), not the walk
     path that the ignore field uses. ** matches any number of path segments.
-    An exact path with no wildcards is a valid single-target exclusion. With
-    substitute_prefixes empty the list is inert. Mirrors the ignore field.
+    An exact path with no wildcards is a valid single-target exclusion. As
+    with the ignore field, a pattern with no "/" matches by base name at any
+    depth ("theme.sh" excludes ".config/shell/theme.sh"); add a "/" to anchor
+    it. With substitute_prefixes empty the list is inert.
 
 VARIABLE SUBSTITUTION
 

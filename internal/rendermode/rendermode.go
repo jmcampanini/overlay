@@ -43,8 +43,11 @@ type Decision struct {
 // substituteExclude opts the target back out when its target-relative path
 // matches one of the exclude globs.
 func Decide(g discover.Group, targetDir string, rules []config.RenderRule, globalSubstitute bool, substituteExclude discover.Ignorer) (Decision, error) {
+	if substituteExclude == nil {
+		substituteExclude = discover.NoopIgnorer()
+	}
 	decision := Decision{Mode: DefaultForFormat(g.Format), Substitute: globalSubstitute}
-	if len(rules) == 0 && (!decision.Substitute || substituteExclude == nil) {
+	if len(rules) == 0 && !decision.Substitute {
 		return decision, nil
 	}
 
@@ -84,7 +87,7 @@ func Decide(g discover.Group, targetDir string, rules []config.RenderRule, globa
 		}
 	}
 
-	if decision.Substitute && substituteExclude != nil && substituteExclude.Match(normalizedTarget, false) {
+	if decision.Substitute && substituteExclude.Match(normalizedTarget, false) {
 		decision.Substitute = false
 	}
 	return decision, nil

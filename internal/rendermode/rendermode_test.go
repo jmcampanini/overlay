@@ -29,7 +29,9 @@ func TestDecideDefaults(t *testing.T) {
 	}
 	for _, tc := range cases {
 		for _, global := range []bool{false, true} {
-			got, err := Decide(discover.Group{Format: tc.format}, "", nil, global, nil)
+			// A real group always carries TargetRelPath; substitution resolves
+			// it to test exclusion even with no rules.
+			got, err := Decide(discover.Group{Format: tc.format, TargetRelPath: "x"}, "", nil, global, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -152,5 +154,36 @@ func TestDecideNonExcludedTargetStillSubstitutes(t *testing.T) {
 	}
 	if !got.Substitute {
 		t.Error("a target outside the exclude globs should still substitute")
+	}
+}
+
+func TestDecideRuleAndExcludeBothApply(t *testing.T) {
+	// A target can match a render rule (for its strategy) and an exclude glob
+	// (to opt out of substitution) at once; the rule loop must fall through to
+	// the exclude check rather than return early.
+	g := discover.Group{Format: document.FormatYAML, TargetRelPath: ".config/lazygit/config.yml"}
+	rules := []config.RenderRule{{Path: ".config/lazygit/config.yml", Strategy: config.RenderStrategyMerge}}
+	got, err := Decide(g, "/tmp/out", rules, true, excludeMatcher(t, ".config/lazygit/**"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Mode != ModeMerge {
+		t.Errorf("mode = %s, want merge from the rule", got.Mode)
+	}
+	if got.Substitute {
+		t.Error("a target matching both a rule and an exclude glob must opt out of substitution")
+	}
+}
+
+func TestDecideSlashlessExcludeMatchesNestedTarget(t *testing.T) {
+	// A slashless pattern matches by basename at any depth (inherited from the
+	// ignore field's glob semantics).
+	g := discover.Group{Format: document.FormatCopy, TargetRelPath: ".config/shell/theme.sh"}
+	got, err := Decide(g, "/tmp/out", nil, true, excludeMatcher(t, "theme.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Substitute {
+		t.Error("a slashless exclude pattern should match the nested target by basename")
 	}
 }

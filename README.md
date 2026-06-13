@@ -267,7 +267,9 @@ output (after merge/append/copy), and substituted values are never re-scanned.
 
 To exempt a whole file, list its target-relative path or a doublestar glob in
 `substitute_exclude` (matched like `render_rules` paths, mirroring `ignore`); an
-excluded target renders byte-identical, escapes included.
+excluded target renders byte-identical, escapes included. As with `ignore`, a
+pattern with no `/` matches by base name at any depth, so `theme.sh` excludes
+`.config/shell/theme.sh`; add a `/` to anchor it to a specific path.
 
 Values come from the process environment; pin them per invocation for
 hermetic CI and golden-file renders. Precedence, highest to lowest:
