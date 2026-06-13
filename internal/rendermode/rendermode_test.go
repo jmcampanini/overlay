@@ -84,77 +84,87 @@ func TestDecideUnsupportedStrategyErrors(t *testing.T) {
 	}
 }
 
-func TestDecideExcludeOptsOut(t *testing.T) {
-	g := discover.Group{Format: document.FormatCopy, TargetRelPath: ".config/shell/theme.sh"}
-	got, err := Decide(g, "/tmp/out", nil, true, excludeMatcher(t, ".config/shell/theme.sh"))
-	if err != nil {
-		t.Fatal(err)
+func TestDecideSubstituteGating(t *testing.T) {
+	cases := []struct {
+		name           string
+		format         document.Format
+		targetRel      string
+		rules          []config.RenderRule
+		global         bool
+		exclude        []string
+		wantSubstitute bool
+		wantMode       Mode
+	}{
+		{
+			name:      "exact path opts out even with global on",
+			format:    document.FormatCopy,
+			targetRel: ".config/shell/theme.sh",
+			global:    true,
+			exclude:   []string{".config/shell/theme.sh"},
+			wantMode:  ModeCopy,
+		},
+		{
+			name:      "glob opts out a whole subtree",
+			format:    document.FormatCopy,
+			targetRel: ".config/shell/aliases.sh",
+			global:    true,
+			exclude:   []string{".config/shell/**"},
+			wantMode:  ModeCopy,
+		},
+		{
+			name:      "exclude is inert when substitution is globally off",
+			format:    document.FormatCopy,
+			targetRel: ".config/shell/theme.sh",
+			global:    false,
+			exclude:   []string{".config/shell/theme.sh"},
+			wantMode:  ModeCopy,
+		},
+		{
+			name:           "target outside the exclude globs still substitutes",
+			format:         document.FormatCopy,
+			targetRel:      ".config/ghostty/config",
+			global:         true,
+			exclude:        []string{".config/shell/**"},
+			wantSubstitute: true,
+			wantMode:       ModeCopy,
+		},
+		{
+			// A target can match a render rule (for its strategy) and an exclude
+			// glob (to opt out of substitution) at once; the rule loop must fall
+			// through to the exclude check rather than return early. FormatYAML
+			// proves the rule's copy strategy overrode the merge default.
+			name:      "rule strategy and exclude both apply",
+			format:    document.FormatYAML,
+			targetRel: ".config/lazygit/config.yml",
+			rules:     []config.RenderRule{{Path: ".config/lazygit/config.yml", Strategy: config.RenderStrategyCopy}},
+			global:    true,
+			exclude:   []string{".config/lazygit/**"},
+			wantMode:  ModeCopy,
+		},
+		{
+			// A slashless pattern matches by base name at any depth (inherited
+			// from the ignore field's glob semantics).
+			name:      "slashless pattern matches nested target by basename",
+			format:    document.FormatCopy,
+			targetRel: ".config/shell/theme.sh",
+			global:    true,
+			exclude:   []string{"theme.sh"},
+			wantMode:  ModeCopy,
+		},
 	}
-	if got.Substitute {
-		t.Error("an excluded target should not substitute even with global on")
-	}
-}
-
-func TestDecideExcludeGlobOptsOutSubtree(t *testing.T) {
-	g := discover.Group{Format: document.FormatCopy, TargetRelPath: ".config/shell/aliases.sh"}
-	got, err := Decide(g, "/tmp/out", nil, true, excludeMatcher(t, ".config/shell/**"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Substitute {
-		t.Error("a target under an excluded glob should not substitute")
-	}
-}
-
-func TestDecideExcludeInertWhenGlobalOff(t *testing.T) {
-	g := discover.Group{Format: document.FormatCopy, TargetRelPath: ".config/shell/theme.sh"}
-	got, err := Decide(g, "/tmp/out", nil, false, excludeMatcher(t, ".config/shell/theme.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Substitute {
-		t.Error("substitution is globally off; exclude changes nothing")
-	}
-}
-
-func TestDecideNonExcludedTargetStillSubstitutes(t *testing.T) {
-	g := discover.Group{Format: document.FormatCopy, TargetRelPath: ".config/ghostty/config"}
-	got, err := Decide(g, "/tmp/out", nil, true, excludeMatcher(t, ".config/shell/**"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !got.Substitute {
-		t.Error("a target outside the exclude globs should still substitute")
-	}
-}
-
-func TestDecideRuleAndExcludeBothApply(t *testing.T) {
-	// A target can match a render rule (for its strategy) and an exclude glob
-	// (to opt out of substitution) at once; the rule loop must fall through to
-	// the exclude check rather than return early.
-	g := discover.Group{Format: document.FormatYAML, TargetRelPath: ".config/lazygit/config.yml"}
-	rules := []config.RenderRule{{Path: ".config/lazygit/config.yml", Strategy: config.RenderStrategyCopy}}
-	got, err := Decide(g, "/tmp/out", rules, true, excludeMatcher(t, ".config/lazygit/**"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Mode != ModeCopy {
-		t.Errorf("mode = %s, want copy from the rule", got.Mode)
-	}
-	if got.Substitute {
-		t.Error("a target matching both a rule and an exclude glob must opt out of substitution")
-	}
-}
-
-func TestDecideSlashlessExcludeMatchesNestedTarget(t *testing.T) {
-	// A slashless pattern matches by basename at any depth (inherited from the
-	// ignore field's glob semantics).
-	g := discover.Group{Format: document.FormatCopy, TargetRelPath: ".config/shell/theme.sh"}
-	got, err := Decide(g, "/tmp/out", nil, true, excludeMatcher(t, "theme.sh"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Substitute {
-		t.Error("a slashless exclude pattern should match the nested target by basename")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := discover.Group{Format: tc.format, TargetRelPath: tc.targetRel}
+			got, err := Decide(g, "/tmp/out", tc.rules, tc.global, excludeMatcher(t, tc.exclude...))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Substitute != tc.wantSubstitute {
+				t.Errorf("Substitute = %v, want %v", got.Substitute, tc.wantSubstitute)
+			}
+			if got.Mode != tc.wantMode {
+				t.Errorf("Mode = %s, want %s", got.Mode, tc.wantMode)
+			}
+		})
 	}
 }

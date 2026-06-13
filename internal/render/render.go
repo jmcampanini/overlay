@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"charm.land/log/v2"
@@ -86,9 +85,6 @@ func Run(opts Options) error {
 	if opts.Logger == nil {
 		opts.Logger = log.Default()
 	}
-	if err := config.ValidateRenderRules(opts.RenderRules); err != nil {
-		return err
-	}
 	result, err := discover.WalkDetailed(opts.Settings)
 	if err != nil {
 		return fmt.Errorf("discover: %w", err)
@@ -102,7 +98,7 @@ func Run(opts Options) error {
 	groups := result.Active
 	if len(groups) == 0 {
 		WarnUnusedPins(opts.Substituter, nil, opts.Logger)
-		opts.Logger.Debugf("no overlay files found in %s", sourceSummary(opts.Settings))
+		opts.Logger.Debugf("no overlay files found in %s", strings.Join(opts.Settings.SourceDirs, ", "))
 		return nil
 	}
 
@@ -171,10 +167,6 @@ func substitutionComplete(failed []ComposedGroup) bool {
 	return true
 }
 
-func sourceSummary(settings discover.Settings) string {
-	return strings.Join(settings.SourceDirs, ", ")
-}
-
 func pluralize(n int, singular, plural string) string {
 	if n == 1 {
 		return singular
@@ -222,14 +214,13 @@ func ComposeGroup(g discover.Group, opts MergeOptions) ComposedGroup {
 		cg.Err = err
 		return cg
 	}
-	if decision.Substitute && opts.Substituter.Enabled() {
+	if decision.Substitute {
 		cg.Substituted = true
 		content, cg.Vars = opts.Substituter.Apply(content)
 		if len(cg.Vars.Missing) > 0 {
 			// Content here has the missing references stripped, so leave it nil
 			// per ComposedGroup's contract — callers must not write failures.
-			// Clone so Names and Vars.Missing don't share a backing array.
-			cg.Err = &MissingVarsError{Names: slices.Clone(cg.Vars.Missing)}
+			cg.Err = &MissingVarsError{Names: cg.Vars.Missing}
 			return cg
 		}
 	}

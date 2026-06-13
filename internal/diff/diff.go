@@ -42,9 +42,6 @@ func Run(opts Options) (bool, error) {
 	if opts.Out == nil {
 		opts.Out = os.Stdout
 	}
-	if err := config.ValidateRenderRules(opts.RenderRules); err != nil {
-		return false, err
-	}
 
 	result, err := discover.WalkDetailed(opts.Settings)
 	if err != nil {
@@ -59,7 +56,7 @@ func Run(opts Options) (bool, error) {
 	groups := result.Active
 	if len(groups) == 0 {
 		render.WarnUnusedPins(opts.Substituter, nil, opts.Logger)
-		opts.Logger.Debugf("no overlay files found in %s", sourceSummary(opts.Settings))
+		opts.Logger.Debugf("no overlay files found in %s", strings.Join(opts.Settings.SourceDirs, ", "))
 		return false, nil
 	}
 
@@ -103,10 +100,6 @@ func Run(opts Options) (bool, error) {
 		return anyDiffer, fmt.Errorf("%d files failed during diff", failed)
 	}
 	return anyDiffer, nil
-}
-
-func sourceSummary(settings discover.Settings) string {
-	return strings.Join(settings.SourceDirs, ", ")
 }
 
 // readTarget returns the target file's bytes. A missing target file is

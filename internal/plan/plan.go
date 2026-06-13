@@ -40,9 +40,6 @@ func Render(w io.Writer, groups []discover.Group, profiles []string, sourceDirs 
 // or compose failures. Non-substituting targets are not composed, so parse
 // errors there surface only at render time.
 func RenderWithOptions(w io.Writer, groups []discover.Group, profiles []string, sourceDirs []string, targetDir string, opts Options) error {
-	if err := config.ValidateRenderRules(opts.RenderRules); err != nil {
-		return err
-	}
 	if _, err := fmt.Fprintf(w, "Active profiles: [%s]\n", strings.Join(profiles, ", ")); err != nil {
 		return err
 	}

@@ -39,9 +39,11 @@ type Decision struct {
 }
 
 // Decide returns the render decision for g after applying matching rules.
-// globalSubstitute is the configuration-wide substitution switch; a non-nil
-// substituteExclude opts the target back out when its target-relative path
-// matches one of the exclude globs.
+// rules must already be normalized (config.NormalizeRenderRules), as the
+// resolve layer does once per invocation. globalSubstitute is the
+// configuration-wide substitution switch; a non-nil substituteExclude opts the
+// target back out when its target-relative path matches one of the exclude
+// globs.
 func Decide(g discover.Group, targetDir string, rules []config.RenderRule, globalSubstitute bool, substituteExclude discover.Ignorer) (Decision, error) {
 	if substituteExclude == nil {
 		substituteExclude = discover.NoopIgnorer()
@@ -72,16 +74,11 @@ func Decide(g discover.Group, targetDir string, rules []config.RenderRule, globa
 }
 
 // modeForTarget resolves the render mode for normalizedTarget, returning
-// fallback unchanged when no rule matches.
+// fallback unchanged when no rule matches. Rules are assumed already
+// normalized (the resolve layer does this once); the unsupported-strategy
+// error is a backstop for direct callers.
 func modeForTarget(fallback Mode, rules []config.RenderRule, normalizedTarget string) (Mode, error) {
-	if len(rules) == 0 {
-		return fallback, nil
-	}
-	normalizedRules, err := config.NormalizeRenderRules(rules)
-	if err != nil {
-		return "", err
-	}
-	for _, rule := range normalizedRules {
+	for _, rule := range rules {
 		if rule.Path != normalizedTarget {
 			continue
 		}
