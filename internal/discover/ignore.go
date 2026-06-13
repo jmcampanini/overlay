@@ -28,13 +28,6 @@ type globIgnorer struct {
 	patterns []string
 }
 
-// ValidateGlobPatterns reports malformed ignore glob patterns without
-// constructing an Ignorer.
-func ValidateGlobPatterns(patterns []string) error {
-	_, err := NormalizeGlobPatterns(patterns)
-	return err
-}
-
 // NormalizeGlobPatterns trims and drops empty glob patterns, and reports
 // malformed doublestar globs. It is shared by the ignore and
 // substitute_exclude fields, so the error names the pattern, not the field.

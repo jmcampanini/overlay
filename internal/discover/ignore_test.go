@@ -77,8 +77,8 @@ func TestNormalizeGlobPatterns(t *testing.T) {
 	}
 }
 
-func TestValidateGlobPatternsInvalidPatternErrors(t *testing.T) {
-	err := ValidateGlobPatterns([]string{"[unclosed"})
+func TestNormalizeGlobPatternsRejectsInvalid(t *testing.T) {
+	_, err := NormalizeGlobPatterns([]string{"[unclosed"})
 	if err == nil {
 		t.Fatal("expected error for invalid glob pattern")
 	}
