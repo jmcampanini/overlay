@@ -265,7 +265,7 @@ target = "/tmp/out"
 
 [[render_rules]]
 path = ".npmrc"
-strategy = "merge"
+strategy = "replace"
 `)
 	cmd, g := setupCmd(t, nil)
 	_, err := resolve(cmd, g)
@@ -766,10 +766,10 @@ ignore = ["[bad"]
 	cmd, g := setupCmd(t, nil)
 	_, err := resolve(cmd, g)
 	if err == nil {
-		t.Fatal("expected invalid ignore pattern error")
+		t.Fatal("expected invalid glob pattern error")
 	}
-	if !strings.Contains(err.Error(), `invalid ignore pattern "[bad"`) {
-		t.Fatalf("error = %v, want invalid ignore pattern", err)
+	if !strings.Contains(err.Error(), `invalid glob pattern "[bad"`) {
+		t.Fatalf("error = %v, want invalid glob pattern", err)
 	}
 }
 
@@ -936,14 +936,14 @@ target = "$OVERLAY_TEST_MISSING_TARGET/out"
 			},
 		},
 		{
-			name: "invalid ignore pattern",
+			name: "invalid glob pattern",
 			toml: `
 target = "/tmp/out"
 ignore = ["[bad"]
 `,
 			want: []string{
 				`ignore = ["[bad"]`,
-				`# ignore = "invalid ignore pattern \"[bad\"`,
+				`# ignore = "invalid glob pattern \"[bad\"`,
 			},
 		},
 	}
@@ -1013,10 +1013,10 @@ ignore = ["[bad"]
 	cmd, _ := setupCmd(t, nil)
 	err := runConfigValidate(cmd, cfgPath)
 	if err == nil {
-		t.Fatal("expected invalid ignore pattern error")
+		t.Fatal("expected invalid glob pattern error")
 	}
-	if !strings.Contains(err.Error(), `ignore: invalid ignore pattern "[bad"`) {
-		t.Fatalf("error = %v, want invalid ignore pattern", err)
+	if !strings.Contains(err.Error(), `ignore: invalid glob pattern "[bad"`) {
+		t.Fatalf("error = %v, want invalid glob pattern", err)
 	}
 }
 
@@ -1045,9 +1045,315 @@ ignore = ["[bad"]
 	if err == nil {
 		t.Fatal("expected effective validation errors")
 	}
-	for _, want := range []string{"sources: sources is empty", "target: target is required", `ignore: invalid ignore pattern "[bad"`} {
+	for _, want := range []string{"sources: sources is empty", "target: target is required", `ignore: invalid glob pattern "[bad"`} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error missing %q:\n%v", want, err)
 		}
+	}
+}
+
+func TestResolveVarFlagsLastWins(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+substitute_prefixes = ["OVERLAYTEST_"]
+`)
+	cmd, g := setupCmd(t, []string{"--var", "OVERLAYTEST_A=1", "--var", "OVERLAYTEST_A=2"})
+	r, err := resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"OVERLAYTEST_A": "2"}
+	if !reflect.DeepEqual(r.Effective.Pins, want) {
+		t.Errorf("Pins = %v, want %v", r.Effective.Pins, want)
+	}
+}
+
+func TestResolveVarsCommaSplitAndSingularWins(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+substitute_prefixes = ["OVERLAYTEST_"]
+`)
+	cmd, g := setupCmd(t, []string{"--vars", "OVERLAYTEST_A=1,OVERLAYTEST_B=2", "--var", "OVERLAYTEST_A=3"})
+	r, err := resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"OVERLAYTEST_A": "3", "OVERLAYTEST_B": "2"}
+	if !reflect.DeepEqual(r.Effective.Pins, want) {
+		t.Errorf("Pins = %v, want %v", r.Effective.Pins, want)
+	}
+}
+
+func TestResolveVarsEnvLoadsAndIsReplacedByFlags(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+substitute_prefixes = ["OVERLAYTEST_"]
+`)
+	t.Setenv("OVERLAY_VARS", "OVERLAYTEST_A=env")
+
+	cmd, g := setupCmd(t, nil)
+	r, err := resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(r.Effective.Pins, map[string]string{"OVERLAYTEST_A": "env"}) {
+		t.Errorf("Pins from env = %v", r.Effective.Pins)
+	}
+
+	cmd, g = setupCmd(t, []string{"--var", "OVERLAYTEST_B=flag"})
+	r, err = resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(r.Effective.Pins, map[string]string{"OVERLAYTEST_B": "flag"}) {
+		t.Errorf("flags should replace OVERLAY_VARS wholesale, got %v", r.Effective.Pins)
+	}
+}
+
+func TestResolveVarsInTomlRejected(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+vars = ["A=1"]
+`)
+	cmd, g := setupCmd(t, nil)
+	if _, err := resolve(cmd, g); err == nil || !strings.Contains(err.Error(), "unknown") {
+		t.Fatalf("vars in TOML should be an unknown-key error, got: %v", err)
+	}
+}
+
+func TestResolveDeadPinErrors(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+substitute_prefixes = ["OVERLAYTEST_"]
+`)
+	cmd, g := setupCmd(t, []string{"--var", "OTHERPREFIX_A=1"})
+	if _, err := resolve(cmd, g); err == nil || !strings.Contains(err.Error(), "substitute_prefixes") {
+		t.Fatalf("dead pin should error, got: %v", err)
+	}
+
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), "target = \"/tmp/out\"\n")
+	cmd, g = setupCmd(t, []string{"--var", "OVERLAYTEST_A=1"})
+	if _, err := resolve(cmd, g); err == nil || !strings.Contains(err.Error(), "none configured") {
+		t.Fatalf("pin with no prefixes configured should error, got: %v", err)
+	}
+}
+
+func TestResolveMalformedPinErrors(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+substitute_prefixes = ["OVERLAYTEST_"]
+`)
+	for _, pin := range []string{"NOEQUALS", "1BAD=x"} {
+		cmd, g := setupCmd(t, []string{"--var", pin})
+		if _, err := resolve(cmd, g); err == nil {
+			t.Errorf("pin %q should error", pin)
+		}
+	}
+}
+
+func TestResolvePinsDoNotAffectPathsOrEnvProfiles(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "$OVERLAYTEST_TGT"
+env_profiles = ["OVERLAYTEST_PROFILES"]
+substitute_prefixes = ["OVERLAYTEST_"]
+`)
+	t.Setenv("OVERLAYTEST_TGT", "/env/target")
+	t.Setenv("OVERLAYTEST_PROFILES", "envprof")
+	cmd, g := setupCmd(t, []string{
+		"--var", "OVERLAYTEST_TGT=/pin/target",
+		"--var", "OVERLAYTEST_PROFILES=pinprof",
+	})
+	r, err := resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Settings.TargetDir != "/env/target" {
+		t.Errorf("target should expand from ambient env, not pins: %q", r.Settings.TargetDir)
+	}
+	if !reflect.DeepEqual(r.Settings.Profiles, []string{"envprof"}) {
+		t.Errorf("env_profiles should read ambient env, not pins: %v", r.Settings.Profiles)
+	}
+}
+
+func TestResolveBuildsSubstituter(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+substitute_prefixes = ["OVERLAYTEST_"]
+`)
+	t.Setenv("OVERLAYTEST_AMBIENT", "fromenv")
+	cmd, g := setupCmd(t, []string{"--var", "OVERLAYTEST_AMBIENT=frompin"})
+	r, err := resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.Substituter.Enabled() {
+		t.Fatal("substituter should be enabled with prefixes configured")
+	}
+	out, res := r.Substituter.Apply([]byte("${OVERLAYTEST_AMBIENT}"))
+	if string(out) != "frompin" {
+		t.Errorf("pin should beat ambient env, got %q", out)
+	}
+	if len(res.Missing) != 0 {
+		t.Errorf("unexpected missing: %v", res.Missing)
+	}
+
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), "target = \"/tmp/out\"\n")
+	cmd, g = setupCmd(t, nil)
+	r, err = resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Substituter.Enabled() {
+		t.Error("substituter should be disabled without prefixes")
+	}
+}
+
+func TestPrintConfigVarsProvenanceWithoutTomlEcho(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	cfgPath := filepath.Join(dir, ".overlay.toml")
+	writeFile(t, cfgPath, `
+target = "/tmp/out"
+substitute_prefixes = ["OVERLAYTEST_"]
+`)
+	cmd, g := setupCmd(t, []string{"--config", cfgPath, "--var", "OVERLAYTEST_A=1"})
+	raw, err := loadRawConfig(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := printConfig(&buf, raw); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	assertProvenanceRow(t, out, "vars", `["OVERLAYTEST_A=1"]`, pflagloader.SourcePFlag)
+	if !strings.Contains(out, `substitute_prefixes = ["OVERLAYTEST_"]`) {
+		t.Errorf("substitute_prefixes missing from raw TOML echo:\n%s", out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "vars") {
+			t.Fatalf("vars must not appear in the raw TOML echo:\n%s", out)
+		}
+	}
+}
+
+func TestResolveVarsEnvMultiplePairs(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+substitute_prefixes = ["OVERLAYTEST_"]
+`)
+	t.Setenv("OVERLAY_VARS", "OVERLAYTEST_A=1,OVERLAYTEST_B=2")
+	cmd, g := setupCmd(t, nil)
+	r, err := resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"OVERLAYTEST_A": "1", "OVERLAYTEST_B": "2"}
+	if !reflect.DeepEqual(r.Effective.Pins, want) {
+		t.Errorf("Pins = %v, want %v", r.Effective.Pins, want)
+	}
+}
+
+func TestPrintConfigEchoesSubstituteExclude(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	cfgPath := filepath.Join(dir, ".overlay.toml")
+	writeFile(t, cfgPath, `
+target = "/tmp/out"
+substitute_prefixes = ["OVERLAYTEST_"]
+substitute_exclude = [".config/shell/**"]
+
+[[render_rules]]
+path = ".npmrc"
+strategy = "append"
+`)
+	cmd, g := setupCmd(t, []string{"--config", cfgPath})
+	raw, err := loadRawConfig(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := printConfig(&buf, raw); err != nil {
+		t.Fatal(err)
+	}
+	echo, _, _ := strings.Cut(buf.String(), "# provenance")
+	if !strings.Contains(echo, `substitute_exclude = [".config/shell/**"]`) {
+		t.Errorf("substitute_exclude should round-trip in the TOML echo:\n%s", echo)
+	}
+}
+
+func TestResolveRejectsBadSubstituteExcludeGlob(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+substitute_prefixes = ["OVERLAYTEST_"]
+substitute_exclude = ["[unterminated"]
+`)
+	cmd, g := setupCmd(t, nil)
+	if _, err := resolve(cmd, g); err == nil || !strings.Contains(err.Error(), "invalid glob pattern") {
+		t.Fatalf("a malformed exclude glob should error, got: %v", err)
+	}
+}
+
+func TestResolveSubstituteExcludeBuildsMatcher(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+substitute_prefixes = ["OVERLAYTEST_"]
+substitute_exclude = [".config/shell/**"]
+`)
+	cmd, g := setupCmd(t, nil)
+	r, err := resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.SubstituteExclude == nil {
+		t.Fatal("expected a non-nil exclude matcher")
+	}
+	if !r.SubstituteExclude.Match(".config/shell/theme.sh", false) {
+		t.Error("exclude glob should match a target under the subtree")
+	}
+	if r.SubstituteExclude.Match(".config/ghostty/config", false) {
+		t.Error("exclude glob should not match an unrelated target")
+	}
+}
+
+func TestResolveNoSubstituteExcludeMatchesNothing(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+substitute_prefixes = ["OVERLAYTEST_"]
+`)
+	cmd, g := setupCmd(t, nil)
+	r, err := resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.SubstituteExclude == nil {
+		t.Fatal("expected a non-nil matcher, not nil")
+	}
+	if r.SubstituteExclude.Match(".config/shell/theme.sh", false) {
+		t.Error("an empty substitute_exclude must match nothing")
 	}
 }

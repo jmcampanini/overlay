@@ -31,24 +31,54 @@ func (m Mode) String() string {
 	return string(m)
 }
 
-// ForGroup returns the render mode for g after applying matching rules.
-func ForGroup(g discover.Group, targetDir string, rules []config.RenderRule) (Mode, error) {
-	if len(rules) == 0 {
-		return DefaultForFormat(g.Format), nil
+// Decision is the resolved per-target rendering behavior: how layers are
+// composed and whether variable substitution applies.
+type Decision struct {
+	Mode       Mode
+	Substitute bool
+}
+
+// Decide returns the render decision for g after applying matching rules.
+// rules must already be normalized (config.NormalizeRenderRules), as the
+// resolve layer does once per invocation. globalSubstitute is the
+// configuration-wide substitution switch; a non-nil substituteExclude opts the
+// target back out when its target-relative path matches one of the exclude
+// globs.
+func Decide(g discover.Group, targetDir string, rules []config.RenderRule, globalSubstitute bool, substituteExclude discover.Ignorer) (Decision, error) {
+	if substituteExclude == nil {
+		substituteExclude = discover.NoopIgnorer()
 	}
-	normalizedRules, err := config.NormalizeRenderRules(rules)
-	if err != nil {
-		return "", err
+	decision := Decision{Mode: DefaultForFormat(g.Format), Substitute: globalSubstitute}
+	if len(rules) == 0 && !decision.Substitute {
+		return decision, nil
 	}
+
 	targetRel, err := targetRelativePath(g, targetDir)
 	if err != nil {
-		return "", err
+		return Decision{}, err
 	}
 	normalizedTarget, err := config.NormalizeRenderRulePath(targetRel)
 	if err != nil {
-		return "", fmt.Errorf("normalize target path %q: %w", targetRel, err)
+		return Decision{}, fmt.Errorf("normalize target path %q: %w", targetRel, err)
 	}
-	for _, rule := range normalizedRules {
+
+	decision.Mode, err = modeForTarget(decision.Mode, rules, normalizedTarget)
+	if err != nil {
+		return Decision{}, err
+	}
+
+	if decision.Substitute && substituteExclude.Match(normalizedTarget, false) {
+		decision.Substitute = false
+	}
+	return decision, nil
+}
+
+// modeForTarget resolves the render mode for normalizedTarget, returning
+// fallback unchanged when no rule matches. Rules are assumed already
+// normalized (the resolve layer does this once); the unsupported-strategy
+// error is a backstop for direct callers.
+func modeForTarget(fallback Mode, rules []config.RenderRule, normalizedTarget string) (Mode, error) {
+	for _, rule := range rules {
 		if rule.Path != normalizedTarget {
 			continue
 		}
@@ -61,7 +91,7 @@ func ForGroup(g discover.Group, targetDir string, rules []config.RenderRule) (Mo
 			return "", fmt.Errorf("unsupported render rule strategy %q for %q", rule.Strategy, rule.Path)
 		}
 	}
-	return DefaultForFormat(g.Format), nil
+	return fallback, nil
 }
 
 // DefaultForFormat returns Overlay's default mode for a discovered format.

@@ -2,6 +2,7 @@
 package plan
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -9,15 +10,22 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
+	"charm.land/log/v2"
 
 	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/jmcampanini/overlay/internal/discover"
+	"github.com/jmcampanini/overlay/internal/render"
 	"github.com/jmcampanini/overlay/internal/rendermode"
+	"github.com/jmcampanini/overlay/internal/substitute"
 )
 
 // Options controls plan rendering.
 type Options struct {
-	RenderRules []config.RenderRule
+	RenderRules       []config.RenderRule
+	TOMLIndentTables  bool
+	Substituter       *substitute.Resolver
+	SubstituteExclude discover.Ignorer
+	Logger            *log.Logger
 }
 
 // Render writes an aligned table of groups using default rendering options.
@@ -25,11 +33,13 @@ func Render(w io.Writer, groups []discover.Group, profiles []string, sourceDirs 
 	return RenderWithOptions(w, groups, profiles, sourceDirs, targetDir, Options{})
 }
 
-// RenderWithOptions writes an aligned table with columns TARGET, MODE, LAYERS.
+// RenderWithOptions writes an aligned table with columns TARGET, MODE, and
+// LAYERS, plus VARS when substitution is enabled. Substituting targets are
+// composed in memory so consumed and missing variables can be reported; the
+// returned error aggregates every substituting target with missing variables
+// or compose failures. Non-substituting targets are not composed, so parse
+// errors there surface only at render time.
 func RenderWithOptions(w io.Writer, groups []discover.Group, profiles []string, sourceDirs []string, targetDir string, opts Options) error {
-	if err := config.ValidateRenderRules(opts.RenderRules); err != nil {
-		return err
-	}
 	if _, err := fmt.Fprintf(w, "Active profiles: [%s]\n", strings.Join(profiles, ", ")); err != nil {
 		return err
 	}
@@ -40,6 +50,12 @@ func RenderWithOptions(w io.Writer, groups []discover.Group, profiles []string, 
 	headerStyle := lipgloss.NewStyle().Bold(true)
 	cellStyle := lipgloss.NewStyle().Padding(0, 1)
 
+	substituting := opts.Substituter.Enabled()
+	headers := []string{"TARGET", "MODE", "LAYERS"}
+	if substituting {
+		headers = append(headers, "VARS")
+	}
+
 	t := table.New().
 		Border(lipgloss.HiddenBorder()).
 		StyleFunc(func(row, _ int) lipgloss.Style {
@@ -48,14 +64,34 @@ func RenderWithOptions(w io.Writer, groups []discover.Group, profiles []string, 
 			}
 			return cellStyle
 		}).
-		Headers("TARGET", "MODE", "LAYERS")
+		Headers(headers...)
 
+	mergeOptions := render.MergeOptions{
+		TOMLIndentTables:  opts.TOMLIndentTables,
+		RenderRules:       opts.RenderRules,
+		TargetDir:         targetDir,
+		Substituter:       opts.Substituter,
+		SubstituteExclude: opts.SubstituteExclude,
+	}
+	var failed render.ComposeFailures
 	for _, g := range groups {
-		mode, err := rendermode.ForGroup(g, targetDir, opts.RenderRules)
+		decision, err := rendermode.Decide(g, targetDir, opts.RenderRules, substituting, opts.SubstituteExclude)
 		if err != nil {
 			return err
 		}
-		t.Row(collapseHome(g.TargetPath), mode.String(), layerDisplay(g, mode))
+		row := []string{collapseHome(g.TargetPath), decision.Mode.String(), layerDisplay(g, decision.Mode)}
+		if substituting {
+			cell := "—"
+			if decision.Substitute {
+				cg := render.ComposeGroup(g, mergeOptions)
+				cell = varsDisplay(cg)
+				if cg.Err != nil {
+					failed = append(failed, cg)
+				}
+			}
+			row = append(row, cell)
+		}
+		t.Row(row...)
 	}
 
 	if _, err := fmt.Fprintln(w, t.Render()); err != nil {
@@ -65,8 +101,40 @@ func RenderWithOptions(w io.Writer, groups []discover.Group, profiles []string, 
 	if len(groups) == 1 {
 		noun = "file"
 	}
-	_, err := fmt.Fprintf(w, "\n%d %s will be generated\n", len(groups), noun)
-	return err
+	if _, err := fmt.Fprintf(w, "\n%d %s will be generated\n", len(groups), noun); err != nil {
+		return err
+	}
+	render.WarnUnusedPins(opts.Substituter, failed, opts.Logger)
+	if len(failed) > 0 {
+		return failed
+	}
+	return nil
+}
+
+// varsDisplay renders one target's VARS cell: consumed names with missing
+// ones marked, or a compose-error note when the target could not compose at
+// all.
+func varsDisplay(cg render.ComposedGroup) string {
+	var missingErr *render.MissingVarsError
+	if cg.Err != nil && !errors.As(cg.Err, &missingErr) {
+		return "(compose error)"
+	}
+	if len(cg.Vars.Consumed) == 0 {
+		return ""
+	}
+	missing := make(map[string]struct{}, len(cg.Vars.Missing))
+	for _, name := range cg.Vars.Missing {
+		missing[name] = struct{}{}
+	}
+	parts := make([]string, len(cg.Vars.Consumed))
+	for i, name := range cg.Vars.Consumed {
+		if _, ok := missing[name]; ok {
+			parts[i] = name + " (missing!)"
+		} else {
+			parts[i] = name
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 func layerDisplay(g discover.Group, mode rendermode.Mode) string {

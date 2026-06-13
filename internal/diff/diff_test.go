@@ -12,6 +12,7 @@ import (
 	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/jmcampanini/overlay/internal/discover"
 	"github.com/jmcampanini/overlay/internal/render"
+	"github.com/jmcampanini/overlay/internal/substitute"
 )
 
 func silentLogger() *log.Logger {
@@ -256,5 +257,96 @@ func TestDiffChanged(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "-") || !strings.Contains(out, "+") {
 		t.Errorf("expected diff markers:\n%s", out)
+	}
+}
+
+func TestDiffMissingVarsErrors(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "theme.olay.base.conf"), "bg=${PRE_GONE}\n")
+
+	var buf bytes.Buffer
+	_, err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
+		},
+		Substituter: substitute.NewResolver([]string{"PRE_"}, nil, nil),
+		Logger:      silentLogger(),
+		Out:         &buf,
+	})
+	if err == nil {
+		t.Fatal("missing vars should fail diff")
+	}
+	if !strings.Contains(err.Error(), "PRE_GONE") {
+		t.Errorf("error should name the missing variable: %v", err)
+	}
+}
+
+func TestDiffComparesSubstitutedContent(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "theme.olay.base.conf"), "bg=${PRE_BG}\n")
+	writeFile(t, filepath.Join(target, "theme.conf"), "bg=dark\n")
+
+	run := func(value string) (bool, string) {
+		t.Helper()
+		var buf bytes.Buffer
+		differ, err := Run(Options{
+			Settings: discover.Settings{
+				SourceDirs: []string{src},
+				TargetDir:  target,
+				Ignore:     discover.NoopIgnorer(),
+			},
+			Substituter: substitute.NewResolver([]string{"PRE_"}, map[string]string{"PRE_BG": value}, nil),
+			Logger:      silentLogger(),
+			Out:         &buf,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return differ, buf.String()
+	}
+
+	if differ, out := run("dark"); differ {
+		t.Errorf("substituted content matches disk, expected no diff:\n%s", out)
+	}
+	differ, out := run("light")
+	if !differ {
+		t.Error("changed pin should produce drift")
+	}
+	if !strings.Contains(out, "+bg=light") {
+		t.Errorf("diff should show substituted value:\n%s", out)
+	}
+}
+
+func TestDiffContinueOnComposeFailureDiffsCleanTargets(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "broken.olay.base.conf"), "bg=${PRE_GONE}\n")
+	writeFile(t, filepath.Join(src, "clean.olay.base.conf"), "fg=${PRE_FG}\n")
+	writeFile(t, filepath.Join(target, "clean.conf"), "fg=old\n")
+
+	var buf bytes.Buffer
+	differ, err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
+		},
+		ContinueOnError: true,
+		Substituter:     substitute.NewResolver([]string{"PRE_"}, map[string]string{"PRE_FG": "new"}, nil),
+		Logger:          silentLogger(),
+		Out:             &buf,
+	})
+	if err == nil {
+		t.Fatal("compose failure should still return an error under --continue")
+	}
+	if !differ {
+		t.Error("the clean target differs from disk, expected a diff")
+	}
+	if !strings.Contains(buf.String(), "+fg=new") {
+		t.Errorf("clean target should be diffed despite the sibling failure:\n%s", buf.String())
 	}
 }

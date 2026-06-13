@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/jmcampanini/overlay/internal/substitute"
 )
 
 // reservedProfiles cannot appear in the profiles list — they name the
@@ -30,7 +32,22 @@ func (c Config) Validate() error {
 	if err := ValidateProfiles(c.Profiles); err != nil {
 		return err
 	}
-	return ValidateRenderRules(c.RenderRules)
+	if err := ValidateRenderRules(c.RenderRules); err != nil {
+		return err
+	}
+	return ValidateSubstitutePrefixes(c.SubstitutePrefixes)
+}
+
+// ValidateSubstitutePrefixes checks that every prefix entry is a non-empty
+// POSIX-shaped name fragment. An empty entry would match every variable,
+// silently turning prefix gating into substitute-everything.
+func ValidateSubstitutePrefixes(prefixes []string) error {
+	for i, p := range prefixes {
+		if !substitute.ValidName(p) {
+			return fmt.Errorf("substitute_prefixes[%d] %q must match [A-Za-z_][A-Za-z0-9_]*", i, p)
+		}
+	}
+	return nil
 }
 
 // ValidateEnvProfiles rejects blank or whitespace-padded environment variable

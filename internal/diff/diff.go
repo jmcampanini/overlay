@@ -15,16 +15,19 @@ import (
 	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/jmcampanini/overlay/internal/discover"
 	"github.com/jmcampanini/overlay/internal/render"
+	"github.com/jmcampanini/overlay/internal/substitute"
 )
 
 // Options carries everything Run needs.
 type Options struct {
-	Settings         discover.Settings
-	ContinueOnError  bool
-	TOMLIndentTables bool
-	RenderRules      []config.RenderRule
-	Logger           *log.Logger
-	Out              io.Writer // diff output goes here; defaults to os.Stdout
+	Settings          discover.Settings
+	ContinueOnError   bool
+	TOMLIndentTables  bool
+	RenderRules       []config.RenderRule
+	Substituter       *substitute.Resolver
+	SubstituteExclude discover.Ignorer
+	Logger            *log.Logger
+	Out               io.Writer // diff output goes here; defaults to os.Stdout
 }
 
 // Run discovers groups, renders each in memory, and writes a unified
@@ -39,9 +42,6 @@ func Run(opts Options) (bool, error) {
 	if opts.Out == nil {
 		opts.Out = os.Stdout
 	}
-	if err := config.ValidateRenderRules(opts.RenderRules); err != nil {
-		return false, err
-	}
 
 	result, err := discover.WalkDetailed(opts.Settings)
 	if err != nil {
@@ -55,37 +55,40 @@ func Run(opts Options) (bool, error) {
 	}
 	groups := result.Active
 	if len(groups) == 0 {
-		opts.Logger.Debugf("no overlay files found in %s", sourceSummary(opts.Settings))
+		render.WarnUnusedPins(opts.Substituter, nil, opts.Logger)
+		opts.Logger.Debugf("no overlay files found in %s", strings.Join(opts.Settings.SourceDirs, ", "))
 		return false, nil
 	}
 
 	mergeOptions := render.MergeOptions{
-		TOMLIndentTables: opts.TOMLIndentTables,
-		RenderRules:      opts.RenderRules,
-		TargetDir:        opts.Settings.TargetDir,
+		TOMLIndentTables:  opts.TOMLIndentTables,
+		RenderRules:       opts.RenderRules,
+		TargetDir:         opts.Settings.TargetDir,
+		Substituter:       opts.Substituter,
+		SubstituteExclude: opts.SubstituteExclude,
 	}
+	clean, composeFailed := render.ComposeGroups(groups, mergeOptions)
+	render.WarnUnusedPins(opts.Substituter, composeFailed, opts.Logger)
+	if len(composeFailed) > 0 && !opts.ContinueOnError {
+		return false, render.ComposeFailures(composeFailed)
+	}
+	for _, cg := range composeFailed {
+		opts.Logger.Errorf("render %s: %v", cg.Group.TargetPath, cg.Err)
+	}
+
 	var anyDiffer bool
-	var failed int
-	for _, g := range groups {
-		rendered, err := render.MergeGroupWithOptions(g, mergeOptions)
+	failed := len(composeFailed)
+	for _, cg := range clean {
+		existing, err := readTarget(cg.Group.TargetPath)
 		if err != nil {
 			if opts.ContinueOnError {
-				opts.Logger.Errorf("render %s: %v", g.TargetPath, err)
+				opts.Logger.Errorf("read %s: %v", cg.Group.TargetPath, err)
 				failed++
 				continue
 			}
-			return anyDiffer, fmt.Errorf("render %s: %w", g.TargetPath, err)
+			return anyDiffer, fmt.Errorf("read %s: %w", cg.Group.TargetPath, err)
 		}
-		existing, err := readTarget(g.TargetPath)
-		if err != nil {
-			if opts.ContinueOnError {
-				opts.Logger.Errorf("read %s: %v", g.TargetPath, err)
-				failed++
-				continue
-			}
-			return anyDiffer, fmt.Errorf("read %s: %w", g.TargetPath, err)
-		}
-		out := Unified(existing, rendered, "a/"+g.TargetPath, "b/"+g.TargetPath)
+		out := Unified(existing, cg.Content, "a/"+cg.Group.TargetPath, "b/"+cg.Group.TargetPath)
 		if out != "" {
 			anyDiffer = true
 			if _, err := fmt.Fprint(opts.Out, out); err != nil {
@@ -97,10 +100,6 @@ func Run(opts Options) (bool, error) {
 		return anyDiffer, fmt.Errorf("%d files failed during diff", failed)
 	}
 	return anyDiffer, nil
-}
-
-func sourceSummary(settings discover.Settings) string {
-	return strings.Join(settings.SourceDirs, ", ")
 }
 
 // readTarget returns the target file's bytes. A missing target file is

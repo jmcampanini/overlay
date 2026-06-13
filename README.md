@@ -199,7 +199,7 @@ documents profile resolution in its `--help` output.
 
 - **0** — all target files match the rendered output.
 - **1** — at least one file differs.
-- **2** — resolution or I/O error.
+- **2** — resolution, render (e.g. missing variables), or I/O error.
 
 Pipe it into any diff viewer:
 
@@ -224,10 +224,73 @@ Run `overlay docs` for the full schema including `sources`, `dot_prefix`,
 `traverse_hidden`, `respect_gitignore`, and `render_rules`.
 
 Config-backed environment variables are `OVERLAY_SOURCES`, `OVERLAY_TARGET`,
-`OVERLAY_PROFILES`, and `OVERLAY_CONTINUE`. There is no `OVERLAY_PROFILE`;
-`--profile` is CLI-only. `sources` and `target` path expansion (`~`, `$VAR`, and
-config-file-relative TOML paths) happens at runtime; the `overlay config` reports
-the loaded strings and comments the expanded effective paths.
+`OVERLAY_PROFILES`, `OVERLAY_CONTINUE`, and `OVERLAY_VARS`. There is no
+`OVERLAY_PROFILE`; `--profile` is CLI-only. `sources` and `target` path
+expansion (`~`, `$VAR`, and config-file-relative TOML paths) happens at
+runtime; the `overlay config` reports the loaded strings and comments the
+expanded effective paths.
+
+## Variable substitution
+
+Opt in by listing name prefixes; only `${NAME}` references whose names start
+with a listed prefix are ever replaced:
+
+```toml
+target = "~/"
+substitute_prefixes = ["DOTFILES_THM_", "DOTFILES_THEME_"]
+
+# opt files out by target-relative path or glob (these keep their ${...} raw)
+substitute_exclude = [".config/shell/**"]
+```
+
+With `ghostty/config.olay.base` containing:
+
+```
+theme = ${DOTFILES_THEME_GHOSTTY}
+lit   = $${DOTFILES_THEME_GHOSTTY}
+home  = ${HOME}
+```
+
+and `DOTFILES_THEME_GHOSTTY=catppuccin-frappe` exported (e.g. by direnv),
+`overlay render` writes:
+
+```
+theme = catppuccin-frappe
+lit   = ${DOTFILES_THEME_GHOSTTY}
+home  = ${HOME}
+```
+
+The escape `$${NAME}` emits a literal reference; `${HOME}` passes through
+because `HOME` matches no listed prefix — shell fragments, tmux configs, and
+starship syntax stay untouched. Substitution runs once on the final composed
+output (after merge/append/copy), and substituted values are never re-scanned.
+
+To exempt a whole file, list its target-relative path or a doublestar glob in
+`substitute_exclude` (matched like `render_rules` paths, mirroring `ignore`); an
+excluded target renders byte-identical, escapes included. As with `ignore`, a
+pattern with no `/` matches by base name at any depth, so `theme.sh` excludes
+`.config/shell/theme.sh`; add a `/` to anchor it to a specific path.
+
+Values come from the process environment; pin them per invocation for
+hermetic CI and golden-file renders. Precedence, highest to lowest:
+
+1. `--vars A=1,B=2` then repeated `--var NAME=value` (later wins per name)
+2. `OVERLAY_VARS=A=1,B=2` (fully replaced when any vars flag is set)
+3. ambient process environment
+
+`--vars`/`OVERLAY_VARS` are comma-split, so values containing commas need
+`--var`. An exact duplicate `NAME=value` collapses to its first position, so
+re-pinning a value you passed earlier won't override a different value given in
+between. There is deliberately no `vars` TOML key. A pin whose name matches
+no prefix is an error; a prefixed pin no target consumes logs a warning.
+
+A reference to an unset variable fails the run **before anything is
+written**, naming every failing target and all of its missing variables
+(empty-string values are valid and substitute as empty). `overlay plan`
+shows each substituting target's variables in a `VARS` column, marks missing
+ones, and exits non-zero, so problems surface from a dry run. With
+`substitute_prefixes` unset, overlay behaves exactly as before — byte-identical
+output, even for files containing `${...}`.
 
 ## Notes
 

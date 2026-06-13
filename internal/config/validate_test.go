@@ -169,6 +169,8 @@ func TestValidateRenderRulesValid(t *testing.T) {
 	path := filepath.Join(dir, ".overlay.toml")
 	writeFile(t, path, `
 target = "~/"
+substitute_prefixes = ["DOTFILES_THM_", "DOTFILES_THEME_"]
+substitute_exclude = [".config/shell/**", ".config/fzf/.fzfrc"]
 
 [[render_rules]]
 path = ".npmrc"
@@ -180,6 +182,17 @@ strategy = "copy"
 `)
 	if err := ValidateFile(path); err != nil {
 		t.Errorf("expected valid render rules, got: %v", err)
+	}
+}
+
+func TestValidateSubstitutePrefixes(t *testing.T) {
+	if err := ValidateSubstitutePrefixes([]string{"DOTFILES_", "_X", "A1"}); err != nil {
+		t.Errorf("expected valid prefixes, got: %v", err)
+	}
+	for _, p := range []string{"", " ", "1A", "A-B", "A.B"} {
+		if err := ValidateSubstitutePrefixes([]string{p}); err == nil {
+			t.Errorf("prefix %q: expected error", p)
+		}
 	}
 }
 

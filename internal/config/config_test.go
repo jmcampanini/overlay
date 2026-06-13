@@ -252,6 +252,11 @@ func TestSchemaDocsDescribeRenderRules(t *testing.T) {
 		"YAML inputs must be single-document config-style YAML with a root mapping",
 		"JSON and YAML numeric output is normalized",
 		"Valid rules that do not match",
+		"substitute_prefixes",
+		"substitute_exclude",
+		"VARIABLE SUBSTITUTION",
+		"$${NAME}",
+		"OVERLAY_VARS",
 	} {
 		if !strings.Contains(SchemaDocs, want) {
 			t.Fatalf("SchemaDocs missing %q", want)

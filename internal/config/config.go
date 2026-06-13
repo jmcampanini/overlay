@@ -18,6 +18,21 @@ type Config struct {
 	TraverseHidden   bool         `toml:"traverse_hidden"`
 	RespectGitignore bool         `toml:"respect_gitignore"`
 	RenderRules      []RenderRule `toml:"render_rules"`
+
+	// SubstitutePrefixes is the variable-substitution switch: a non-empty
+	// list enables substitution, for every target, of ${NAME} references
+	// whose variable names start with one of these prefixes.
+	SubstitutePrefixes []string `toml:"substitute_prefixes"`
+
+	// SubstituteExclude opts targets out of substitution by doublestar glob,
+	// matched against the rendered target-relative path. It is the inverse of
+	// the substitute_prefixes switch and mirrors the ignore field.
+	SubstituteExclude []string `toml:"substitute_exclude"`
+
+	// Vars pins variable values per invocation. It is deliberately not
+	// loadable from .overlay.toml: a committed pin would permanently shadow
+	// the ambient environment that substitution exists to consume.
+	Vars []string `toml:"-" config:"vars" pflag_singular:"var" help:"pin variables as NAME=value; --vars accepts comma-separated pairs"`
 }
 
 // RenderStrategy is the user-configured rendering behavior for one target.

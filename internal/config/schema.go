@@ -117,6 +117,9 @@ FIELDS
           append  append active layers in layer order
           copy    copy the highest-precedence active layer
 
+    To opt a target out of variable substitution, list its path in
+    substitute_exclude (below), not here.
+
     Without a matching render rule, defaults are unchanged:
       .json/.toml/.yaml/.yml -> merge
       other files -> copy
@@ -127,10 +130,84 @@ FIELDS
     already end with a newline. It does not trim, de-duplicate, parse syntax, or
     force a final newline.
 
-    Validation rejects missing or empty paths, absolute paths, paths containing
-    "..", missing strategies, unsupported strategies, and duplicate normalized
-    paths. Valid rules that do not match the current source/profile selection
-    are allowed silently.
+    Validation rejects missing or empty paths, absolute paths, paths
+    containing "..", missing strategies, unsupported strategies, and duplicate
+    normalized paths. Valid rules that do not match the current source/profile
+    selection are allowed silently.
+
+  substitute_prefixes = ["DOTFILES_THM_", "DOTFILES_THEME_"]   # example
+    type:    array of strings
+    default: []
+    The variable-substitution switch. When non-empty, ${NAME} references in
+    rendered output are replaced for every target (opt targets out with
+    substitute_exclude). Each entry is a literal name prefix and must match
+    [A-Za-z_][A-Za-z0-9_]*; only variables whose names start with a listed
+    prefix are ever substituted. When empty (the default), substitution is
+    fully off and output is byte-identical to prior overlay versions. See
+    VARIABLE SUBSTITUTION.
+
+  substitute_exclude = [".config/shell/**"]   # example
+    type:    array of strings (doublestar glob patterns)
+    default: []
+    Opts matching targets out of substitution while it is globally on. Each
+    pattern is matched against the rendered target-relative path (the same
+    path render_rules match, e.g. ".config/shell/theme.sh"), not the walk
+    path that the ignore field uses. ** matches any number of path segments.
+    An exact path with no wildcards is a valid single-target exclusion. As
+    with the ignore field, a pattern with no "/" matches by base name at any
+    depth ("theme.sh" excludes ".config/shell/theme.sh"); add a "/" to anchor
+    it. With substitute_prefixes empty the list is inert.
+
+VARIABLE SUBSTITUTION
+
+Reference syntax. Inside a substituting target's composed output, ${NAME} is
+replaced with the variable's value when NAME matches the POSIX name charset
+[A-Za-z_][A-Za-z0-9_]* AND starts with a substitute_prefixes entry. Bare
+$NAME is never substituted. Anything else — ${name:-default}, ${a.b},
+${UNLISTED_PREFIX}, $HOME — passes through byte-identical, so files full of
+shell or tool syntax stay untouched.
+
+Escape. $${NAME} emits a literal ${NAME}. The escape is recognized exactly
+where the reference would otherwise substitute: $$ alone, shell's $$ (PID),
+and $${HOME} under a non-matching prefix all pass through unchanged. The
+escape is only interpreted in substituting targets.
+
+Opting out. A whole target can be excluded from substitution by listing its
+rendered target-relative path (or a doublestar glob) in substitute_exclude;
+an excluded target renders byte-identical, escapes included.
+
+Composition order. Substitution runs once over the final composed content —
+after merge, append, or copy — identically for all strategies and formats.
+Substituted values are never re-scanned: a value containing ${OTHER} is
+emitted verbatim. Values are resolved from a single environment snapshot
+taken once per invocation, so a run is deterministic.
+
+Values and pinning. Values come from the process environment. Pin values per
+invocation with repeated --var NAME=value flags, the --vars A=1,B=2 flag, or
+OVERLAY_VARS=A=1,B=2; pinned values win over the ambient environment. There
+is deliberately no .overlay.toml key for pins: a committed pin would
+permanently shadow the environment that substitution exists to consume.
+Precedence follows the profiles convention:
+
+  1. --vars A=1,B=2 then repeated --var NAME=value (later wins per name)
+  2. OVERLAY_VARS=A=1,B=2 (fully replaced when any vars flag is set)
+  3. ambient process environment
+
+--vars and OVERLAY_VARS are comma-split, so values containing commas must
+use --var. An exact duplicate NAME=value entry collapses to its first
+position, so re-pinning a value you already passed will not override a
+different value given in between. A pin whose name matches no
+substitute_prefixes entry can never take effect and is an error; a prefixed
+pin consumed by no target logs a warning. Pins affect content substitution
+only — never env_profiles, never $VAR expansion in target/sources paths.
+
+Errors. A reference to an unset variable fails the run; a variable set to
+the empty string substitutes as empty. Render composes every target in
+memory first: on failure it reports every failing target with all of its
+missing variables and writes nothing (--continue writes the clean targets
+and exits non-zero). diff exits 2 on missing variables. plan shows each
+substituting target's variables in a VARS column, marks missing ones, and
+exits non-zero — so failures are detectable from a dry run.
 
 CONFIG-BACKED ENVIRONMENT VARIABLES
 
@@ -138,6 +215,8 @@ CONFIG-BACKED ENVIRONMENT VARIABLES
   OVERLAY_TARGET     overrides target
   OVERLAY_PROFILES   overrides raw profiles (comma-separated)
   OVERLAY_CONTINUE   overrides continue_on_error
+  OVERLAY_VARS       pins variables as NAME=value pairs (comma-separated);
+                     there is no vars TOML key
 
 There is no OVERLAY_PROFILE. Use repeated --profile NAME flags for singular CLI
 profile selection.
