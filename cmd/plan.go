@@ -7,7 +7,6 @@ import (
 
 	"github.com/jmcampanini/overlay/internal/discover"
 	"github.com/jmcampanini/overlay/internal/plan"
-	"github.com/jmcampanini/overlay/internal/render"
 )
 
 func newPlanCmd(flags *globalFlags) *cobra.Command {
@@ -30,7 +29,7 @@ func newPlanCmd(flags *globalFlags) *cobra.Command {
 			for _, stem := range result.Inactive {
 				r.Logger.Infof("skipping %s (no active layers)", stem)
 			}
-			err = plan.RenderWithOptions(
+			return plan.RenderWithOptions(
 				os.Stdout,
 				result.Active,
 				r.Settings.Profiles,
@@ -40,10 +39,9 @@ func newPlanCmd(flags *globalFlags) *cobra.Command {
 					RenderRules:      r.Effective.RenderRules,
 					TOMLIndentTables: r.Effective.TOMLIndentTables,
 					Substituter:      r.Substituter,
+					Logger:           r.Logger,
 				},
 			)
-			render.WarnUnusedPins(r.Substituter, r.Logger)
-			return err
 		},
 	}
 }

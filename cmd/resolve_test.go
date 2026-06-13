@@ -1252,3 +1252,61 @@ substitute_prefixes = ["OVERLAYTEST_"]
 		}
 	}
 }
+
+func TestResolveVarsEnvMultiplePairs(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+substitute_prefixes = ["OVERLAYTEST_"]
+`)
+	t.Setenv("OVERLAY_VARS", "OVERLAYTEST_A=1,OVERLAYTEST_B=2")
+	cmd, g := setupCmd(t, nil)
+	r, err := resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"OVERLAYTEST_A": "1", "OVERLAYTEST_B": "2"}
+	if !reflect.DeepEqual(r.Effective.Pins, want) {
+		t.Errorf("Pins = %v, want %v", r.Effective.Pins, want)
+	}
+}
+
+func TestPrintConfigEchoesRenderRuleSubstitute(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	cfgPath := filepath.Join(dir, ".overlay.toml")
+	writeFile(t, cfgPath, `
+target = "/tmp/out"
+substitute_prefixes = ["OVERLAYTEST_"]
+
+[[render_rules]]
+path = ".config/fzf/.fzfrc"
+substitute = true
+
+[[render_rules]]
+path = ".npmrc"
+strategy = "append"
+`)
+	cmd, g := setupCmd(t, []string{"--config", cfgPath})
+	raw, err := loadRawConfig(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := printConfig(&buf, raw); err != nil {
+		t.Fatalf("printConfig must not fail echoing render rules with a TriState: %v", err)
+	}
+	// Assert against the TOML echo only, not the provenance struct dump that
+	// follows (which Go-stringifies the field as substitute = "true").
+	echo, _, _ := strings.Cut(buf.String(), "# provenance")
+	if !strings.Contains(echo, "substitute = true") {
+		t.Errorf("substitute = true should echo unquoted:\n%s", echo)
+	}
+	if strings.Contains(echo, `substitute = "true"`) {
+		t.Errorf("substitute must not echo as a quoted string:\n%s", echo)
+	}
+	if strings.Count(echo, "substitute =") != 1 {
+		t.Errorf("the unset substitute should be omitted; want exactly one substitute line:\n%s", echo)
+	}
+}

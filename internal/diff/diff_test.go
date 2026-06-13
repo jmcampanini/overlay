@@ -320,3 +320,33 @@ func TestDiffComparesSubstitutedContent(t *testing.T) {
 		t.Errorf("diff should show substituted value:\n%s", out)
 	}
 }
+
+func TestDiffContinueOnComposeFailureDiffsCleanTargets(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "broken.olay.base.conf"), "bg=${PRE_GONE}\n")
+	writeFile(t, filepath.Join(src, "clean.olay.base.conf"), "fg=${PRE_FG}\n")
+	writeFile(t, filepath.Join(target, "clean.conf"), "fg=old\n")
+
+	var buf bytes.Buffer
+	differ, err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
+		},
+		ContinueOnError: true,
+		Substituter:     substitute.NewResolver([]string{"PRE_"}, map[string]string{"PRE_FG": "new"}, nil),
+		Logger:          silentLogger(),
+		Out:             &buf,
+	})
+	if err == nil {
+		t.Fatal("compose failure should still return an error under --continue")
+	}
+	if !differ {
+		t.Error("the clean target differs from disk, expected a diff")
+	}
+	if !strings.Contains(buf.String(), "+fg=new") {
+		t.Errorf("clean target should be diffed despite the sibling failure:\n%s", buf.String())
+	}
+}

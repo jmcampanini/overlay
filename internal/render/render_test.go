@@ -883,11 +883,60 @@ func TestRunWarnsUnusedPins(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "PRE_UNUSED") || !strings.Contains(out, "not consumed") {
+	if !strings.Contains(out, "pinned variable PRE_UNUSED was not consumed") {
 		t.Errorf("expected unused-pin warning, got: %q", out)
 	}
-	if strings.Contains(out, "PRE_USED ") {
+	if strings.Contains(out, "pinned variable PRE_USED was not consumed") {
 		t.Errorf("consumed pin should not warn: %q", out)
+	}
+}
+
+func TestRunWarnsUnusedPinsWhenNoGroups(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+
+	var buf strings.Builder
+	logger := log.New(&buf)
+	logger.SetLevel(log.WarnLevel)
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
+		},
+		Substituter: newSubstituter(map[string]string{"PRE_ORPHAN": "1"}),
+		Logger:      logger,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "pinned variable PRE_ORPHAN was not consumed") {
+		t.Errorf("a pin should warn even when no targets exist, got: %q", buf.String())
+	}
+}
+
+func TestRunSuppressesUnusedPinWarningOnComposeFailure(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "broken.olay.base.json"), `{not json`)
+
+	var buf strings.Builder
+	logger := log.New(&buf)
+	logger.SetLevel(log.WarnLevel)
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
+		},
+		Substituter: newSubstituter(map[string]string{"PRE_MAYBE": "1"}),
+		Logger:      logger,
+	})
+	if err == nil {
+		t.Fatal("expected compose failure")
+	}
+	if strings.Contains(buf.String(), "not consumed") {
+		t.Errorf("unused-pin warning must be suppressed when a target failed before substitution: %q", buf.String())
 	}
 }
 

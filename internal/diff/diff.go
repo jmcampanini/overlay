@@ -57,6 +57,7 @@ func Run(opts Options) (bool, error) {
 	}
 	groups := result.Active
 	if len(groups) == 0 {
+		render.WarnUnusedPins(opts.Substituter, nil, opts.Logger)
 		opts.Logger.Debugf("no overlay files found in %s", sourceSummary(opts.Settings))
 		return false, nil
 	}
@@ -68,7 +69,7 @@ func Run(opts Options) (bool, error) {
 		Substituter:      opts.Substituter,
 	}
 	clean, composeFailed := render.ComposeGroups(groups, mergeOptions)
-	render.WarnUnusedPins(opts.Substituter, opts.Logger)
+	render.WarnUnusedPins(opts.Substituter, composeFailed, opts.Logger)
 	if len(composeFailed) > 0 && !opts.ContinueOnError {
 		return false, render.ComposeFailures(composeFailed)
 	}

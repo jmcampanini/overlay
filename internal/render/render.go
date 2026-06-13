@@ -3,6 +3,7 @@
 package render
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -37,8 +38,11 @@ type MergeOptions struct {
 	Substituter      *substitute.Resolver
 }
 
-// ComposedGroup is the in-memory result of composing one group: the final
-// content (when Err is nil), the decided mode, and any variable activity.
+// ComposedGroup is the in-memory result of composing one group. Content is the
+// final bytes to write and is valid only when Err is nil; on failure (including
+// MissingVarsError, where Content would have references stripped) it is nil and
+// must not be written or displayed. Vars is populated whenever substitution
+// ran, even on failure, so dry-run views can list names.
 type ComposedGroup struct {
 	Group       discover.Group
 	Mode        rendermode.Mode
@@ -57,8 +61,9 @@ func (e *MissingVarsError) Error() string {
 	return "missing variables: " + strings.Join(e.Names, ", ")
 }
 
-// ComposeFailures aggregates every failed group so one run reports all
-// failing targets, each with all of its problems.
+// ComposeFailures aggregates every failed group so one run reports every
+// failing target at once; a missing-variable failure lists all of that
+// target's missing names.
 type ComposeFailures []ComposedGroup
 
 func (f ComposeFailures) Error() string {
@@ -93,6 +98,7 @@ func Run(opts Options) error {
 	}
 	groups := result.Active
 	if len(groups) == 0 {
+		WarnUnusedPins(opts.Substituter, nil, opts.Logger)
 		opts.Logger.Debugf("no overlay files found in %s", sourceSummary(opts.Settings))
 		return nil
 	}
@@ -104,7 +110,7 @@ func Run(opts Options) error {
 		Substituter:      opts.Substituter,
 	}
 	clean, failed := ComposeGroups(groups, mergeOptions)
-	WarnUnusedPins(opts.Substituter, opts.Logger)
+	WarnUnusedPins(opts.Substituter, failed, opts.Logger)
 	if len(failed) > 0 && !opts.ContinueOnError {
 		opts.Logger.Errorf("%d %s failed to compose, nothing written", len(failed), pluralize(len(failed), "file", "files"))
 		return ComposeFailures(failed)
@@ -133,16 +139,32 @@ func Run(opts Options) error {
 	return nil
 }
 
-// WarnUnusedPins logs pinned variables that no composed target consumed. It
-// is shared by render, diff, and plan so every command surfaces the same
-// signal.
-func WarnUnusedPins(substituter *substitute.Resolver, logger *log.Logger) {
-	if !substituter.Enabled() || logger == nil {
+// WarnUnusedPins logs pinned variables that no composed target consumed. It is
+// shared by render, diff, and plan so every command surfaces the same signal.
+// It stays silent when any group failed before substitution ran (parse or
+// decision error), because the resolver's consumed set is then incomplete and
+// the warnings would be false positives; missing-variable failures still ran
+// substitution, so they do not suppress it.
+func WarnUnusedPins(substituter *substitute.Resolver, failed []ComposedGroup, logger *log.Logger) {
+	if !substituter.Enabled() || logger == nil || !substitutionComplete(failed) {
 		return
 	}
 	for _, name := range substituter.UnusedPins() {
 		logger.Warnf("pinned variable %s was not consumed by any target", name)
 	}
+}
+
+// substitutionComplete reports whether every failed group failed only because
+// of missing variables (substitution ran) rather than a parse or decision
+// error (substitution never ran), so the resolver's consumed set is trustworthy.
+func substitutionComplete(failed []ComposedGroup) bool {
+	for _, cg := range failed {
+		var missing *MissingVarsError
+		if !errors.As(cg.Err, &missing) {
+			return false
+		}
+	}
+	return true
 }
 
 func sourceSummary(settings discover.Settings) string {
@@ -200,7 +222,10 @@ func ComposeGroup(g discover.Group, opts MergeOptions) ComposedGroup {
 		cg.Substituted = true
 		content, cg.Vars = opts.Substituter.Apply(content)
 		if len(cg.Vars.Missing) > 0 {
+			// Content here has the missing references stripped, so leave it nil
+			// per ComposedGroup's contract — callers must not write failures.
 			cg.Err = &MissingVarsError{Names: cg.Vars.Missing}
+			return cg
 		}
 	}
 	cg.Content = content
@@ -213,8 +238,14 @@ func composeContent(g discover.Group, mode rendermode.Mode, opts MergeOptions) (
 		return copyWinningLayer(g)
 	case rendermode.ModeAppend:
 		return appendLayers(g)
+	case rendermode.ModeMerge:
+		return mergeLayers(g, opts)
+	default:
+		return nil, fmt.Errorf("unknown render mode %q for %q", mode, g.TargetPath)
 	}
+}
 
+func mergeLayers(g discover.Group, opts MergeOptions) ([]byte, error) {
 	var merged any = map[string]any{}
 	for _, layer := range g.Layers {
 		data, err := readLayer(layer)

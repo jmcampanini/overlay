@@ -316,3 +316,29 @@ func TestRenderVarsColumnAllResolved(t *testing.T) {
 		t.Errorf("unexpected VARS output:\n%s", buf.String())
 	}
 }
+
+func TestRenderVarsColumnComposeError(t *testing.T) {
+	src := t.TempDir()
+	layer := filepath.Join(src, "config.olay.base.json")
+	if err := os.WriteFile(layer, []byte("{not valid json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	groups := []discover.Group{
+		{
+			Stem:          "config",
+			Format:        document.FormatJSON,
+			TargetPath:    "/tmp/out/.config.json",
+			TargetRelPath: ".config.json",
+			Layers:        []discover.Layer{{Profile: "base", Path: layer}},
+		},
+	}
+	opts := Options{Substituter: substitute.NewResolver([]string{"PRE_"}, nil, nil)}
+	var buf bytes.Buffer
+	err := RenderWithOptions(&buf, groups, nil, []string{"./src"}, "/tmp/out", opts)
+	if err == nil {
+		t.Fatal("a parse error in a substituting target should fail plan")
+	}
+	if !strings.Contains(buf.String(), "(compose error)") {
+		t.Errorf("VARS cell should mark the compose error:\n%s", buf.String())
+	}
+}

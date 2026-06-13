@@ -20,8 +20,8 @@ type Config struct {
 	RenderRules      []RenderRule `toml:"render_rules"`
 
 	// SubstitutePrefixes is the variable-substitution switch: a non-empty
-	// list enables ${NAME} substitution for every target whose name matches
-	// one of these prefixes.
+	// list enables substitution, for every target, of ${NAME} references
+	// whose variable names start with one of these prefixes.
 	SubstitutePrefixes []string `toml:"substitute_prefixes"`
 
 	// Vars pins variable values per invocation. It is deliberately not

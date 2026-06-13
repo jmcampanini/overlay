@@ -173,7 +173,7 @@ Composition order. Substitution runs once over the final composed content —
 after merge, append, or copy — identically for all strategies and formats.
 Substituted values are never re-scanned: a value containing ${OTHER} is
 emitted verbatim. Values are resolved from a single environment snapshot
-taken at startup, so a run is deterministic.
+taken once per invocation, so a run is deterministic.
 
 Values and pinning. Values come from the process environment. Pin values per
 invocation with repeated --var NAME=value flags, the --vars A=1,B=2 flag, or

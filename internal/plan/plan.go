@@ -10,6 +10,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
+	"charm.land/log/v2"
 
 	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/jmcampanini/overlay/internal/discover"
@@ -23,6 +24,7 @@ type Options struct {
 	RenderRules      []config.RenderRule
 	TOMLIndentTables bool
 	Substituter      *substitute.Resolver
+	Logger           *log.Logger
 }
 
 // Render writes an aligned table of groups using default rendering options.
@@ -33,8 +35,9 @@ func Render(w io.Writer, groups []discover.Group, profiles []string, sourceDirs 
 // RenderWithOptions writes an aligned table with columns TARGET, MODE, and
 // LAYERS, plus VARS when substitution is enabled. Substituting targets are
 // composed in memory so consumed and missing variables can be reported; the
-// returned error aggregates every target with missing variables or compose
-// failures so a dry run is as informative as a render.
+// returned error aggregates every substituting target with missing variables
+// or compose failures. Non-substituting targets are not composed, so parse
+// errors there surface only at render time.
 func RenderWithOptions(w io.Writer, groups []discover.Group, profiles []string, sourceDirs []string, targetDir string, opts Options) error {
 	if err := config.ValidateRenderRules(opts.RenderRules); err != nil {
 		return err
@@ -102,6 +105,7 @@ func RenderWithOptions(w io.Writer, groups []discover.Group, profiles []string, 
 	if _, err := fmt.Fprintf(w, "\n%d %s will be generated\n", len(groups), noun); err != nil {
 		return err
 	}
+	render.WarnUnusedPins(opts.Substituter, failed, opts.Logger)
 	if len(failed) > 0 {
 		return failed
 	}

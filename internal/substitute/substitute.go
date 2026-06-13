@@ -5,6 +5,7 @@ package substitute
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -97,7 +98,7 @@ func NewResolver(prefixes []string, pins map[string]string, environ []string) *R
 	return &Resolver{
 		prefixes: slices.Clone(prefixes),
 		values:   values,
-		pins:     pins,
+		pins:     maps.Clone(pins),
 		consumed: make(map[string]struct{}),
 	}
 }
@@ -149,6 +150,16 @@ func (r *Resolver) Apply(content []byte) ([]byte, Result) {
 			i = end
 			continue
 		}
+		// A ${...} that is not a matching reference passes through whole,
+		// nested braces included, so an unsupported shell-style expression
+		// like ${X:-${PRE_Y}} is never partially substituted on its inner ref.
+		if i+1 < len(content) && content[i+1] == '{' {
+			if end := matchBraceEnd(content, i+1); end > 0 {
+				out = append(out, content[i:end]...)
+				i = end
+				continue
+			}
+		}
 		out = append(out, '$')
 		i++
 	}
@@ -156,8 +167,11 @@ func (r *Resolver) Apply(content []byte) ([]byte, Result) {
 }
 
 // UnusedPins returns the sorted pin names not consumed by any Apply call so
-// far.
+// far. A nil resolver has no pins.
 func (r *Resolver) UnusedPins() []string {
+	if r == nil {
+		return nil
+	}
 	var unused []string
 	for name := range r.pins {
 		if _, ok := r.consumed[name]; !ok {
@@ -187,6 +201,25 @@ func matchReference(content []byte, j int) (string, int, bool) {
 		return "", 0, false
 	}
 	return name, k + 1, true
+}
+
+// matchBraceEnd returns the index just past the brace group opening at
+// content[j] == '{', counting nesting so a balanced ${...} group is treated as
+// one unit. It returns -1 when the group is never closed.
+func matchBraceEnd(content []byte, j int) int {
+	depth := 0
+	for k := j; k < len(content); k++ {
+		switch content[k] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return k + 1
+			}
+		}
+	}
+	return -1
 }
 
 func matchesPrefix(name string, prefixes []string) bool {
