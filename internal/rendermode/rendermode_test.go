@@ -8,6 +8,15 @@ import (
 	"github.com/jmcampanini/overlay/internal/document"
 )
 
+func excludeMatcher(t *testing.T, patterns ...string) discover.Ignorer {
+	t.Helper()
+	ign, err := discover.NewGlobIgnorer(patterns)
+	if err != nil {
+		t.Fatalf("NewGlobIgnorer: %v", err)
+	}
+	return ign
+}
+
 func TestDecideDefaults(t *testing.T) {
 	cases := []struct {
 		format document.Format
@@ -20,7 +29,7 @@ func TestDecideDefaults(t *testing.T) {
 	}
 	for _, tc := range cases {
 		for _, global := range []bool{false, true} {
-			got, err := Decide(discover.Group{Format: tc.format}, "", nil, global)
+			got, err := Decide(discover.Group{Format: tc.format}, "", nil, global, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -38,7 +47,7 @@ func TestDecideMatchesTargetRelativePath(t *testing.T) {
 	got, err := Decide(discover.Group{
 		Format:        document.FormatCopy,
 		TargetRelPath: ".ssh/config",
-	}, "/tmp/out", []config.RenderRule{{Path: ".ssh/config", Strategy: config.RenderStrategyAppend}}, false)
+	}, "/tmp/out", []config.RenderRule{{Path: ".ssh/config", Strategy: config.RenderStrategyAppend}}, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +60,7 @@ func TestDecideUnmatchedRuleFallsBackToDefault(t *testing.T) {
 	got, err := Decide(discover.Group{
 		Format:        document.FormatCopy,
 		TargetRelPath: ".npmrc",
-	}, "/tmp/out", []config.RenderRule{{Path: "dot-npmrc", Strategy: config.RenderStrategyAppend}}, true)
+	}, "/tmp/out", []config.RenderRule{{Path: "dot-npmrc", Strategy: config.RenderStrategyAppend}}, true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +76,7 @@ func TestDecideOptionalStrategyInheritsFormatDefault(t *testing.T) {
 	got, err := Decide(discover.Group{
 		Format:        document.FormatTOML,
 		TargetRelPath: ".config/starship.toml",
-	}, "/tmp/out", []config.RenderRule{{Path: ".config/starship.toml", Substitute: config.TriStateTrue}}, false)
+	}, "/tmp/out", []config.RenderRule{{Path: ".config/starship.toml"}}, true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +84,7 @@ func TestDecideOptionalStrategyInheritsFormatDefault(t *testing.T) {
 		t.Errorf("mode = %s, want merge (format default)", got.Mode)
 	}
 	if !got.Substitute {
-		t.Error("substitute = true rule should override global off")
+		t.Error("a rule with no exclude should inherit global substitute")
 	}
 }
 
@@ -83,7 +92,7 @@ func TestDecideExplicitMerge(t *testing.T) {
 	got, err := Decide(discover.Group{
 		Format:        document.FormatYAML,
 		TargetRelPath: ".config/lazygit/config.yml",
-	}, "/tmp/out", []config.RenderRule{{Path: ".config/lazygit/config.yml", Strategy: config.RenderStrategyMerge}}, false)
+	}, "/tmp/out", []config.RenderRule{{Path: ".config/lazygit/config.yml", Strategy: config.RenderStrategyMerge}}, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,22 +105,52 @@ func TestDecideMergeOnNonStructuredFormatErrors(t *testing.T) {
 	_, err := Decide(discover.Group{
 		Format:        document.FormatCopy,
 		TargetRelPath: ".config/ghostty/config",
-	}, "/tmp/out", []config.RenderRule{{Path: ".config/ghostty/config", Strategy: config.RenderStrategyMerge}}, false)
+	}, "/tmp/out", []config.RenderRule{{Path: ".config/ghostty/config", Strategy: config.RenderStrategyMerge}}, false, nil)
 	if err == nil {
 		t.Fatal("merge strategy on non-structured format should error")
 	}
 }
 
-func TestDecideSubstituteOverrides(t *testing.T) {
-	rules := []config.RenderRule{{Path: ".config/shell/theme.sh", Substitute: config.TriStateFalse}}
-	got, err := Decide(discover.Group{
-		Format:        document.FormatCopy,
-		TargetRelPath: ".config/shell/theme.sh",
-	}, "/tmp/out", rules, true)
+func TestDecideExcludeOptsOut(t *testing.T) {
+	g := discover.Group{Format: document.FormatCopy, TargetRelPath: ".config/shell/theme.sh"}
+	got, err := Decide(g, "/tmp/out", nil, true, excludeMatcher(t, ".config/shell/theme.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.Substitute {
-		t.Error("substitute = false rule should override global on")
+		t.Error("an excluded target should not substitute even with global on")
+	}
+}
+
+func TestDecideExcludeGlobOptsOutSubtree(t *testing.T) {
+	g := discover.Group{Format: document.FormatCopy, TargetRelPath: ".config/shell/aliases.sh"}
+	got, err := Decide(g, "/tmp/out", nil, true, excludeMatcher(t, ".config/shell/**"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Substitute {
+		t.Error("a target under an excluded glob should not substitute")
+	}
+}
+
+func TestDecideExcludeInertWhenGlobalOff(t *testing.T) {
+	g := discover.Group{Format: document.FormatCopy, TargetRelPath: ".config/shell/theme.sh"}
+	got, err := Decide(g, "/tmp/out", nil, false, excludeMatcher(t, ".config/shell/theme.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Substitute {
+		t.Error("substitution is globally off; exclude changes nothing")
+	}
+}
+
+func TestDecideNonExcludedTargetStillSubstitutes(t *testing.T) {
+	g := discover.Group{Format: document.FormatCopy, TargetRelPath: ".config/ghostty/config"}
+	got, err := Decide(g, "/tmp/out", nil, true, excludeMatcher(t, ".config/shell/**"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Substitute {
+		t.Error("a target outside the exclude globs should still substitute")
 	}
 }

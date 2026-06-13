@@ -24,6 +24,11 @@ type Config struct {
 	// whose variable names start with one of these prefixes.
 	SubstitutePrefixes []string `toml:"substitute_prefixes"`
 
+	// SubstituteExclude opts targets out of substitution by doublestar glob,
+	// matched against the rendered target-relative path. It is the inverse of
+	// the substitute_prefixes switch and mirrors the ignore field.
+	SubstituteExclude []string `toml:"substitute_exclude"`
+
 	// Vars pins variable values per invocation. It is deliberately not
 	// loadable from .overlay.toml: a committed pin would permanently shadow
 	// the ambient environment that substitution exists to consume.
@@ -43,12 +48,10 @@ const (
 )
 
 // RenderRule configures rendering behavior for one target-relative path.
-// Strategy may be empty, meaning the format default applies. Substitute
-// overrides the global substitution switch for this target.
+// Strategy may be empty, meaning the format default applies.
 type RenderRule struct {
-	Path       string         `toml:"path"`
-	Strategy   RenderStrategy `toml:"strategy,omitempty"`
-	Substitute TriState       `toml:"substitute,omitempty"`
+	Path     string         `toml:"path"`
+	Strategy RenderStrategy `toml:"strategy,omitempty"`
 }
 
 // Default returns a Config populated with the default raw values.

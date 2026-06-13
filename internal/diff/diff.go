@@ -20,13 +20,14 @@ import (
 
 // Options carries everything Run needs.
 type Options struct {
-	Settings         discover.Settings
-	ContinueOnError  bool
-	TOMLIndentTables bool
-	RenderRules      []config.RenderRule
-	Substituter      *substitute.Resolver
-	Logger           *log.Logger
-	Out              io.Writer // diff output goes here; defaults to os.Stdout
+	Settings          discover.Settings
+	ContinueOnError   bool
+	TOMLIndentTables  bool
+	RenderRules       []config.RenderRule
+	Substituter       *substitute.Resolver
+	SubstituteExclude discover.Ignorer
+	Logger            *log.Logger
+	Out               io.Writer // diff output goes here; defaults to os.Stdout
 }
 
 // Run discovers groups, renders each in memory, and writes a unified
@@ -63,10 +64,11 @@ func Run(opts Options) (bool, error) {
 	}
 
 	mergeOptions := render.MergeOptions{
-		TOMLIndentTables: opts.TOMLIndentTables,
-		RenderRules:      opts.RenderRules,
-		TargetDir:        opts.Settings.TargetDir,
-		Substituter:      opts.Substituter,
+		TOMLIndentTables:  opts.TOMLIndentTables,
+		RenderRules:       opts.RenderRules,
+		TargetDir:         opts.Settings.TargetDir,
+		Substituter:       opts.Substituter,
+		SubstituteExclude: opts.SubstituteExclude,
 	}
 	clean, composeFailed := render.ComposeGroups(groups, mergeOptions)
 	render.WarnUnusedPins(opts.Substituter, composeFailed, opts.Logger)

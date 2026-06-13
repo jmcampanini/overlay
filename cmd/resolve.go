@@ -24,19 +24,21 @@ const (
 	configPathIgnore             = "ignore"
 	configPathRenderRules        = "render_rules"
 	configPathSubstitutePrefixes = "substitute_prefixes"
+	configPathSubstituteExclude  = "substitute_exclude"
 	configPathVars               = "vars"
 )
 
 // Resolved is the runtime settings bundle after raw config loading and
 // Overlay-specific derivation/validation.
 type Resolved struct {
-	Settings        discover.Settings
-	ContinueOnError bool
-	Logger          *log.Logger
-	RawConfig       config.Config
-	Effective       effectiveConfig
-	SourceLabels    []string
-	Substituter     *substitute.Resolver
+	Settings          discover.Settings
+	ContinueOnError   bool
+	Logger            *log.Logger
+	RawConfig         config.Config
+	Effective         effectiveConfig
+	SourceLabels      []string
+	Substituter       *substitute.Resolver
+	SubstituteExclude discover.Ignorer
 }
 
 type rawLoadedConfig struct {
@@ -58,6 +60,7 @@ type effectiveConfig struct {
 	RespectGitignore   bool
 	RenderRules        []config.RenderRule
 	SubstitutePrefixes []string
+	SubstituteExclude  []string
 	Pins               map[string]string
 	DerivationErrors   []effectiveConfigError
 }
@@ -133,6 +136,13 @@ func resolve(command *cobra.Command, flags *globalFlags, positionalSources ...st
 	r.ContinueOnError = effective.ContinueOnError
 	r.Substituter = substitute.NewResolver(effective.SubstitutePrefixes, effective.Pins, os.Environ())
 
+	if len(effective.SubstituteExclude) > 0 {
+		r.SubstituteExclude, err = discover.NewGlobIgnorer(effective.SubstituteExclude)
+		if err != nil {
+			return r, err
+		}
+	}
+
 	globIgn, err := discover.NewGlobIgnorer(effective.Ignore)
 	if err != nil {
 		return r, err
@@ -199,7 +209,8 @@ func deriveEffectiveConfig(raw rawLoadedConfig, positionalSources ...string) eff
 	sources := deriveSourceDirs(positionalSources, cfg, raw.Report, configBase, configExists)
 	target, targetErrors := derivePath(configPathTarget, cfg.Target, raw.Report, configBase, configExists)
 	profiles, profileErrors := effectiveProfiles(cfg)
-	ignore, ignoreErrors := deriveIgnorePatterns(cfg.Ignore)
+	ignore, ignoreErrors := deriveGlobPatterns(configPathIgnore, cfg.Ignore)
+	substituteExclude, excludeErrors := deriveGlobPatterns(configPathSubstituteExclude, cfg.SubstituteExclude)
 	renderRules, renderRuleErrors := deriveRenderRules(cfg.RenderRules)
 	pins, pinErrors := derivePins(cfg.Vars, cfg.SubstitutePrefixes)
 
@@ -207,6 +218,7 @@ func deriveEffectiveConfig(raw rawLoadedConfig, positionalSources ...string) eff
 	derivationErrors = append(derivationErrors, targetErrors...)
 	derivationErrors = append(derivationErrors, profileErrors...)
 	derivationErrors = append(derivationErrors, ignoreErrors...)
+	derivationErrors = append(derivationErrors, excludeErrors...)
 	derivationErrors = append(derivationErrors, renderRuleErrors...)
 	derivationErrors = append(derivationErrors, pinErrors...)
 
@@ -223,6 +235,7 @@ func deriveEffectiveConfig(raw rawLoadedConfig, positionalSources ...string) eff
 		RespectGitignore:   cfg.RespectGitignore,
 		RenderRules:        renderRules,
 		SubstitutePrefixes: append([]string(nil), cfg.SubstitutePrefixes...),
+		SubstituteExclude:  substituteExclude,
 		Pins:               pins,
 		DerivationErrors:   derivationErrors,
 	}
@@ -303,10 +316,10 @@ func derivePath(name, value string, report configloader.LoadReport, configBase s
 	return expanded, nil
 }
 
-func deriveIgnorePatterns(patterns []string) ([]string, []effectiveConfigError) {
+func deriveGlobPatterns(field string, patterns []string) ([]string, []effectiveConfigError) {
 	normalized, err := discover.NormalizeGlobPatterns(patterns)
 	if err != nil {
-		return append([]string(nil), patterns...), []effectiveConfigError{{Field: configPathIgnore, Err: err}}
+		return append([]string(nil), patterns...), []effectiveConfigError{{Field: field, Err: err}}
 	}
 	return normalized, nil
 }
@@ -338,9 +351,6 @@ func validateEffectiveConfig(raw rawLoadedConfig, effective effectiveConfig) []e
 	}
 	if err := config.ValidateSubstitutePrefixes(effective.SubstitutePrefixes); err != nil {
 		errors = append(errors, effectiveConfigError{Field: configPathSubstitutePrefixes, Err: err})
-	}
-	if err := config.ValidateSubstitution(effective.SubstitutePrefixes, effective.RenderRules); err != nil {
-		errors = append(errors, effectiveConfigError{Field: configPathRenderRules, Err: err})
 	}
 	return errors
 }

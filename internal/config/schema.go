@@ -121,13 +121,8 @@ FIELDS
         Naming "merge" for a non-mergeable format fails when the rule
         matches a discovered target.
 
-      substitute = false
-        Optional boolean. Overrides the global variable-substitution
-        switch for this target (see VARIABLE SUBSTITUTION). When omitted,
-        the target inherits the global behavior: substitution is on for
-        every target when substitute_prefixes is non-empty. Setting
-        substitute = true while substitute_prefixes is empty is a
-        validation error.
+    To opt a target out of variable substitution, list its path in
+    substitute_exclude (below), not here.
 
     Without a matching render rule, defaults are unchanged:
       .json/.toml/.yaml/.yml -> merge
@@ -148,12 +143,22 @@ FIELDS
     type:    array of strings
     default: []
     The variable-substitution switch. When non-empty, ${NAME} references in
-    rendered output are replaced for every target (override per target with
-    a render rule's substitute field). Each entry is a literal name prefix
-    and must match [A-Za-z_][A-Za-z0-9_]*; only variables whose names start
-    with a listed prefix are ever substituted. When empty (the default),
-    substitution is fully off and output is byte-identical to prior overlay
-    versions. See VARIABLE SUBSTITUTION.
+    rendered output are replaced for every target (opt targets out with
+    substitute_exclude). Each entry is a literal name prefix and must match
+    [A-Za-z_][A-Za-z0-9_]*; only variables whose names start with a listed
+    prefix are ever substituted. When empty (the default), substitution is
+    fully off and output is byte-identical to prior overlay versions. See
+    VARIABLE SUBSTITUTION.
+
+  substitute_exclude = [".config/shell/**"]   # example
+    type:    array of strings (doublestar glob patterns)
+    default: []
+    Opts matching targets out of substitution while it is globally on. Each
+    pattern is matched against the rendered target-relative path (the same
+    path render_rules match, e.g. ".config/shell/theme.sh"), not the walk
+    path that the ignore field uses. ** matches any number of path segments.
+    An exact path with no wildcards is a valid single-target exclusion. With
+    substitute_prefixes empty the list is inert. Mirrors the ignore field.
 
 VARIABLE SUBSTITUTION
 
@@ -168,6 +173,10 @@ Escape. $${NAME} emits a literal ${NAME}. The escape is recognized exactly
 where the reference would otherwise substitute: $$ alone, shell's $$ (PID),
 and $${HOME} under a non-matching prefix all pass through unchanged. The
 escape is only interpreted in substituting targets.
+
+Opting out. A whole target can be excluded from substitution by listing its
+rendered target-relative path (or a doublestar glob) in substitute_exclude;
+an excluded target renders byte-identical, escapes included.
 
 Composition order. Substitution runs once over the final composed content —
 after merge, append, or copy — identically for all strategies and formats.

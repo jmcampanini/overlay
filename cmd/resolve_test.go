@@ -766,10 +766,10 @@ ignore = ["[bad"]
 	cmd, g := setupCmd(t, nil)
 	_, err := resolve(cmd, g)
 	if err == nil {
-		t.Fatal("expected invalid ignore pattern error")
+		t.Fatal("expected invalid glob pattern error")
 	}
-	if !strings.Contains(err.Error(), `invalid ignore pattern "[bad"`) {
-		t.Fatalf("error = %v, want invalid ignore pattern", err)
+	if !strings.Contains(err.Error(), `invalid glob pattern "[bad"`) {
+		t.Fatalf("error = %v, want invalid glob pattern", err)
 	}
 }
 
@@ -936,14 +936,14 @@ target = "$OVERLAY_TEST_MISSING_TARGET/out"
 			},
 		},
 		{
-			name: "invalid ignore pattern",
+			name: "invalid glob pattern",
 			toml: `
 target = "/tmp/out"
 ignore = ["[bad"]
 `,
 			want: []string{
 				`ignore = ["[bad"]`,
-				`# ignore = "invalid ignore pattern \"[bad\"`,
+				`# ignore = "invalid glob pattern \"[bad\"`,
 			},
 		},
 	}
@@ -1013,10 +1013,10 @@ ignore = ["[bad"]
 	cmd, _ := setupCmd(t, nil)
 	err := runConfigValidate(cmd, cfgPath)
 	if err == nil {
-		t.Fatal("expected invalid ignore pattern error")
+		t.Fatal("expected invalid glob pattern error")
 	}
-	if !strings.Contains(err.Error(), `ignore: invalid ignore pattern "[bad"`) {
-		t.Fatalf("error = %v, want invalid ignore pattern", err)
+	if !strings.Contains(err.Error(), `ignore: invalid glob pattern "[bad"`) {
+		t.Fatalf("error = %v, want invalid glob pattern", err)
 	}
 }
 
@@ -1045,7 +1045,7 @@ ignore = ["[bad"]
 	if err == nil {
 		t.Fatal("expected effective validation errors")
 	}
-	for _, want := range []string{"sources: sources is empty", "target: target is required", `ignore: invalid ignore pattern "[bad"`} {
+	for _, want := range []string{"sources: sources is empty", "target: target is required", `ignore: invalid glob pattern "[bad"`} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error missing %q:\n%v", want, err)
 		}
@@ -1272,17 +1272,14 @@ substitute_prefixes = ["OVERLAYTEST_"]
 	}
 }
 
-func TestPrintConfigEchoesRenderRuleSubstitute(t *testing.T) {
+func TestPrintConfigEchoesSubstituteExclude(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	cfgPath := filepath.Join(dir, ".overlay.toml")
 	writeFile(t, cfgPath, `
 target = "/tmp/out"
 substitute_prefixes = ["OVERLAYTEST_"]
-
-[[render_rules]]
-path = ".config/fzf/.fzfrc"
-substitute = true
+substitute_exclude = [".config/shell/**"]
 
 [[render_rules]]
 path = ".npmrc"
@@ -1295,18 +1292,65 @@ strategy = "append"
 	}
 	var buf bytes.Buffer
 	if err := printConfig(&buf, raw); err != nil {
-		t.Fatalf("printConfig must not fail echoing render rules with a TriState: %v", err)
+		t.Fatal(err)
 	}
-	// Assert against the TOML echo only, not the provenance struct dump that
-	// follows (which Go-stringifies the field as substitute = "true").
 	echo, _, _ := strings.Cut(buf.String(), "# provenance")
-	if !strings.Contains(echo, "substitute = true") {
-		t.Errorf("substitute = true should echo unquoted:\n%s", echo)
+	if !strings.Contains(echo, `substitute_exclude = [".config/shell/**"]`) {
+		t.Errorf("substitute_exclude should round-trip in the TOML echo:\n%s", echo)
 	}
-	if strings.Contains(echo, `substitute = "true"`) {
-		t.Errorf("substitute must not echo as a quoted string:\n%s", echo)
+}
+
+func TestResolveRejectsBadSubstituteExcludeGlob(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+substitute_prefixes = ["OVERLAYTEST_"]
+substitute_exclude = ["[unterminated"]
+`)
+	cmd, g := setupCmd(t, nil)
+	if _, err := resolve(cmd, g); err == nil || !strings.Contains(err.Error(), "invalid glob pattern") {
+		t.Fatalf("a malformed exclude glob should error, got: %v", err)
 	}
-	if strings.Count(echo, "substitute =") != 1 {
-		t.Errorf("the unset substitute should be omitted; want exactly one substitute line:\n%s", echo)
+}
+
+func TestResolveSubstituteExcludeBuildsMatcher(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+substitute_prefixes = ["OVERLAYTEST_"]
+substitute_exclude = [".config/shell/**"]
+`)
+	cmd, g := setupCmd(t, nil)
+	r, err := resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.SubstituteExclude == nil {
+		t.Fatal("expected a non-nil exclude matcher")
+	}
+	if !r.SubstituteExclude.Match(".config/shell/theme.sh", false) {
+		t.Error("exclude glob should match a target under the subtree")
+	}
+	if r.SubstituteExclude.Match(".config/ghostty/config", false) {
+		t.Error("exclude glob should not match an unrelated target")
+	}
+}
+
+func TestResolveNoSubstituteExcludeLeavesMatcherNil(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
+target = "/tmp/out"
+substitute_prefixes = ["OVERLAYTEST_"]
+`)
+	cmd, g := setupCmd(t, nil)
+	r, err := resolve(cmd, g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.SubstituteExclude != nil {
+		t.Error("no substitute_exclude should leave the matcher nil")
 	}
 }

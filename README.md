@@ -239,9 +239,8 @@ with a listed prefix are ever replaced:
 target = "~/"
 substitute_prefixes = ["DOTFILES_THM_", "DOTFILES_THEME_"]
 
-[[render_rules]]
-path = ".config/shell/theme.sh"   # this file keeps its ${...} at runtime
-substitute = false
+# opt files out by target-relative path or glob (these keep their ${...} raw)
+substitute_exclude = [".config/shell/**"]
 ```
 
 With `ghostty/config.olay.base` containing:
@@ -265,6 +264,10 @@ The escape `$${NAME}` emits a literal reference; `${HOME}` passes through
 because `HOME` matches no listed prefix — shell fragments, tmux configs, and
 starship syntax stay untouched. Substitution runs once on the final composed
 output (after merge/append/copy), and substituted values are never re-scanned.
+
+To exempt a whole file, list its target-relative path or a doublestar glob in
+`substitute_exclude` (matched like `render_rules` paths, mirroring `ignore`); an
+excluded target renders byte-identical, escapes included.
 
 Values come from the process environment; pin them per invocation for
 hermetic CI and golden-file renders. Precedence, highest to lowest:

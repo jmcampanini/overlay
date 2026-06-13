@@ -21,10 +21,11 @@ import (
 
 // Options controls plan rendering.
 type Options struct {
-	RenderRules      []config.RenderRule
-	TOMLIndentTables bool
-	Substituter      *substitute.Resolver
-	Logger           *log.Logger
+	RenderRules       []config.RenderRule
+	TOMLIndentTables  bool
+	Substituter       *substitute.Resolver
+	SubstituteExclude discover.Ignorer
+	Logger            *log.Logger
 }
 
 // Render writes an aligned table of groups using default rendering options.
@@ -69,14 +70,15 @@ func RenderWithOptions(w io.Writer, groups []discover.Group, profiles []string, 
 		Headers(headers...)
 
 	mergeOptions := render.MergeOptions{
-		TOMLIndentTables: opts.TOMLIndentTables,
-		RenderRules:      opts.RenderRules,
-		TargetDir:        targetDir,
-		Substituter:      opts.Substituter,
+		TOMLIndentTables:  opts.TOMLIndentTables,
+		RenderRules:       opts.RenderRules,
+		TargetDir:         targetDir,
+		Substituter:       opts.Substituter,
+		SubstituteExclude: opts.SubstituteExclude,
 	}
 	var failed render.ComposeFailures
 	for _, g := range groups {
-		decision, err := rendermode.Decide(g, targetDir, opts.RenderRules, substituting)
+		decision, err := rendermode.Decide(g, targetDir, opts.RenderRules, substituting, opts.SubstituteExclude)
 		if err != nil {
 			return err
 		}

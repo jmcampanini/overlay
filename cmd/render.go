@@ -17,12 +17,13 @@ func newRenderCmd(flags *globalFlags) *cobra.Command {
 				return err
 			}
 			return render.Run(render.Options{
-				Settings:         r.Settings,
-				ContinueOnError:  r.ContinueOnError,
-				TOMLIndentTables: r.Effective.TOMLIndentTables,
-				RenderRules:      r.Effective.RenderRules,
-				Substituter:      r.Substituter,
-				Logger:           r.Logger,
+				Settings:          r.Settings,
+				ContinueOnError:   r.ContinueOnError,
+				TOMLIndentTables:  r.Effective.TOMLIndentTables,
+				RenderRules:       r.Effective.RenderRules,
+				Substituter:       r.Substituter,
+				SubstituteExclude: r.SubstituteExclude,
+				Logger:            r.Logger,
 			})
 		},
 	}

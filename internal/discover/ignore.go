@@ -35,8 +35,9 @@ func ValidateGlobPatterns(patterns []string) error {
 	return err
 }
 
-// NormalizeGlobPatterns trims and drops empty ignore patterns, and reports
-// malformed doublestar globs.
+// NormalizeGlobPatterns trims and drops empty glob patterns, and reports
+// malformed doublestar globs. It is shared by the ignore and
+// substitute_exclude fields, so the error names the pattern, not the field.
 func NormalizeGlobPatterns(patterns []string) ([]string, error) {
 	normalized := make([]string, 0, len(patterns))
 	for _, pattern := range patterns {
@@ -46,7 +47,7 @@ func NormalizeGlobPatterns(patterns []string) ([]string, error) {
 		}
 		check := strings.TrimSuffix(pattern, "/")
 		if _, err := doublestar.Match(check, ""); err != nil {
-			return nil, fmt.Errorf("invalid ignore pattern %q: %w", pattern, err)
+			return nil, fmt.Errorf("invalid glob pattern %q: %w", pattern, err)
 		}
 		normalized = append(normalized, pattern)
 	}

@@ -272,12 +272,16 @@ func TestRenderVarsColumn(t *testing.T) {
 			Layers:        []discover.Layer{{Profile: "base", Path: rawLayer}},
 		},
 	}
+	exclude, err := discover.NewGlobIgnorer([]string{"raw.sh"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	opts := Options{
-		RenderRules: []config.RenderRule{{Path: "raw.sh", Substitute: config.TriStateFalse}},
-		Substituter: substitute.NewResolver([]string{"PRE_"}, map[string]string{"PRE_SET": "v"}, nil),
+		Substituter:       substitute.NewResolver([]string{"PRE_"}, map[string]string{"PRE_SET": "v"}, nil),
+		SubstituteExclude: exclude,
 	}
 	var buf bytes.Buffer
-	err := RenderWithOptions(&buf, groups, nil, []string{"./src"}, "/tmp/out", opts)
+	err = RenderWithOptions(&buf, groups, nil, []string{"./src"}, "/tmp/out", opts)
 	if err == nil {
 		t.Fatal("plan should fail when variables are missing")
 	}

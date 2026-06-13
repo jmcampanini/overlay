@@ -253,6 +253,7 @@ func TestSchemaDocsDescribeRenderRules(t *testing.T) {
 		"JSON and YAML numeric output is normalized",
 		"Valid rules that do not match",
 		"substitute_prefixes",
+		"substitute_exclude",
 		"VARIABLE SUBSTITUTION",
 		"$${NAME}",
 		"OVERLAY_VARS",

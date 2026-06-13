@@ -36,10 +36,11 @@ func newPlanCmd(flags *globalFlags) *cobra.Command {
 				r.SourceLabels,
 				r.Settings.TargetDir,
 				plan.Options{
-					RenderRules:      r.Effective.RenderRules,
-					TOMLIndentTables: r.Effective.TOMLIndentTables,
-					Substituter:      r.Substituter,
-					Logger:           r.Logger,
+					RenderRules:       r.Effective.RenderRules,
+					TOMLIndentTables:  r.Effective.TOMLIndentTables,
+					Substituter:       r.Substituter,
+					SubstituteExclude: r.SubstituteExclude,
+					Logger:            r.Logger,
 				},
 			)
 		},

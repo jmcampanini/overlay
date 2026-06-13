@@ -61,8 +61,8 @@ func TestGlobIgnorerInvalidPatternErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid glob pattern")
 	}
-	if !strings.Contains(err.Error(), "invalid ignore pattern") {
-		t.Errorf("error should mention 'invalid ignore pattern': %v", err)
+	if !strings.Contains(err.Error(), "invalid glob pattern") {
+		t.Errorf("error should mention 'invalid glob pattern': %v", err)
 	}
 }
 
@@ -82,8 +82,8 @@ func TestValidateGlobPatternsInvalidPatternErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid glob pattern")
 	}
-	if !strings.Contains(err.Error(), "invalid ignore pattern") {
-		t.Errorf("error should mention 'invalid ignore pattern': %v", err)
+	if !strings.Contains(err.Error(), "invalid glob pattern") {
+		t.Errorf("error should mention 'invalid glob pattern': %v", err)
 	}
 }
 

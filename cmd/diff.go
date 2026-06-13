@@ -28,13 +28,14 @@ func newDiffCmd(flags *globalFlags) *cobra.Command {
 				return DiffExitCode(2)
 			}
 			hasDiff, err := diff.Run(diff.Options{
-				Settings:         r.Settings,
-				ContinueOnError:  r.ContinueOnError,
-				TOMLIndentTables: r.Effective.TOMLIndentTables,
-				RenderRules:      r.Effective.RenderRules,
-				Substituter:      r.Substituter,
-				Logger:           r.Logger,
-				Out:              os.Stdout,
+				Settings:          r.Settings,
+				ContinueOnError:   r.ContinueOnError,
+				TOMLIndentTables:  r.Effective.TOMLIndentTables,
+				RenderRules:       r.Effective.RenderRules,
+				Substituter:       r.Substituter,
+				SubstituteExclude: r.SubstituteExclude,
+				Logger:            r.Logger,
+				Out:               os.Stdout,
 			})
 			if err != nil {
 				r.Logger.Error(err)

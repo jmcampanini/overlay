@@ -22,21 +22,23 @@ import (
 
 // Options carries everything Run needs beyond the resolved discover.Settings.
 type Options struct {
-	Settings         discover.Settings
-	ContinueOnError  bool
-	TOMLIndentTables bool
-	RenderRules      []config.RenderRule
-	Substituter      *substitute.Resolver
-	Logger           *log.Logger
+	Settings          discover.Settings
+	ContinueOnError   bool
+	TOMLIndentTables  bool
+	RenderRules       []config.RenderRule
+	Substituter       *substitute.Resolver
+	SubstituteExclude discover.Ignorer
+	Logger            *log.Logger
 }
 
 // MergeOptions controls composition for one group: output formatting, render
 // rules, and variable substitution.
 type MergeOptions struct {
-	TOMLIndentTables bool
-	RenderRules      []config.RenderRule
-	TargetDir        string
-	Substituter      *substitute.Resolver
+	TOMLIndentTables  bool
+	RenderRules       []config.RenderRule
+	TargetDir         string
+	Substituter       *substitute.Resolver
+	SubstituteExclude discover.Ignorer
 }
 
 // ComposedGroup is the in-memory result of composing one group. Content is the
@@ -105,10 +107,11 @@ func Run(opts Options) error {
 	}
 
 	mergeOptions := MergeOptions{
-		TOMLIndentTables: opts.TOMLIndentTables,
-		RenderRules:      opts.RenderRules,
-		TargetDir:        opts.Settings.TargetDir,
-		Substituter:      opts.Substituter,
+		TOMLIndentTables:  opts.TOMLIndentTables,
+		RenderRules:       opts.RenderRules,
+		TargetDir:         opts.Settings.TargetDir,
+		Substituter:       opts.Substituter,
+		SubstituteExclude: opts.SubstituteExclude,
 	}
 	clean, failed := ComposeGroups(groups, mergeOptions)
 	WarnUnusedPins(opts.Substituter, failed, opts.Logger)
@@ -209,7 +212,7 @@ func ComposeGroups(groups []discover.Group, opts MergeOptions) (clean, failed []
 // bytes. Vars is populated even when missing variables fail the group, so
 // dry-run views can still report names.
 func ComposeGroup(g discover.Group, opts MergeOptions) ComposedGroup {
-	decision, err := rendermode.Decide(g, opts.TargetDir, opts.RenderRules, opts.Substituter.Enabled())
+	decision, err := rendermode.Decide(g, opts.TargetDir, opts.RenderRules, opts.Substituter.Enabled(), opts.SubstituteExclude)
 	if err != nil {
 		return ComposedGroup{Group: g, Err: err}
 	}

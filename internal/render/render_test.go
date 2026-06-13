@@ -815,27 +815,34 @@ func TestRunContinueWritesCleanTargets(t *testing.T) {
 	}
 }
 
-func TestRunSubstituteFalseOptOut(t *testing.T) {
+func TestRunSubstituteExcludeOptOut(t *testing.T) {
 	src := t.TempDir()
 	target := t.TempDir()
 	writeFile(t, filepath.Join(src, "raw.olay.base.sh"), "echo ${PRE_SET}\n")
+	writeFile(t, filepath.Join(src, "themed.olay.base.conf"), "bg=${PRE_SET}\n")
+	exclude, err := discover.NewGlobIgnorer([]string{"raw.sh"})
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	err := Run(Options{
+	err = Run(Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
 			Ignore:     discover.NoopIgnorer(),
 		},
-		RenderRules: []config.RenderRule{{Path: "raw.sh", Substitute: config.TriStateFalse}},
-		Substituter: newSubstituter(map[string]string{"PRE_SET": "v"}),
-		Logger:      newTestLogger(),
+		Substituter:       newSubstituter(map[string]string{"PRE_SET": "v"}),
+		SubstituteExclude: exclude,
+		Logger:            newTestLogger(),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, _ := os.ReadFile(filepath.Join(target, "raw.sh"))
-	if string(data) != "echo ${PRE_SET}\n" {
-		t.Errorf("opted-out target was substituted: %q", data)
+	if data, _ := os.ReadFile(filepath.Join(target, "raw.sh")); string(data) != "echo ${PRE_SET}\n" {
+		t.Errorf("excluded target was substituted: %q", data)
+	}
+	if data, _ := os.ReadFile(filepath.Join(target, "themed.conf")); string(data) != "bg=v\n" {
+		t.Errorf("non-excluded target should substitute: %q", data)
 	}
 }
 

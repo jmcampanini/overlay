@@ -39,17 +39,15 @@ type Decision struct {
 }
 
 // Decide returns the render decision for g after applying matching rules.
-// globalSubstitute is the configuration-wide substitution switch; a matched
-// rule's tri-state substitute field overrides it.
-func Decide(g discover.Group, targetDir string, rules []config.RenderRule, globalSubstitute bool) (Decision, error) {
+// globalSubstitute is the configuration-wide substitution switch; a non-nil
+// substituteExclude opts the target back out when its target-relative path
+// matches one of the exclude globs.
+func Decide(g discover.Group, targetDir string, rules []config.RenderRule, globalSubstitute bool, substituteExclude discover.Ignorer) (Decision, error) {
 	decision := Decision{Mode: DefaultForFormat(g.Format), Substitute: globalSubstitute}
-	if len(rules) == 0 {
+	if len(rules) == 0 && (!decision.Substitute || substituteExclude == nil) {
 		return decision, nil
 	}
-	normalizedRules, err := config.NormalizeRenderRules(rules)
-	if err != nil {
-		return Decision{}, err
-	}
+
 	targetRel, err := targetRelativePath(g, targetDir)
 	if err != nil {
 		return Decision{}, err
@@ -58,28 +56,36 @@ func Decide(g discover.Group, targetDir string, rules []config.RenderRule, globa
 	if err != nil {
 		return Decision{}, fmt.Errorf("normalize target path %q: %w", targetRel, err)
 	}
-	for _, rule := range normalizedRules {
-		if rule.Path != normalizedTarget {
-			continue
+
+	if len(rules) > 0 {
+		normalizedRules, err := config.NormalizeRenderRules(rules)
+		if err != nil {
+			return Decision{}, err
 		}
-		switch rule.Strategy {
-		case config.RenderStrategyAppend:
-			decision.Mode = ModeAppend
-		case config.RenderStrategyCopy:
-			decision.Mode = ModeCopy
-		case config.RenderStrategyMerge:
-			if DefaultForFormat(g.Format) != ModeMerge {
-				return Decision{}, fmt.Errorf("render rule for %q names strategy %q but the format is not mergeable (json/toml/yaml)", rule.Path, rule.Strategy)
+		for _, rule := range normalizedRules {
+			if rule.Path != normalizedTarget {
+				continue
 			}
-		case "":
-			// Absent strategy inherits the format default.
-		default:
-			return Decision{}, fmt.Errorf("unsupported render rule strategy %q for %q", rule.Strategy, rule.Path)
+			switch rule.Strategy {
+			case config.RenderStrategyAppend:
+				decision.Mode = ModeAppend
+			case config.RenderStrategyCopy:
+				decision.Mode = ModeCopy
+			case config.RenderStrategyMerge:
+				if DefaultForFormat(g.Format) != ModeMerge {
+					return Decision{}, fmt.Errorf("render rule for %q names strategy %q but the format is not mergeable (json/toml/yaml)", rule.Path, rule.Strategy)
+				}
+			case "":
+				// Absent strategy inherits the format default.
+			default:
+				return Decision{}, fmt.Errorf("unsupported render rule strategy %q for %q", rule.Strategy, rule.Path)
+			}
+			break
 		}
-		if value, set := rule.Substitute.Bool(); set {
-			decision.Substitute = value
-		}
-		return decision, nil
+	}
+
+	if decision.Substitute && substituteExclude != nil && substituteExclude.Match(normalizedTarget, false) {
+		decision.Substitute = false
 	}
 	return decision, nil
 }

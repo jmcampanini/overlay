@@ -35,10 +35,7 @@ func (c Config) Validate() error {
 	if err := ValidateRenderRules(c.RenderRules); err != nil {
 		return err
 	}
-	if err := ValidateSubstitutePrefixes(c.SubstitutePrefixes); err != nil {
-		return err
-	}
-	return ValidateSubstitution(c.SubstitutePrefixes, c.RenderRules)
+	return ValidateSubstitutePrefixes(c.SubstitutePrefixes)
 }
 
 // ValidateSubstitutePrefixes checks that every prefix entry is a non-empty
@@ -48,21 +45,6 @@ func ValidateSubstitutePrefixes(prefixes []string) error {
 	for i, p := range prefixes {
 		if !substitute.ValidName(p) {
 			return fmt.Errorf("substitute_prefixes[%d] %q must match [A-Za-z_][A-Za-z0-9_]*", i, p)
-		}
-	}
-	return nil
-}
-
-// ValidateSubstitution rejects rules that force substitution on while the
-// feature is off: with no prefixes configured, no reference can ever match,
-// so the rule is necessarily a mistake.
-func ValidateSubstitution(prefixes []string, rules []RenderRule) error {
-	if len(prefixes) > 0 {
-		return nil
-	}
-	for i, rule := range rules {
-		if value, set := rule.Substitute.Bool(); set && value {
-			return fmt.Errorf("render_rules[%d].substitute is true but substitute_prefixes is empty", i)
 		}
 	}
 	return nil
@@ -123,7 +105,7 @@ func NormalizeRenderRules(rules []RenderRule) ([]RenderRule, error) {
 			return nil, fmt.Errorf("render_rules[%d].path duplicates render_rules[%d].path %q", i, prev, normalizedPath)
 		}
 		seen[normalizedPath] = i
-		normalized = append(normalized, RenderRule{Path: normalizedPath, Strategy: rule.Strategy, Substitute: rule.Substitute})
+		normalized = append(normalized, RenderRule{Path: normalizedPath, Strategy: rule.Strategy})
 	}
 	return normalized, nil
 }
