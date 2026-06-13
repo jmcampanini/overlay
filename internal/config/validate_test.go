@@ -72,6 +72,50 @@ target = "~/"
 	}
 }
 
+func TestValidateRejectsBlankEnvProfileEntry(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".overlay.toml")
+	writeFile(t, path, `
+target = "~/"
+env_profiles = ["DOTFILES_PROFILE", " "]
+`)
+	err := ValidateFile(path)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "env_profiles contains an empty environment variable name") {
+		t.Errorf("error should mention empty env_profiles entry: %v", err)
+	}
+}
+
+func TestValidateRejectsPaddedEnvProfileName(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".overlay.toml")
+	writeFile(t, path, `
+target = "~/"
+env_profiles = [" DOTFILES_PROFILE"]
+`)
+	err := ValidateFile(path)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "leading or trailing whitespace") {
+		t.Errorf("error should mention whitespace: %v", err)
+	}
+}
+
+func TestValidateAcceptsEnvProfilesList(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".overlay.toml")
+	writeFile(t, path, `
+target = "~/"
+env_profiles = ["DOTFILES_PROFILE", "HOST_PROFILE"]
+`)
+	if err := ValidateFile(path); err != nil {
+		t.Errorf("expected valid, got: %v", err)
+	}
+}
+
 func TestValidateReservedProfile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".overlay.toml")

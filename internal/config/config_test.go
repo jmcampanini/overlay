@@ -32,7 +32,7 @@ func TestLoadValid(t *testing.T) {
 sources = ["./src"]
 target = "~/out"
 profiles = ["work", "vpn"]
-env_profiles = "DOTFILES_PROFILE"
+env_profiles = ["DOTFILES_PROFILE", "HOST_PROFILE"]
 continue_on_error = true
 toml_indent_tables = true
 ignore = ["**/node_modules"]
@@ -69,8 +69,8 @@ strategy = "copy"
 	if !reflect.DeepEqual(c.Profiles, []string{"work", "vpn"}) {
 		t.Errorf("Profiles = %v", c.Profiles)
 	}
-	if c.EnvProfiles != "DOTFILES_PROFILE" {
-		t.Errorf("EnvProfiles = %q", c.EnvProfiles)
+	if !reflect.DeepEqual(c.EnvProfiles, []string{"DOTFILES_PROFILE", "HOST_PROFILE"}) {
+		t.Errorf("EnvProfiles = %v", c.EnvProfiles)
 	}
 	if !c.ContinueOnError {
 		t.Error("ContinueOnError should be true")
@@ -125,6 +125,19 @@ target = "~/out"
 	}
 	if !strings.Contains(err.Error(), "unknown") || !strings.Contains(err.Error(), "profile") {
 		t.Errorf("error should mention unknown profile key: %v", err)
+	}
+}
+
+func TestLoadRejectsStringEnvProfiles(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".overlay.toml")
+	writeFile(t, path, `
+target = "~/out"
+env_profiles = "DOTFILES_PROFILE"
+`)
+	_, _, _, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error: env_profiles must be an array, not a string")
 	}
 }
 
@@ -183,6 +196,9 @@ func TestDefault(t *testing.T) {
 	if c.Profiles == nil {
 		t.Error("Profiles should be initialized")
 	}
+	if c.EnvProfiles == nil {
+		t.Error("EnvProfiles should be initialized")
+	}
 	if c.RenderRules == nil {
 		t.Error("RenderRules should be initialized")
 	}
@@ -211,6 +227,19 @@ func TestLoadMissingUsesDefaults(t *testing.T) {
 	}
 	if !c.DotPrefix {
 		t.Error("DotPrefix should default to true")
+	}
+}
+
+func TestSchemaDocsDescribePluralEnvProfiles(t *testing.T) {
+	for _, want := range []string{
+		`env_profiles = ["DOTFILES_PROFILE"]`,
+		"Optional environment variable names",
+		"Unset or empty-valued vars are skipped",
+		"each env var listed in env_profiles, in list order",
+	} {
+		if !strings.Contains(SchemaDocs, want) {
+			t.Fatalf("SchemaDocs missing %q", want)
+		}
 	}
 }
 
