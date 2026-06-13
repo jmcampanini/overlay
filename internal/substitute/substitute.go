@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"sort"
 	"strings"
 )
 
@@ -59,7 +58,7 @@ func DeadPins(pins map[string]string, prefixes []string) []string {
 			dead = append(dead, name)
 		}
 	}
-	sort.Strings(dead)
+	slices.Sort(dead)
 	return dead
 }
 
@@ -178,7 +177,7 @@ func (r *Resolver) UnusedPins() []string {
 			unused = append(unused, name)
 		}
 	}
-	sort.Strings(unused)
+	slices.Sort(unused)
 	return unused
 }
 
@@ -235,10 +234,5 @@ func sortedKeys(set map[string]struct{}) []string {
 	if len(set) == 0 {
 		return nil
 	}
-	keys := make([]string, 0, len(set))
-	for k := range set {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
+	return slices.Sorted(maps.Keys(set))
 }
