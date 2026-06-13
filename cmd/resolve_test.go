@@ -1338,7 +1338,7 @@ substitute_exclude = [".config/shell/**"]
 	}
 }
 
-func TestResolveNoSubstituteExcludeUsesNoopMatcher(t *testing.T) {
+func TestResolveNoSubstituteExcludeMatchesNothing(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
@@ -1351,9 +1351,9 @@ substitute_prefixes = ["OVERLAYTEST_"]
 		t.Fatal(err)
 	}
 	if r.SubstituteExclude == nil {
-		t.Fatal("expected a non-nil noop matcher, not nil")
+		t.Fatal("expected a non-nil matcher, not nil")
 	}
 	if r.SubstituteExclude.Match(".config/shell/theme.sh", false) {
-		t.Error("the noop matcher must match nothing")
+		t.Error("an empty substitute_exclude must match nothing")
 	}
 }

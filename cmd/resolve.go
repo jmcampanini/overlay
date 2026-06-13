@@ -136,12 +136,9 @@ func resolve(command *cobra.Command, flags *globalFlags, positionalSources ...st
 	r.ContinueOnError = effective.ContinueOnError
 	r.Substituter = substitute.NewResolver(effective.SubstitutePrefixes, effective.Pins, os.Environ())
 
-	r.SubstituteExclude = discover.NoopIgnorer()
-	if len(effective.SubstituteExclude) > 0 {
-		r.SubstituteExclude, err = discover.NewGlobIgnorer(effective.SubstituteExclude)
-		if err != nil {
-			return r, err
-		}
+	r.SubstituteExclude, err = discover.NewGlobIgnorer(effective.SubstituteExclude)
+	if err != nil {
+		return r, err
 	}
 
 	globIgn, err := discover.NewGlobIgnorer(effective.Ignore)
