@@ -149,15 +149,25 @@ func (r *Resolver) Apply(content []byte) ([]byte, Result) {
 			i = end
 			continue
 		}
-		// A ${...} that is not a matching reference passes through whole,
-		// nested braces included, so an unsupported shell-style expression
-		// like ${X:-${PRE_Y}} is never partially substituted on its inner ref.
+		// A ${...} that is not a matching reference passes through byte-identical,
+		// together with everything up to the brace that balances the outer "{" —
+		// or to end of input if it never closes. Tracking depth means a nested
+		// reference inside an unsupported expression, whether balanced
+		// (${X:-${PRE_Y}}) or unbalanced (${BROKEN${PRE_Y}), is never substituted.
 		if i+1 < len(content) && content[i+1] == '{' {
-			if end := matchBraceEnd(content, i+1); end > 0 {
-				out = append(out, content[i:end]...)
-				i = end
-				continue
+			end, depth := i+2, 1
+			for end < len(content) && depth > 0 {
+				switch content[end] {
+				case '{':
+					depth++
+				case '}':
+					depth--
+				}
+				end++
 			}
+			out = append(out, content[i:end]...)
+			i = end
+			continue
 		}
 		out = append(out, '$')
 		i++
@@ -200,25 +210,6 @@ func matchReference(content []byte, j int) (string, int, bool) {
 		return "", 0, false
 	}
 	return name, k + 1, true
-}
-
-// matchBraceEnd returns the index just past the brace group opening at
-// content[j] == '{', counting nesting so a balanced ${...} group is treated as
-// one unit. It returns -1 when the group is never closed.
-func matchBraceEnd(content []byte, j int) int {
-	depth := 0
-	for k := j; k < len(content); k++ {
-		switch content[k] {
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return k + 1
-			}
-		}
-	}
-	return -1
 }
 
 func matchesPrefix(name string, prefixes []string) bool {

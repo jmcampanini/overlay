@@ -220,6 +220,7 @@ func ComposeGroup(g discover.Group, opts MergeOptions) ComposedGroup {
 		if len(cg.Vars.Missing) > 0 {
 			// Content here has the missing references stripped, so leave it nil
 			// per ComposedGroup's contract — callers must not write failures.
+			// Names shares Vars.Missing's backing array; both are read-only.
 			cg.Err = &MissingVarsError{Names: cg.Vars.Missing}
 			return cg
 		}
