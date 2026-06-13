@@ -279,7 +279,9 @@ hermetic CI and golden-file renders. Precedence, highest to lowest:
 3. ambient process environment
 
 `--vars`/`OVERLAY_VARS` are comma-split, so values containing commas need
-`--var`. There is deliberately no `vars` TOML key. A pin whose name matches
+`--var`. An exact duplicate `NAME=value` collapses to its first position, so
+re-pinning a value you passed earlier won't override a different value given in
+between. There is deliberately no `vars` TOML key. A pin whose name matches
 no prefix is an error; a prefixed pin no target consumes logs a warning.
 
 A reference to an unset variable fails the run **before anything is

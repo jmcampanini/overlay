@@ -59,9 +59,11 @@ Variable substitution:
     3. ambient process environment
 
   --vars and OVERLAY_VARS are comma-split; values containing commas must use
-  --var. Pins whose names match no configured prefix are errors. A reference
-  to an unset variable fails the run before anything is written; write
-  $${NAME} to emit a literal ${NAME}. See 'overlay docs' for the full
+  --var. An exact duplicate NAME=value collapses to its first position, so
+  re-pinning a value passed earlier will not override a different value given
+  in between. Pins whose names match no configured prefix are errors. A
+  reference to an unset variable fails the run before anything is written;
+  write $${NAME} to emit a literal ${NAME}. See 'overlay docs' for the full
   reference.`
 
 // diffOutputHelp documents the diff subcommand's output format, exit

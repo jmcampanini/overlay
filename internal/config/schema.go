@@ -194,10 +194,12 @@ Precedence follows the profiles convention:
   3. ambient process environment
 
 --vars and OVERLAY_VARS are comma-split, so values containing commas must
-use --var. A pin whose name matches no substitute_prefixes entry can never
-take effect and is an error; a prefixed pin consumed by no target logs a
-warning. Pins affect content substitution only — never env_profiles, never
-$VAR expansion in target/sources paths.
+use --var. An exact duplicate NAME=value entry collapses to its first
+position, so re-pinning a value you already passed will not override a
+different value given in between. A pin whose name matches no
+substitute_prefixes entry can never take effect and is an error; a prefixed
+pin consumed by no target logs a warning. Pins affect content substitution
+only — never env_profiles, never $VAR expansion in target/sources paths.
 
 Errors. A reference to an unset variable fails the run; a variable set to
 the empty string substitutes as empty. Render composes every target in
