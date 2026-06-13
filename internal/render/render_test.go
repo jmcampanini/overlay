@@ -915,6 +915,35 @@ func TestRunWarnsUnusedPinsWhenNoGroups(t *testing.T) {
 	}
 }
 
+func TestRunWarnsUnusedPinsWhenOnlyMissingVarsFail(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "good.olay.base.conf"), "x=${PRE_USED}\n")
+	writeFile(t, filepath.Join(src, "bad.olay.base.conf"), "y=${PRE_GONE}\n")
+
+	var buf strings.Builder
+	logger := log.New(&buf)
+	logger.SetLevel(log.WarnLevel)
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
+		},
+		ContinueOnError: true,
+		Substituter:     newSubstituter(map[string]string{"PRE_USED": "1", "PRE_UNUSED": "2"}),
+		Logger:          logger,
+	})
+	if err == nil {
+		t.Fatal("expected the missing-var target to fail the run")
+	}
+	// A missing-var failure still ran substitution, so the consumed set is
+	// complete and the unused-pin warning must fire.
+	if !strings.Contains(buf.String(), "pinned variable PRE_UNUSED was not consumed") {
+		t.Errorf("missing-var failures must not suppress the unused-pin warning: %q", buf.String())
+	}
+}
+
 func TestRunSuppressesUnusedPinWarningOnComposeFailure(t *testing.T) {
 	src := t.TempDir()
 	target := t.TempDir()

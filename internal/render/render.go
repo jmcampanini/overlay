@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"charm.land/log/v2"
@@ -224,7 +225,8 @@ func ComposeGroup(g discover.Group, opts MergeOptions) ComposedGroup {
 		if len(cg.Vars.Missing) > 0 {
 			// Content here has the missing references stripped, so leave it nil
 			// per ComposedGroup's contract — callers must not write failures.
-			cg.Err = &MissingVarsError{Names: cg.Vars.Missing}
+			// Clone so Names and Vars.Missing don't share a backing array.
+			cg.Err = &MissingVarsError{Names: slices.Clone(cg.Vars.Missing)}
 			return cg
 		}
 	}
