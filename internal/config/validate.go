@@ -95,11 +95,11 @@ func NormalizeRenderRules(rules []RenderRule) ([]RenderRule, error) {
 			return nil, fmt.Errorf("render_rules[%d].path: %w", i, err)
 		}
 		switch rule.Strategy {
-		case RenderStrategyMerge, RenderStrategyAppend, RenderStrategyCopy:
+		case RenderStrategyAppend, RenderStrategyCopy:
 		case "":
-			// Optional: an absent strategy inherits the format default.
+			return nil, fmt.Errorf("render_rules[%d].strategy is required", i)
 		default:
-			return nil, fmt.Errorf("render_rules[%d].strategy %q is unsupported (supported: merge, append, copy)", i, rule.Strategy)
+			return nil, fmt.Errorf("render_rules[%d].strategy %q is unsupported (supported: append, copy)", i, rule.Strategy)
 		}
 		if prev, ok := seen[normalizedPath]; ok {
 			return nil, fmt.Errorf("render_rules[%d].path duplicates render_rules[%d].path %q", i, prev, normalizedPath)

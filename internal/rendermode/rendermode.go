@@ -60,7 +60,7 @@ func Decide(g discover.Group, targetDir string, rules []config.RenderRule, globa
 		return Decision{}, fmt.Errorf("normalize target path %q: %w", targetRel, err)
 	}
 
-	decision.Mode, err = modeForTarget(g.Format, decision.Mode, rules, normalizedTarget)
+	decision.Mode, err = modeForTarget(decision.Mode, rules, normalizedTarget)
 	if err != nil {
 		return Decision{}, err
 	}
@@ -73,7 +73,7 @@ func Decide(g discover.Group, targetDir string, rules []config.RenderRule, globa
 
 // modeForTarget resolves the render mode for normalizedTarget, returning
 // fallback unchanged when no rule matches.
-func modeForTarget(format document.Format, fallback Mode, rules []config.RenderRule, normalizedTarget string) (Mode, error) {
+func modeForTarget(fallback Mode, rules []config.RenderRule, normalizedTarget string) (Mode, error) {
 	if len(rules) == 0 {
 		return fallback, nil
 	}
@@ -90,13 +90,6 @@ func modeForTarget(format document.Format, fallback Mode, rules []config.RenderR
 			return ModeAppend, nil
 		case config.RenderStrategyCopy:
 			return ModeCopy, nil
-		case config.RenderStrategyMerge:
-			if DefaultForFormat(format) != ModeMerge {
-				return "", fmt.Errorf("render rule for %q names strategy %q but the format is not mergeable (json/toml/yaml)", rule.Path, rule.Strategy)
-			}
-			return fallback, nil
-		case "":
-			return fallback, nil
 		default:
 			return "", fmt.Errorf("unsupported render rule strategy %q for %q", rule.Strategy, rule.Path)
 		}

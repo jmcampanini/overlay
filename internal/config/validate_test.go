@@ -179,13 +179,6 @@ strategy = "append"
 [[render_rules]]
 path = ".some/generated.json"
 strategy = "copy"
-
-[[render_rules]]
-path = ".config/starship.toml"
-strategy = "merge"
-
-[[render_rules]]
-path = ".config/ghostty/config"
 `)
 	if err := ValidateFile(path); err != nil {
 		t.Errorf("expected valid render rules, got: %v", err)
@@ -242,6 +235,19 @@ strategy = "append"`,
 path = ".ssh/../config"
 strategy = "append"`,
 			want: "..",
+		},
+		{
+			name: "missing strategy",
+			body: `[[render_rules]]
+path = ".npmrc"`,
+			want: "strategy",
+		},
+		{
+			name: "unsupported merge",
+			body: `[[render_rules]]
+path = ".npmrc"
+strategy = "merge"`,
+			want: "unsupported",
 		},
 		{
 			name: "unsupported auto",

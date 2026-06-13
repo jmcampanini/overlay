@@ -43,15 +43,12 @@ const (
 	RenderStrategyAppend RenderStrategy = "append"
 	// RenderStrategyCopy copies the highest-precedence active layer.
 	RenderStrategyCopy RenderStrategy = "copy"
-	// RenderStrategyMerge structurally merges JSON, TOML, or YAML layers.
-	RenderStrategyMerge RenderStrategy = "merge"
 )
 
 // RenderRule configures rendering behavior for one target-relative path.
-// Strategy may be empty, meaning the format default applies.
 type RenderRule struct {
 	Path     string         `toml:"path"`
-	Strategy RenderStrategy `toml:"strategy,omitempty"`
+	Strategy RenderStrategy `toml:"strategy"`
 }
 
 // Default returns a Config populated with the default raw values.

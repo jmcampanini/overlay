@@ -74,42 +74,13 @@ func TestDecideUnmatchedRuleFallsBackToDefault(t *testing.T) {
 	}
 }
 
-func TestDecideOptionalStrategyInheritsFormatDefault(t *testing.T) {
-	got, err := Decide(discover.Group{
-		Format:        document.FormatTOML,
-		TargetRelPath: ".config/starship.toml",
-	}, "/tmp/out", []config.RenderRule{{Path: ".config/starship.toml"}}, true, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Mode != ModeMerge {
-		t.Errorf("mode = %s, want merge (format default)", got.Mode)
-	}
-	if !got.Substitute {
-		t.Error("a rule with no exclude should inherit global substitute")
-	}
-}
-
-func TestDecideExplicitMerge(t *testing.T) {
-	got, err := Decide(discover.Group{
-		Format:        document.FormatYAML,
-		TargetRelPath: ".config/lazygit/config.yml",
-	}, "/tmp/out", []config.RenderRule{{Path: ".config/lazygit/config.yml", Strategy: config.RenderStrategyMerge}}, false, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Mode != ModeMerge {
-		t.Errorf("mode = %s, want merge", got.Mode)
-	}
-}
-
-func TestDecideMergeOnNonStructuredFormatErrors(t *testing.T) {
+func TestDecideUnsupportedStrategyErrors(t *testing.T) {
 	_, err := Decide(discover.Group{
 		Format:        document.FormatCopy,
 		TargetRelPath: ".config/ghostty/config",
-	}, "/tmp/out", []config.RenderRule{{Path: ".config/ghostty/config", Strategy: config.RenderStrategyMerge}}, false, nil)
+	}, "/tmp/out", []config.RenderRule{{Path: ".config/ghostty/config", Strategy: "merge"}}, false, nil)
 	if err == nil {
-		t.Fatal("merge strategy on non-structured format should error")
+		t.Fatal("an unsupported strategy should error")
 	}
 }
 
@@ -162,13 +133,13 @@ func TestDecideRuleAndExcludeBothApply(t *testing.T) {
 	// (to opt out of substitution) at once; the rule loop must fall through to
 	// the exclude check rather than return early.
 	g := discover.Group{Format: document.FormatYAML, TargetRelPath: ".config/lazygit/config.yml"}
-	rules := []config.RenderRule{{Path: ".config/lazygit/config.yml", Strategy: config.RenderStrategyMerge}}
+	rules := []config.RenderRule{{Path: ".config/lazygit/config.yml", Strategy: config.RenderStrategyCopy}}
 	got, err := Decide(g, "/tmp/out", rules, true, excludeMatcher(t, ".config/lazygit/**"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Mode != ModeMerge {
-		t.Errorf("mode = %s, want merge from the rule", got.Mode)
+	if got.Mode != ModeCopy {
+		t.Errorf("mode = %s, want copy from the rule", got.Mode)
 	}
 	if got.Substitute {
 		t.Error("a target matching both a rule and an exclude glob must opt out of substitution")

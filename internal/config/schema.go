@@ -113,13 +113,9 @@ FIELDS
         overlay name, such as "dot-npmrc", is not the matching API.
 
       strategy = "append"
-        Optional. When omitted, the format default applies (merge for
-        .json/.toml/.yaml/.yml, copy otherwise). Supported values:
-          merge   structurally merge JSON, TOML, or YAML layers
+        Required. Supported values are exactly:
           append  append active layers in layer order
           copy    copy the highest-precedence active layer
-        Naming "merge" for a non-mergeable format fails when the rule
-        matches a discovered target.
 
     To opt a target out of variable substitution, list its path in
     substitute_exclude (below), not here.
@@ -135,9 +131,9 @@ FIELDS
     force a final newline.
 
     Validation rejects missing or empty paths, absolute paths, paths
-    containing "..", unsupported strategies, and duplicate normalized paths.
-    Valid rules that do not match the current source/profile selection are
-    allowed silently.
+    containing "..", missing strategies, unsupported strategies, and duplicate
+    normalized paths. Valid rules that do not match the current source/profile
+    selection are allowed silently.
 
   substitute_prefixes = ["DOTFILES_THM_", "DOTFILES_THEME_"]   # example
     type:    array of strings
