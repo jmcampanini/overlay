@@ -60,37 +60,48 @@ func Decide(g discover.Group, targetDir string, rules []config.RenderRule, globa
 		return Decision{}, fmt.Errorf("normalize target path %q: %w", targetRel, err)
 	}
 
-	if len(rules) > 0 {
-		normalizedRules, err := config.NormalizeRenderRules(rules)
-		if err != nil {
-			return Decision{}, err
-		}
-		for _, rule := range normalizedRules {
-			if rule.Path != normalizedTarget {
-				continue
-			}
-			switch rule.Strategy {
-			case config.RenderStrategyAppend:
-				decision.Mode = ModeAppend
-			case config.RenderStrategyCopy:
-				decision.Mode = ModeCopy
-			case config.RenderStrategyMerge:
-				if DefaultForFormat(g.Format) != ModeMerge {
-					return Decision{}, fmt.Errorf("render rule for %q names strategy %q but the format is not mergeable (json/toml/yaml)", rule.Path, rule.Strategy)
-				}
-			case "":
-				// Absent strategy inherits the format default.
-			default:
-				return Decision{}, fmt.Errorf("unsupported render rule strategy %q for %q", rule.Strategy, rule.Path)
-			}
-			break
-		}
+	decision.Mode, err = modeForTarget(g.Format, decision.Mode, rules, normalizedTarget)
+	if err != nil {
+		return Decision{}, err
 	}
 
 	if decision.Substitute && substituteExclude.Match(normalizedTarget, false) {
 		decision.Substitute = false
 	}
 	return decision, nil
+}
+
+// modeForTarget resolves the render mode for normalizedTarget, returning
+// fallback unchanged when no rule matches.
+func modeForTarget(format document.Format, fallback Mode, rules []config.RenderRule, normalizedTarget string) (Mode, error) {
+	if len(rules) == 0 {
+		return fallback, nil
+	}
+	normalizedRules, err := config.NormalizeRenderRules(rules)
+	if err != nil {
+		return "", err
+	}
+	for _, rule := range normalizedRules {
+		if rule.Path != normalizedTarget {
+			continue
+		}
+		switch rule.Strategy {
+		case config.RenderStrategyAppend:
+			return ModeAppend, nil
+		case config.RenderStrategyCopy:
+			return ModeCopy, nil
+		case config.RenderStrategyMerge:
+			if DefaultForFormat(format) != ModeMerge {
+				return "", fmt.Errorf("render rule for %q names strategy %q but the format is not mergeable (json/toml/yaml)", rule.Path, rule.Strategy)
+			}
+			return fallback, nil
+		case "":
+			return fallback, nil
+		default:
+			return "", fmt.Errorf("unsupported render rule strategy %q for %q", rule.Strategy, rule.Path)
+		}
+	}
+	return fallback, nil
 }
 
 // DefaultForFormat returns Overlay's default mode for a discovered format.
