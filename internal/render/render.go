@@ -261,32 +261,22 @@ func composeContent(g discover.Group, mode rendermode.Mode, opts MergeOptions) (
 func mergeLayers(g discover.Group, opts MergeOptions) ([]byte, error) {
 	var merged any = map[string]any{}
 	for _, layer := range g.Layers {
-		data, err := readLayer(layer)
+		parsed, err := parseLayer(layer, g.Format)
 		if err != nil {
 			return nil, err
 		}
-		parsed, err := document.Parse(data, g.Format)
-		if err != nil {
-			return nil, fmt.Errorf("parse %s: %w", layer.Path, err)
-		}
 		merged = merge.Merge(merged, parsed)
 	}
-	return document.SerializeWithOptions(merged, g.Format, document.SerializeOptions{
-		TOMLIndentTables: opts.TOMLIndentTables,
-	})
+	return serializeContent(merged, g.Format, opts)
 }
 
 func mergeLayersSubstituting(g discover.Group, opts MergeOptions) ([]byte, substitute.Result, error) {
 	var merged any = map[string]any{}
 	collector := &substitutionCollector{}
 	for _, layer := range g.Layers {
-		data, err := readLayer(layer)
+		parsed, err := parseLayer(layer, g.Format)
 		if err != nil {
 			return nil, collector.result(), err
-		}
-		parsed, err := document.Parse(data, g.Format)
-		if err != nil {
-			return nil, collector.result(), fmt.Errorf("parse %s: %w", layer.Path, err)
 		}
 		substituted, err := substituteTree(parsed, opts.Substituter, collector, "$")
 		if err != nil {
@@ -298,10 +288,26 @@ func mergeLayersSubstituting(g discover.Group, opts MergeOptions) ([]byte, subst
 	if len(vars.Missing) > 0 {
 		return nil, vars, nil
 	}
-	content, err := document.SerializeWithOptions(merged, g.Format, document.SerializeOptions{
+	content, err := serializeContent(merged, g.Format, opts)
+	return content, vars, err
+}
+
+func parseLayer(layer discover.Layer, format document.Format) (any, error) {
+	data, err := readLayer(layer)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := document.Parse(data, format)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", layer.Path, err)
+	}
+	return parsed, nil
+}
+
+func serializeContent(value any, format document.Format, opts MergeOptions) ([]byte, error) {
+	return document.SerializeWithOptions(value, format, document.SerializeOptions{
 		TOMLIndentTables: opts.TOMLIndentTables,
 	})
-	return content, vars, err
 }
 
 func readLayer(layer discover.Layer) ([]byte, error) {

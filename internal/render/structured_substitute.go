@@ -14,18 +14,21 @@ type substitutionCollector struct {
 }
 
 func (c *substitutionCollector) add(result substitute.Result) {
-	if len(result.Consumed) > 0 && c.consumed == nil {
-		c.consumed = make(map[string]struct{}, len(result.Consumed))
+	c.consumed = addStringSet(c.consumed, result.Consumed)
+	c.missing = addStringSet(c.missing, result.Missing)
+}
+
+func addStringSet(set map[string]struct{}, names []string) map[string]struct{} {
+	if len(names) == 0 {
+		return set
 	}
-	for _, name := range result.Consumed {
-		c.consumed[name] = struct{}{}
+	if set == nil {
+		set = make(map[string]struct{}, len(names))
 	}
-	if len(result.Missing) > 0 && c.missing == nil {
-		c.missing = make(map[string]struct{}, len(result.Missing))
+	for _, name := range names {
+		set[name] = struct{}{}
 	}
-	for _, name := range result.Missing {
-		c.missing[name] = struct{}{}
-	}
+	return set
 }
 
 func (c *substitutionCollector) result() substitute.Result {
@@ -42,65 +45,65 @@ func sortedStringSet(set map[string]struct{}) []string {
 	return slices.Sorted(maps.Keys(set))
 }
 
-func substituteTree(v any, r *substitute.Resolver, c *substitutionCollector, path string) (any, error) {
-	switch x := v.(type) {
+func substituteTree(value any, resolver *substitute.Resolver, collector *substitutionCollector, path string) (any, error) {
+	switch node := value.(type) {
 	case map[string]any:
-		return substituteMap(x, r, c, path)
+		return substituteMap(node, resolver, collector, path)
 	case []any:
-		out := make([]any, len(x))
+		output := make([]any, len(node))
 		var firstErr error
-		for i, item := range x {
-			value, err := substituteTree(item, r, c, fmt.Sprintf("%s[%d]", path, i))
+		for i, item := range node {
+			substituted, err := substituteTree(item, resolver, collector, fmt.Sprintf("%s[%d]", path, i))
 			if err != nil && firstErr == nil {
 				firstErr = err
 			}
-			out[i] = value
+			output[i] = substituted
 		}
 		if firstErr != nil {
 			return nil, firstErr
 		}
-		return out, nil
+		return output, nil
 	case string:
-		out, result := r.Apply([]byte(x))
-		c.add(result)
-		return string(out), nil
+		substituted, result := resolver.Apply([]byte(node))
+		collector.add(result)
+		return string(substituted), nil
 	default:
-		return v, nil
+		return value, nil
 	}
 }
 
-func substituteMap(in map[string]any, r *substitute.Resolver, c *substitutionCollector, path string) (map[string]any, error) {
-	out := make(map[string]any, len(in))
+func substituteMap(input map[string]any, resolver *substitute.Resolver, collector *substitutionCollector, path string) (map[string]any, error) {
+	output := make(map[string]any, len(input))
 	var firstErr error
-	for _, key := range slices.Sorted(maps.Keys(in)) {
-		keyOut, keyResult := r.Apply([]byte(key))
-		c.add(keyResult)
-		newKey := string(keyOut)
-		value, err := substituteTree(in[key], r, c, substitutionPath(path, newKey))
+	for _, key := range slices.Sorted(maps.Keys(input)) {
+		substitutedKeyBytes, keyResult := resolver.Apply([]byte(key))
+		collector.add(keyResult)
+		substitutedKey := string(substitutedKeyBytes)
+		substitutedValue, err := substituteTree(input[key], resolver, collector, substitutionPath(path, substitutedKey))
 		if err != nil && firstErr == nil {
 			firstErr = err
 		}
 		if len(keyResult.Missing) > 0 {
 			continue
 		}
-		if _, exists := out[newKey]; exists {
+		if _, exists := output[substitutedKey]; exists {
 			if firstErr == nil {
-				firstErr = fmt.Errorf("key collision at %s: %q", path, newKey)
+				firstErr = fmt.Errorf("key collision at %s: %q", path, substitutedKey)
 			}
 			continue
 		}
-		out[newKey] = value
+		output[substitutedKey] = substitutedValue
 	}
 	if firstErr != nil {
 		return nil, firstErr
 	}
-	return out, nil
+	return output, nil
 }
 
 func substitutionPath(parent, key string) string {
-	quoted := fmt.Sprintf("%q", key)
+	quotedKey := fmt.Sprintf("%q", key)
 	if parent == "$" {
-		return "$[" + quoted + "]"
+		return "$[" + quotedKey + "]"
 	}
-	return parent + "[" + quoted + "]"
+	return parent + "[" + quotedKey + "]"
 }
