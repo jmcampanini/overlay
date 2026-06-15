@@ -200,15 +200,31 @@ func ComposeGroups(groups []discover.Group, opts MergeOptions) (clean, failed []
 }
 
 // ComposeGroup composes one group's final content: decide mode and
-// substitution, fold layers, then substitute variables on the composed
-// bytes. Vars is populated even when missing variables fail the group, so
-// dry-run views can still report names.
+// substitution, fold layers, and apply variables either inside merge-layer
+// value trees or over final copy/append bytes. Vars is populated even when
+// missing variables fail the group, so dry-run views can still report names.
 func ComposeGroup(g discover.Group, opts MergeOptions) ComposedGroup {
 	decision, err := rendermode.Decide(g, opts.TargetDir, opts.RenderRules, opts.Substituter.Enabled(), opts.SubstituteExclude)
 	if err != nil {
 		return ComposedGroup{Group: g, Err: err}
 	}
 	cg := ComposedGroup{Group: g, Mode: decision.Mode}
+	if decision.Mode == rendermode.ModeMerge && decision.Substitute {
+		cg.Substituted = true
+		content, vars, err := mergeLayersSubstituting(g, opts)
+		cg.Vars = vars
+		if err != nil {
+			cg.Err = err
+			return cg
+		}
+		if len(cg.Vars.Missing) > 0 {
+			cg.Err = &MissingVarsError{Names: cg.Vars.Missing}
+			return cg
+		}
+		cg.Content = content
+		return cg
+	}
+
 	content, err := composeContent(g, decision.Mode, opts)
 	if err != nil {
 		cg.Err = err
@@ -258,6 +274,34 @@ func mergeLayers(g discover.Group, opts MergeOptions) ([]byte, error) {
 	return document.SerializeWithOptions(merged, g.Format, document.SerializeOptions{
 		TOMLIndentTables: opts.TOMLIndentTables,
 	})
+}
+
+func mergeLayersSubstituting(g discover.Group, opts MergeOptions) ([]byte, substitute.Result, error) {
+	var merged any = map[string]any{}
+	collector := &substitutionCollector{}
+	for _, layer := range g.Layers {
+		data, err := readLayer(layer)
+		if err != nil {
+			return nil, collector.result(), err
+		}
+		parsed, err := document.Parse(data, g.Format)
+		if err != nil {
+			return nil, collector.result(), fmt.Errorf("parse %s: %w", layer.Path, err)
+		}
+		substituted, err := substituteTree(parsed, opts.Substituter, collector, "$")
+		if err != nil {
+			return nil, collector.result(), fmt.Errorf("substitute %s: %w", layer.Path, err)
+		}
+		merged = merge.Merge(merged, substituted)
+	}
+	vars := collector.result()
+	if len(vars.Missing) > 0 {
+		return nil, vars, nil
+	}
+	content, err := document.SerializeWithOptions(merged, g.Format, document.SerializeOptions{
+		TOMLIndentTables: opts.TOMLIndentTables,
+	})
+	return content, vars, err
 }
 
 func readLayer(layer discover.Layer) ([]byte, error) {

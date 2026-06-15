@@ -160,8 +160,8 @@ FIELDS
 
 VARIABLE SUBSTITUTION
 
-Reference syntax. Inside a substituting target's composed output, ${NAME} is
-replaced with the variable's value when NAME matches the POSIX name charset
+Reference syntax. Inside substituting content, ${NAME} is replaced with the
+variable's value when NAME matches the POSIX name charset
 [A-Za-z_][A-Za-z0-9_]* AND starts with a substitute_prefixes entry. Bare
 $NAME is never substituted. Anything else — ${name:-default}, ${a.b},
 ${UNLISTED_PREFIX}, $HOME — passes through byte-identical, so files full of
@@ -174,13 +174,19 @@ escape is only interpreted in substituting targets.
 
 Opting out. A whole target can be excluded from substitution by listing its
 rendered target-relative path (or a doublestar glob) in substitute_exclude;
-an excluded target renders byte-identical, escapes included.
+an excluded target is not substituted, escapes included.
 
-Composition order. Substitution runs once over the final composed content —
-after merge, append, or copy — identically for all strategies and formats.
-Substituted values are never re-scanned: a value containing ${OTHER} is
-emitted verbatim. Values are resolved from a single environment snapshot
-taken once per invocation, so a run is deterministic.
+Composition order. For mergeable JSON/TOML/YAML targets, each active layer is
+parsed first, then substitutions are applied to string values and mapping keys
+inside that parsed layer, then the layers are merged and serialized. This lets
+the target format quote and escape substituted strings safely. A missing
+variable in any active layer fails the target, even if a later layer would
+override that value; if key substitution creates duplicate keys within one map
+in one layer, the target fails. For append and copy targets, substitution runs
+once over the final composed bytes. Substituted values are never re-scanned: a
+value containing ${OTHER} is emitted verbatim. Values are resolved from a
+single environment snapshot taken once per invocation, so a run is
+deterministic.
 
 Values and pinning. Values come from the process environment. Pin values per
 invocation with repeated --var NAME=value flags, the --vars A=1,B=2 flag, or

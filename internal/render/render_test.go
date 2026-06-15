@@ -12,6 +12,7 @@ import (
 
 	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/jmcampanini/overlay/internal/discover"
+	"github.com/jmcampanini/overlay/internal/document"
 	"github.com/jmcampanini/overlay/internal/substitute"
 )
 
@@ -715,12 +716,202 @@ func TestRunSubstitutesAcrossModesAndFormats(t *testing.T) {
 		}
 	}
 	assertContent("settings.json", "{\n  \"color\": \"dark\",\n  \"extra\": \"light\"\n}\n")
-	// The TOML emitter literal-quotes strings containing ${...}, so the
-	// substituted value keeps those single quotes.
 	assertContent("app.toml", "color = 'dark'\n")
 	assertContent("look.yml", "color: dark\n")
 	assertContent("theme.conf", "bg=dark\nlit=${PRE_BG}\nhome=${HOME}\n")
 	assertContent(".npmrc", "registry=dark\ntoken=light\n")
+}
+
+func TestRunMergeSubstitutionRoundTripsFormatSensitiveStrings(t *testing.T) {
+	tests := []struct {
+		name     string
+		file     string
+		output   string
+		format   document.Format
+		contents string
+	}{
+		{
+			name:   "json",
+			file:   "settings.olay.base.json",
+			output: "settings.json",
+			format: document.FormatJSON,
+			contents: `{
+  "hash": "${PRE_HASH}",
+  "list": ["${PRE_HASH}"],
+  "boolish": "${PRE_BOOL}",
+  "nullish": "${PRE_NULL}",
+  "quoted": "${PRE_QUOTED}"
+}`,
+		},
+		{
+			name:   "toml",
+			file:   "settings.olay.base.toml",
+			output: "settings.toml",
+			format: document.FormatTOML,
+			contents: `hash = "${PRE_HASH}"
+list = ["${PRE_HASH}"]
+boolish = "${PRE_BOOL}"
+nullish = "${PRE_NULL}"
+quoted = "${PRE_QUOTED}"
+`,
+		},
+		{
+			name:   "yaml",
+			file:   "settings.olay.base.yaml",
+			output: "settings.yaml",
+			format: document.FormatYAML,
+			contents: `hash: "${PRE_HASH}"
+list:
+  - "${PRE_HASH}"
+boolish: "${PRE_BOOL}"
+nullish: "${PRE_NULL}"
+quoted: "${PRE_QUOTED}"
+`,
+		},
+	}
+
+	pins := map[string]string{
+		"PRE_HASH":   "#626880",
+		"PRE_BOOL":   "true",
+		"PRE_NULL":   "null",
+		"PRE_QUOTED": `a'"\\b`,
+	}
+	want := map[string]any{
+		"hash":    pins["PRE_HASH"],
+		"list":    []any{pins["PRE_HASH"]},
+		"boolish": pins["PRE_BOOL"],
+		"nullish": pins["PRE_NULL"],
+		"quoted":  pins["PRE_QUOTED"],
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src := t.TempDir()
+			target := t.TempDir()
+			writeFile(t, filepath.Join(src, tt.file), tt.contents)
+
+			err := Run(Options{
+				Settings: discover.Settings{
+					SourceDirs: []string{src},
+					TargetDir:  target,
+					Ignore:     discover.NoopIgnorer(),
+				},
+				Substituter: newSubstituter(pins),
+				Logger:      newTestLogger(),
+			})
+			if err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+
+			data, err := os.ReadFile(filepath.Join(target, tt.output))
+			if err != nil {
+				t.Fatalf("read output: %v", err)
+			}
+			parsed, err := document.Parse(data, tt.format)
+			if err != nil {
+				t.Fatalf("re-parse output:\n%s\n%v", data, err)
+			}
+			if !reflect.DeepEqual(parsed, want) {
+				t.Fatalf("parsed output = %#v, want %#v\nrendered:\n%s", parsed, want, data)
+			}
+		})
+	}
+}
+
+func TestRunMergeSubstitutionUsesLayerValuesBeforeMerge(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "config.olay.base.yaml"), `items:
+  - ${PRE_ITEM}
+"${PRE_KEY}":
+  from: base
+`)
+	writeFile(t, filepath.Join(src, "config.olay.work.yaml"), `items:
+  - stable
+theme:
+  from: work
+  extra: true
+`)
+
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Profiles:   []string{"work"},
+			Ignore:     discover.NoopIgnorer(),
+		},
+		Substituter: newSubstituter(map[string]string{"PRE_ITEM": "stable", "PRE_KEY": "theme"}),
+		Logger:      newTestLogger(),
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(target, "config.yaml"))
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	parsed, err := document.Parse(data, document.FormatYAML)
+	if err != nil {
+		t.Fatalf("re-parse output:\n%s\n%v", data, err)
+	}
+	want := map[string]any{
+		"items": []any{"stable"},
+		"theme": map[string]any{"extra": true, "from": "work"},
+	}
+	if !reflect.DeepEqual(parsed, want) {
+		t.Fatalf("parsed output = %#v, want %#v\nrendered:\n%s", parsed, want, data)
+	}
+}
+
+func TestRunMergeSubstitutionRequiresVarsInOverriddenLayers(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "config.olay.base.yaml"), "value: ${PRE_GONE}\n")
+	writeFile(t, filepath.Join(src, "config.olay.work.yaml"), "value: ok\n")
+
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Profiles:   []string{"work"},
+			Ignore:     discover.NoopIgnorer(),
+		},
+		Substituter: newSubstituter(nil),
+		Logger:      newTestLogger(),
+	})
+	if err == nil {
+		t.Fatal("expected missing variable error")
+	}
+	if !strings.Contains(err.Error(), "PRE_GONE") || !strings.Contains(err.Error(), "missing variables") {
+		t.Fatalf("error = %v, want missing PRE_GONE", err)
+	}
+}
+
+func TestRunMergeSubstitutionRejectsSameMapKeyCollisions(t *testing.T) {
+	src := t.TempDir()
+	target := t.TempDir()
+	writeFile(t, filepath.Join(src, "config.olay.base.yaml"), `fixed: literal
+"${PRE_KEY}": dynamic
+`)
+
+	err := Run(Options{
+		Settings: discover.Settings{
+			SourceDirs: []string{src},
+			TargetDir:  target,
+			Ignore:     discover.NoopIgnorer(),
+		},
+		Substituter: newSubstituter(map[string]string{"PRE_KEY": "fixed"}),
+		Logger:      newTestLogger(),
+	})
+	if err == nil {
+		t.Fatal("expected key collision error")
+	}
+	for _, want := range []string{"config.yaml", "key collision", "fixed"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error = %v, want %q", err, want)
+		}
+	}
 }
 
 func TestRunTwoPhaseWritesNothingOnMissingVars(t *testing.T) {

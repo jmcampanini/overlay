@@ -51,8 +51,10 @@ const varsPrecedenceHelp = `
 Variable substitution:
 
   When .overlay.toml sets substitute_prefixes, ${NAME} references whose names
-  match a listed prefix are replaced in rendered output. Values resolve with
-  this precedence, highest to lowest:
+  match a listed prefix are replaced. Mergeable JSON/TOML/YAML layers
+  substitute string values and mapping keys before merge; copy and append
+  targets substitute final bytes. Values resolve with this precedence, highest
+  to lowest:
 
     1. --vars A=1,B=2 then repeated --var NAME=value (later wins per name)
     2. OVERLAY_VARS=A=1,B=2 (fully replaced when any vars flag is set)
