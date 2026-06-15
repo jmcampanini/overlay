@@ -262,12 +262,15 @@ home  = ${HOME}
 
 The escape `$${NAME}` emits a literal reference; `${HOME}` passes through
 because `HOME` matches no listed prefix — shell fragments, tmux configs, and
-starship syntax stay untouched. Substitution runs once on the final composed
-output (after merge/append/copy), and substituted values are never re-scanned.
+starship syntax stay untouched. For mergeable JSON/TOML/YAML targets,
+substitution happens inside each parsed layer before merge, for string values
+and mapping keys; the final serializer quotes and escapes substituted strings
+safely. For append and copy targets, substitution runs once on the final
+composed bytes. Substituted values are never re-scanned.
 
 To exempt a whole file, list its target-relative path or a doublestar glob in
 `substitute_exclude` (matched like `render_rules` paths, mirroring `ignore`); an
-excluded target renders byte-identical, escapes included. As with `ignore`, a
+excluded target is not substituted, escapes included. As with `ignore`, a
 pattern with no `/` matches by base name at any depth, so `theme.sh` excludes
 `.config/shell/theme.sh`; add a `/` to anchor it to a specific path.
 
@@ -286,11 +289,13 @@ no prefix is an error; a prefixed pin no target consumes logs a warning.
 
 A reference to an unset variable fails the run **before anything is
 written**, naming every failing target and all of its missing variables
-(empty-string values are valid and substitute as empty). `overlay plan`
-shows each substituting target's variables in a `VARS` column, marks missing
-ones, and exits non-zero, so problems surface from a dry run. With
-`substitute_prefixes` unset, overlay behaves exactly as before — byte-identical
-output, even for files containing `${...}`.
+(empty-string values are valid and substitute as empty). In mergeable targets,
+that includes variables in any active layer, even if a later layer would
+override the value; key substitution that creates duplicate keys within one map
+in one layer is also an error. `overlay plan` shows each substituting target's
+variables in a `VARS` column, marks missing ones, and exits non-zero, so
+problems surface from a dry run. With `substitute_prefixes` unset, substitution
+is off and files containing `${...}` render as they did before.
 
 ## Notes
 
