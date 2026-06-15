@@ -3,7 +3,7 @@ module github.com/jmcampanini/overlay
 go 1.26.3
 
 require (
-	charm.land/lipgloss/v2 v2.0.3
+	charm.land/lipgloss/v2 v2.0.4
 	charm.land/log/v2 v2.0.0
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/jmcampanini/go-config-loader v0.1.0
@@ -34,5 +34,5 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d // indirect
 	golang.org/x/sync v0.18.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 )
