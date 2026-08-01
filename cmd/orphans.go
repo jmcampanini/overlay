@@ -106,14 +106,8 @@ func writeOrphansJSON(w io.Writer, found []orphans.Orphan) error {
 	if err := encoder.Encode(paths); err != nil {
 		return fmt.Errorf("encode JSON: %w", err)
 	}
-	written, err := w.Write(output.Bytes())
-	if err != nil {
-		return err
-	}
-	if written != output.Len() {
-		return io.ErrShortWrite
-	}
-	return nil
+	_, err := w.Write(output.Bytes())
+	return err
 }
 
 func activeTargetSet(groups []discover.Group) (map[string]struct{}, error) {

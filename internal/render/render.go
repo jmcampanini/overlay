@@ -115,8 +115,10 @@ func Run(opts Options) error {
 		opts.Logger.Infof("skipping %s (no active layers)", stem)
 	}
 	groups := result.Active
-	if err := rejectStateTargetCollision(opts.StatePath, groups); err != nil {
-		return err
+	if opts.StatePath != "" {
+		if err := rejectStateTargetCollision(opts.StatePath, groups); err != nil {
+			return err
+		}
 	}
 	if len(groups) == 0 {
 		WarnUnusedPins(opts.Substituter, nil, opts.Logger)
@@ -149,9 +151,10 @@ func Run(opts Options) error {
 	for _, cg := range clean {
 		var entry state.Entry
 		if maintainState {
-			entry, err = stateEntry(cg.Group)
-			if err != nil {
-				renderErr := fmt.Errorf("render %s: record state: %w", cg.Group.TargetPath, err)
+			var entryErr error
+			entry, entryErr = stateEntry(cg.Group)
+			if entryErr != nil {
+				renderErr := fmt.Errorf("render %s: record state: %w", cg.Group.TargetPath, entryErr)
 				if opts.ContinueOnError {
 					opts.Logger.Error(renderErr)
 					writeFailed++

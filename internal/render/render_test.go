@@ -1250,9 +1250,12 @@ func TestRunStateLifecycle(t *testing.T) {
 	})
 
 	t.Run("state path is required only when maintaining state", func(t *testing.T) {
+		src := t.TempDir()
+		target := t.TempDir()
+		writeFile(t, filepath.Join(src, "a.olay.base.conf"), "a\n")
 		settings := discover.Settings{
-			SourceDirs: []string{t.TempDir()},
-			TargetDir:  t.TempDir(),
+			SourceDirs: []string{src},
+			TargetDir:  target,
 			Ignore:     discover.NoopIgnorer(),
 		}
 		if err := Run(Options{Settings: settings, Logger: newTestLogger()}); err == nil || !strings.Contains(err.Error(), "state path is required") {
@@ -1260,6 +1263,10 @@ func TestRunStateLifecycle(t *testing.T) {
 		}
 		if err := Run(Options{Settings: settings, NoState: true, Logger: newTestLogger()}); err != nil {
 			t.Fatalf("stateless Run: %v", err)
+		}
+		contents, err := os.ReadFile(filepath.Join(target, "a.conf"))
+		if err != nil || string(contents) != "a\n" {
+			t.Fatalf("stateless target = %q, %v", contents, err)
 		}
 	})
 
