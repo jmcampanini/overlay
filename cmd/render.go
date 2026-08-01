@@ -23,6 +23,7 @@ func newRenderCmd(flags *globalFlags) *cobra.Command {
 				RenderRules:       r.Effective.RenderRules,
 				Substituter:       r.Substituter,
 				SubstituteExclude: r.SubstituteExclude,
+				StatePath:         r.StatePath,
 				Logger:            r.Logger,
 			})
 		},

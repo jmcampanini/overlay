@@ -11,7 +11,7 @@ import (
 
 func main() {
 	if err := cmd.Execute(); err != nil {
-		var code cmd.DiffExitCode
+		var code cmd.ExitCode
 		if errors.As(err, &code) {
 			os.Exit(int(code))
 		}

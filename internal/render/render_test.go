@@ -13,6 +13,7 @@ import (
 	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/jmcampanini/overlay/internal/discover"
 	"github.com/jmcampanini/overlay/internal/document"
+	"github.com/jmcampanini/overlay/internal/state"
 	"github.com/jmcampanini/overlay/internal/substitute"
 )
 
@@ -22,13 +23,21 @@ func newTestLogger() *log.Logger {
 	return l
 }
 
+func runTest(t *testing.T, opts Options) error {
+	t.Helper()
+	if opts.StatePath == "" {
+		opts.StatePath = filepath.Join(t.TempDir(), ".overlay.state.json")
+	}
+	return Run(opts)
+}
+
 func TestRunBasic(t *testing.T) {
 	src := t.TempDir()
 	target := t.TempDir()
 	writeFile(t, filepath.Join(src, "dot-claude", "settings.olay.base.json"), `{"a":1,"nested":{"b":2}}`)
 	writeFile(t, filepath.Join(src, "dot-claude", "settings.olay.work.json"), `{"nested":{"c":3}}`)
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -67,7 +76,7 @@ func TestRunScalarListDedupe(t *testing.T) {
 	writeFile(t, filepath.Join(src, "settings.olay.base.json"), `{"allow":["a","b"]}`)
 	writeFile(t, filepath.Join(src, "settings.olay.work.json"), `{"allow":["b","c"]}`)
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -102,7 +111,7 @@ func TestRunTOML(t *testing.T) {
 trust_level = "trusted"
 `)
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -139,7 +148,7 @@ func TestRunYAML(t *testing.T) {
   debug: true
 `)
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -175,7 +184,7 @@ func TestRunYML(t *testing.T) {
 	writeFile(t, filepath.Join(src, "config.olay.base.yml"), `name: base`)
 	writeFile(t, filepath.Join(src, "config.olay.work.yml"), `debug: true`)
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -224,7 +233,7 @@ authorColors:
   "*": "#b4befe"
 `)
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -262,7 +271,7 @@ func TestRunYAMLCopyRule(t *testing.T) {
 	writeFile(t, filepath.Join(src, "config.olay.base.yaml"), "a: 1\n")
 	writeFile(t, filepath.Join(src, "config.olay.work.yaml"), "b: 2\n")
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -294,7 +303,7 @@ func TestRunTOMLIndentTablesOption(t *testing.T) {
 trust_level = "trusted"
 `)
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -324,7 +333,7 @@ func TestRunCopyThroughUsesWinningLayer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -360,7 +369,7 @@ func TestRunExtensionlessCopyThrough(t *testing.T) {
 	writeFile(t, filepath.Join(src, "README.olay.base"), "base\n")
 	writeFile(t, filepath.Join(src, "README.olay.work"), "work\n")
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -388,7 +397,7 @@ func TestRunAppendRuleDotPrefixTargetPath(t *testing.T) {
 	writeFile(t, filepath.Join(src, "dot-npmrc.olay.base"), "allow-git=root\naudit=true\n")
 	writeFile(t, filepath.Join(src, "dot-npmrc.olay.work"), "@company:registry=https://registry.example.com/\n")
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -422,7 +431,7 @@ func TestRunAppendRuleRespectsLayerOrderAndProfiles(t *testing.T) {
 	writeFile(t, filepath.Join(src, "rc.olay.other"), "other")
 	writeFile(t, filepath.Join(src, "rc.olay.local"), "local")
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -463,7 +472,7 @@ func TestRunAppendRuleHandlesSingleActiveLayer(t *testing.T) {
 			target := t.TempDir()
 			writeFile(t, filepath.Join(src, "rc.olay."+tc.profile), tc.profile)
 
-			err := Run(Options{
+			err := runTest(t, Options{
 				Settings: discover.Settings{
 					SourceDirs: []string{src},
 					TargetDir:  target,
@@ -507,7 +516,7 @@ func TestRunAppendRuleNewlineBoundaries(t *testing.T) {
 			writeFile(t, filepath.Join(src, "rc.olay.base"), tc.base)
 			writeFile(t, filepath.Join(src, "rc.olay.work"), tc.work)
 
-			err := Run(Options{
+			err := runTest(t, Options{
 				Settings: discover.Settings{
 					SourceDirs: []string{src},
 					TargetDir:  target,
@@ -537,7 +546,7 @@ func TestRunCopyRuleForJSON(t *testing.T) {
 	writeFile(t, filepath.Join(src, "settings.olay.base.json"), `{"a":1}`)
 	writeFile(t, filepath.Join(src, "settings.olay.work.json"), `{"b":2}`)
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -566,7 +575,7 @@ func TestRunRuleSourceRelativeNameDoesNotMatch(t *testing.T) {
 	writeFile(t, filepath.Join(src, "dot-npmrc.olay.base"), "base")
 	writeFile(t, filepath.Join(src, "dot-npmrc.olay.work"), "work")
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -593,7 +602,7 @@ func TestRunRuleSourceRelativeNameDoesNotMatch(t *testing.T) {
 func TestRunNoFilesFound(t *testing.T) {
 	src := t.TempDir()
 	target := t.TempDir()
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -609,7 +618,7 @@ func TestRunNoFilesFound(t *testing.T) {
 func TestRunMissingSourceNoop(t *testing.T) {
 	root := t.TempDir()
 	target := t.TempDir()
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{filepath.Join(root, "missing")},
 			TargetDir:  target,
@@ -628,7 +637,7 @@ func TestRunFailFast(t *testing.T) {
 	writeFile(t, filepath.Join(src, "bad.olay.base.json"), `not valid json`)
 	writeFile(t, filepath.Join(src, "good.olay.base.json"), `{"ok":true}`)
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -647,7 +656,7 @@ func TestRunContinueOnError(t *testing.T) {
 	writeFile(t, filepath.Join(src, "bad.olay.base.json"), `not valid json`)
 	writeFile(t, filepath.Join(src, "good.olay.base.json"), `{"ok":true}`)
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -689,7 +698,7 @@ func TestRunSubstitutesAcrossModesAndFormats(t *testing.T) {
 	writeFile(t, filepath.Join(src, "dot-npmrc.olay.base"), "registry=${PRE_BG}\n")
 	writeFile(t, filepath.Join(src, "dot-npmrc.olay.work"), "token=${PRE_FG}\n")
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -790,7 +799,7 @@ quoted: "${PRE_QUOTED}"
 			target := t.TempDir()
 			writeFile(t, filepath.Join(src, tt.file), tt.contents)
 
-			err := Run(Options{
+			err := runTest(t, Options{
 				Settings: discover.Settings{
 					SourceDirs: []string{src},
 					TargetDir:  target,
@@ -833,7 +842,7 @@ theme:
   extra: true
 `)
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -870,7 +879,7 @@ func TestRunMergeSubstitutionRequiresVarsInOverriddenLayers(t *testing.T) {
 	writeFile(t, filepath.Join(src, "config.olay.base.yaml"), "value: ${PRE_GONE}\n")
 	writeFile(t, filepath.Join(src, "config.olay.work.yaml"), "value: ok\n")
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -895,7 +904,7 @@ func TestRunMergeSubstitutionRejectsSameMapKeyCollisions(t *testing.T) {
 "${PRE_KEY}": dynamic
 `)
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -920,7 +929,7 @@ func TestRunTwoPhaseWritesNothingOnMissingVars(t *testing.T) {
 	writeFile(t, filepath.Join(src, "good.olay.base.conf"), "ok=${PRE_SET}\n")
 	writeFile(t, filepath.Join(src, "bad.olay.base.conf"), "a=${PRE_GONE}\nb=${PRE_GONE2}\n")
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -953,7 +962,7 @@ func TestRunTwoPhaseAggregatesAllFailures(t *testing.T) {
 	writeFile(t, filepath.Join(src, "one.olay.base.conf"), "a=${PRE_GONE}\n")
 	writeFile(t, filepath.Join(src, "two.olay.base.json"), `{not json`)
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -981,7 +990,7 @@ func TestRunContinueWritesCleanTargets(t *testing.T) {
 	writeFile(t, filepath.Join(src, "good.olay.base.conf"), "ok=${PRE_SET}\n")
 	writeFile(t, filepath.Join(src, "bad.olay.base.conf"), "a=${PRE_GONE}\n")
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -1016,7 +1025,7 @@ func TestRunSubstituteExcludeOptOut(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = Run(Options{
+	err = runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -1043,7 +1052,7 @@ func TestRunFeatureOffByteIdentical(t *testing.T) {
 	content := "a=${PRE_SET}\nb=$${PRE_SET}\nc=$$\n"
 	writeFile(t, filepath.Join(src, "raw.olay.base.conf"), content)
 
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -1068,7 +1077,7 @@ func TestRunWarnsUnusedPins(t *testing.T) {
 	var buf strings.Builder
 	logger := log.New(&buf)
 	logger.SetLevel(log.WarnLevel)
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -1096,7 +1105,7 @@ func TestRunWarnsUnusedPinsWhenNoGroups(t *testing.T) {
 	var buf strings.Builder
 	logger := log.New(&buf)
 	logger.SetLevel(log.WarnLevel)
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -1122,7 +1131,7 @@ func TestRunWarnsUnusedPinsWhenOnlyMissingVarsFail(t *testing.T) {
 	var buf strings.Builder
 	logger := log.New(&buf)
 	logger.SetLevel(log.WarnLevel)
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -1150,7 +1159,7 @@ func TestRunSuppressesUnusedPinWarningOnComposeFailure(t *testing.T) {
 	var buf strings.Builder
 	logger := log.New(&buf)
 	logger.SetLevel(log.WarnLevel)
-	err := Run(Options{
+	err := runTest(t, Options{
 		Settings: discover.Settings{
 			SourceDirs: []string{src},
 			TargetDir:  target,
@@ -1165,6 +1174,374 @@ func TestRunSuppressesUnusedPinWarningOnComposeFailure(t *testing.T) {
 	if strings.Contains(buf.String(), "not consumed") {
 		t.Errorf("unused-pin warning must be suppressed when a target failed before substitution: %q", buf.String())
 	}
+}
+
+func TestRunStateLifecycle(t *testing.T) {
+	t.Run("success claims every output", func(t *testing.T) {
+		src := t.TempDir()
+		target := t.TempDir()
+		statePath := filepath.Join(t.TempDir(), ".overlay.state.json")
+		writeFile(t, filepath.Join(src, "a.olay.base.conf"), "a\n")
+		writeFile(t, filepath.Join(src, "b.olay.base.conf"), "b\n")
+
+		err := Run(Options{
+			Settings: discover.Settings{
+				SourceDirs: []string{src},
+				TargetDir:  target,
+				Ignore:     discover.NoopIgnorer(),
+			},
+			StatePath: statePath,
+			Logger:    newTestLogger(),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		entries := loadState(t, statePath)
+		want := []state.Entry{
+			{Target: filepath.Join(target, "a.conf"), Source: src},
+			{Target: filepath.Join(target, "b.conf"), Source: src},
+		}
+		if !reflect.DeepEqual(entries, want) {
+			t.Fatalf("state entries = %#v, want %#v", entries, want)
+		}
+	})
+
+	t.Run("relative target is recorded as absolute", func(t *testing.T) {
+		root := t.TempDir()
+		t.Chdir(root)
+		src := t.TempDir()
+		statePath := filepath.Join(t.TempDir(), ".overlay.state.json")
+		writeFile(t, filepath.Join(src, "a.olay.base.conf"), "a\n")
+
+		err := Run(Options{
+			Settings: discover.Settings{
+				SourceDirs: []string{src},
+				TargetDir:  "target",
+				Ignore:     discover.NoopIgnorer(),
+			},
+			StatePath: statePath,
+			Logger:    newTestLogger(),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries := loadState(t, statePath)
+		want := filepath.Join(root, "target", "a.conf")
+		if len(entries) != 1 || entries[0].Target != want {
+			t.Fatalf("state entries = %#v, want target %q", entries, want)
+		}
+	})
+
+	t.Run("state path collision writes nothing", func(t *testing.T) {
+		src := t.TempDir()
+		target := t.TempDir()
+		statePath := filepath.Join(target, ".overlay.state.json")
+		writeFile(t, filepath.Join(src, "dot-overlay.state.olay.base.json"), `{"value":true}`)
+
+		err := Run(Options{
+			Settings: discover.Settings{
+				SourceDirs: []string{src},
+				TargetDir:  target,
+				DotPrefix:  true,
+				Ignore:     discover.NoopIgnorer(),
+			},
+			StatePath: statePath,
+			Logger:    newTestLogger(),
+		})
+		if err == nil || !strings.Contains(err.Error(), "collides with a rendered target") {
+			t.Fatalf("error = %v, want state target collision", err)
+		}
+		if _, statErr := os.Stat(statePath); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("colliding target must not be written, stat error = %v", statErr)
+		}
+	})
+
+	t.Run("state path alias collision writes nothing", func(t *testing.T) {
+		src := t.TempDir()
+		stateDir := t.TempDir()
+		alias := filepath.Join(t.TempDir(), "target-link")
+		if err := os.Symlink(stateDir, alias); err != nil {
+			t.Fatal(err)
+		}
+		statePath := filepath.Join(stateDir, ".overlay.state.json")
+		writeFile(t, filepath.Join(src, "dot-overlay.state.olay.base.json"), `{"value":true}`)
+
+		err := Run(Options{
+			Settings: discover.Settings{
+				SourceDirs: []string{src},
+				TargetDir:  alias,
+				DotPrefix:  true,
+				Ignore:     discover.NoopIgnorer(),
+			},
+			StatePath: statePath,
+			Logger:    newTestLogger(),
+		})
+		if err == nil || !strings.Contains(err.Error(), "collides with a rendered target") {
+			t.Fatalf("error = %v, want aliased state target collision", err)
+		}
+		if _, statErr := os.Stat(statePath); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("colliding target must not be written, stat error = %v", statErr)
+		}
+	})
+
+	t.Run("dangling target symlink to state path writes nothing", func(t *testing.T) {
+		src := t.TempDir()
+		stateDir := t.TempDir()
+		target := t.TempDir()
+		statePath := filepath.Join(stateDir, ".overlay.state.json")
+		targetPath := filepath.Join(target, ".overlay.state.json")
+		if err := os.Symlink(statePath, targetPath); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(src, "dot-overlay.state.olay.base.json"), `{"value":true}`)
+
+		err := Run(Options{
+			Settings: discover.Settings{
+				SourceDirs: []string{src},
+				TargetDir:  target,
+				DotPrefix:  true,
+				Ignore:     discover.NoopIgnorer(),
+			},
+			StatePath: statePath,
+			Logger:    newTestLogger(),
+		})
+		if err == nil || !strings.Contains(err.Error(), "collides with a rendered target") {
+			t.Fatalf("error = %v, want dangling state target collision", err)
+		}
+		if _, statErr := os.Stat(statePath); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("state path must not be written, stat error = %v", statErr)
+		}
+		info, lstatErr := os.Lstat(targetPath)
+		if lstatErr != nil || info.Mode()&os.ModeSymlink == 0 {
+			t.Fatalf("target symlink changed, info = %v, error = %v", info, lstatErr)
+		}
+	})
+
+	t.Run("state path case alias collision writes nothing", func(t *testing.T) {
+		stateDir := t.TempDir()
+		writeFile(t, filepath.Join(stateDir, "CaseProbe"), "probe\n")
+		if !caseInsensitiveDirectory(stateDir) {
+			t.Skip("filesystem is case-sensitive")
+		}
+		src := t.TempDir()
+		statePath := filepath.Join(stateDir, ".overlay.state.json")
+		writeFile(t, filepath.Join(src, "dot-Overlay.state.olay.base.json"), `{"value":true}`)
+
+		err := Run(Options{
+			Settings: discover.Settings{
+				SourceDirs: []string{src},
+				TargetDir:  stateDir,
+				DotPrefix:  true,
+				Ignore:     discover.NoopIgnorer(),
+			},
+			StatePath: statePath,
+			Logger:    newTestLogger(),
+		})
+		if err == nil || !strings.Contains(err.Error(), "collides with a rendered target") {
+			t.Fatalf("error = %v, want case-aliased state target collision", err)
+		}
+		if _, statErr := os.Stat(statePath); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("colliding target must not be written, stat error = %v", statErr)
+		}
+	})
+
+	t.Run("zero groups initializes state", func(t *testing.T) {
+		statePath := filepath.Join(t.TempDir(), ".overlay.state.json")
+		err := Run(Options{
+			Settings: discover.Settings{
+				SourceDirs: []string{t.TempDir()},
+				TargetDir:  t.TempDir(),
+				Ignore:     discover.NoopIgnorer(),
+			},
+			StatePath: statePath,
+			Logger:    newTestLogger(),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if entries := loadState(t, statePath); len(entries) != 0 {
+			t.Fatalf("state entries = %#v, want empty", entries)
+		}
+	})
+
+	t.Run("fail fast leaves state byte identical", func(t *testing.T) {
+		src := t.TempDir()
+		target := t.TempDir()
+		statePath := filepath.Join(t.TempDir(), ".overlay.state.json")
+		legacy := filepath.Join(target, "legacy.conf")
+		writeFile(t, legacy, "legacy\n")
+		if err := state.Save(statePath, []state.Entry{{Target: legacy, Source: src}}); err != nil {
+			t.Fatal(err)
+		}
+		before, err := os.ReadFile(statePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(src, "bad.olay.base.json"), "{not json")
+		writeFile(t, filepath.Join(src, "good.olay.base.conf"), "good\n")
+
+		err = Run(Options{
+			Settings: discover.Settings{
+				SourceDirs: []string{src},
+				TargetDir:  target,
+				Ignore:     discover.NoopIgnorer(),
+			},
+			StatePath: statePath,
+			Logger:    newTestLogger(),
+		})
+		if err == nil {
+			t.Fatal("expected compose failure")
+		}
+		after, readErr := os.ReadFile(statePath)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if !reflect.DeepEqual(after, before) {
+			t.Fatalf("state changed on fail-fast compose:\nbefore: %s\nafter: %s", before, after)
+		}
+		if _, statErr := os.Stat(filepath.Join(target, "good.conf")); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("good target must not be written, stat error = %v", statErr)
+		}
+	})
+
+	t.Run("continue claims clean subset and retains failed ownership", func(t *testing.T) {
+		src := t.TempDir()
+		target := t.TempDir()
+		statePath := filepath.Join(t.TempDir(), ".overlay.state.json")
+		badTarget := filepath.Join(target, "bad.json")
+		writeFile(t, badTarget, "old\n")
+		if err := state.Save(statePath, []state.Entry{{Target: badTarget, Source: src}}); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(src, "bad.olay.base.json"), "{not json")
+		writeFile(t, filepath.Join(src, "good.olay.base.conf"), "good\n")
+
+		err := Run(Options{
+			Settings: discover.Settings{
+				SourceDirs: []string{src},
+				TargetDir:  target,
+				Ignore:     discover.NoopIgnorer(),
+			},
+			ContinueOnError: true,
+			StatePath:       statePath,
+			Logger:          newTestLogger(),
+		})
+		if err == nil {
+			t.Fatal("expected render summary error")
+		}
+		entries := loadState(t, statePath)
+		want := []state.Entry{
+			{Target: badTarget, Source: src},
+			{Target: filepath.Join(target, "good.conf"), Source: src},
+		}
+		if !reflect.DeepEqual(entries, want) {
+			t.Fatalf("state entries = %#v, want %#v", entries, want)
+		}
+	})
+
+	t.Run("write error saves prefix and retains unattempted ownership", func(t *testing.T) {
+		src := t.TempDir()
+		target := t.TempDir()
+		statePath := filepath.Join(t.TempDir(), ".overlay.state.json")
+		writeFile(t, filepath.Join(src, "a.olay.base.conf"), "a\n")
+		writeFile(t, filepath.Join(src, "b.olay.base.conf"), "b\n")
+		writeFile(t, filepath.Join(src, "c.olay.base.conf"), "new c\n")
+		if err := os.Mkdir(filepath.Join(target, "b.conf"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		cTarget := filepath.Join(target, "c.conf")
+		writeFile(t, cTarget, "old c\n")
+		if err := state.Save(statePath, []state.Entry{{Target: cTarget, Source: src}}); err != nil {
+			t.Fatal(err)
+		}
+
+		err := Run(Options{
+			Settings: discover.Settings{
+				SourceDirs: []string{src},
+				TargetDir:  target,
+				Ignore:     discover.NoopIgnorer(),
+			},
+			StatePath: statePath,
+			Logger:    newTestLogger(),
+		})
+		if err == nil {
+			t.Fatal("expected write failure")
+		}
+		entries := loadState(t, statePath)
+		want := []state.Entry{
+			{Target: filepath.Join(target, "a.conf"), Source: src},
+			{Target: cTarget, Source: src},
+		}
+		if !reflect.DeepEqual(entries, want) {
+			t.Fatalf("state entries = %#v, want %#v", entries, want)
+		}
+		data, readErr := os.ReadFile(cTarget)
+		if readErr != nil || string(data) != "old c\n" {
+			t.Fatalf("unattempted target = %q, %v", data, readErr)
+		}
+	})
+
+	t.Run("state save failure follows successful writes", func(t *testing.T) {
+		src := t.TempDir()
+		target := t.TempDir()
+		writeFile(t, filepath.Join(src, "blocker.olay.base"), "written\n")
+		output := filepath.Join(target, "blocker")
+
+		err := Run(Options{
+			Settings: discover.Settings{
+				SourceDirs: []string{src},
+				TargetDir:  target,
+				Ignore:     discover.NoopIgnorer(),
+			},
+			StatePath: filepath.Join(output, ".overlay.state.json"),
+			Logger:    newTestLogger(),
+		})
+		if err == nil || !strings.Contains(err.Error(), "save state") {
+			t.Fatalf("error = %v, want state save failure", err)
+		}
+		data, readErr := os.ReadFile(output)
+		if readErr != nil || string(data) != "written\n" {
+			t.Fatalf("output = %q, %v", data, readErr)
+		}
+	})
+
+	t.Run("render and state save failures both surface", func(t *testing.T) {
+		src := t.TempDir()
+		target := t.TempDir()
+		writeFile(t, filepath.Join(src, "a.olay.base"), "a\n")
+		writeFile(t, filepath.Join(src, "b.olay.base"), "b\n")
+		if err := os.Mkdir(filepath.Join(target, "b"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+
+		err := Run(Options{
+			Settings: discover.Settings{
+				SourceDirs: []string{src},
+				TargetDir:  target,
+				Ignore:     discover.NoopIgnorer(),
+			},
+			StatePath: filepath.Join(target, "a", ".overlay.state.json"),
+			Logger:    newTestLogger(),
+		})
+		if err == nil {
+			t.Fatal("expected render and state save failures")
+		}
+		for _, want := range []string{filepath.Join(target, "b"), "save state"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("error = %v, want %q", err, want)
+			}
+		}
+	})
+}
+
+func loadState(t *testing.T, path string) []state.Entry {
+	t.Helper()
+	entries, err := state.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return entries
 }
 
 func TestComposeGroupReportsVarsOnFailure(t *testing.T) {

@@ -10,6 +10,7 @@ Source selection:
 
     overlay plan pi codex
     overlay diff pi
+    overlay orphans pi
     overlay render pi codex
 
   If no positional sources are provided, --source/--sources overrides are used
@@ -85,3 +86,12 @@ Suggested pipes for easier reading:
   overlay diff | bat --language=diff
   overlay diff | git diff --no-index --color /dev/null /dev/stdin
   overlay diff | diff-so-fancy`
+
+const orphansOutputHelp = `
+Output format:
+  Absolute target paths on stdout, one per line.
+
+Exit codes:
+  0   no orphaned targets found
+  1   at least one orphaned target found
+  2   resolution, state, discovery, path, or I/O error`

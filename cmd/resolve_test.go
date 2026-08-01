@@ -1357,3 +1357,84 @@ substitute_prefixes = ["OVERLAYTEST_"]
 		t.Error("an empty substitute_exclude must match nothing")
 	}
 }
+
+func TestResolveStatePathUsesConfigBaseOrWorkingDirectory(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	unsetEnv(t, "OVERLAY_SOURCES")
+
+	configDir := filepath.Join(dir, "config")
+	configPath := filepath.Join(configDir, ".overlay.toml")
+	writeFile(t, configPath, `target = "/tmp/out"`)
+	cmd, flags := setupCmd(t, []string{"--config", configPath})
+	resolved, err := resolve(cmd, flags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(configDir, ".overlay.state.json"); resolved.StatePath != want {
+		t.Errorf("StatePath = %q, want %q", resolved.StatePath, want)
+	}
+
+	if err := os.Remove(configPath); err != nil {
+		t.Fatal(err)
+	}
+	cmd, flags = setupCmd(t, []string{"--target", "/tmp/out"})
+	resolved, err = resolve(cmd, flags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.StatePath != ".overlay.state.json" {
+		t.Errorf("StatePath = %q, want .overlay.state.json", resolved.StatePath)
+	}
+}
+
+func TestResolveDefaultSourcesDoNotNarrow(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	unsetEnv(t, "OVERLAY_SOURCES")
+	cmd, flags := setupCmd(t, []string{"--target", "/tmp/out"})
+	resolved, err := resolve(cmd, flags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.SourcesNarrowed {
+		t.Fatal("default sources must not narrow orphan detection")
+	}
+}
+
+func TestResolveSourcesNarrowedTracksSelectionProvenance(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        []string
+		positionals []string
+		envSource   string
+		want        bool
+	}{
+		{name: "config", want: false},
+		{name: "flag", args: []string{"--source", "/flag/source"}, want: true},
+		{name: "environment", envSource: "/env/source", want: true},
+		{name: "positionals", positionals: []string{"positional"}, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Chdir(dir)
+			unsetEnv(t, "OVERLAY_SOURCES")
+			if tt.envSource != "" {
+				t.Setenv("OVERLAY_SOURCES", tt.envSource)
+			}
+			configPath := filepath.Join(dir, ".overlay.toml")
+			writeFile(t, configPath, "sources = [\"configured\"]\ntarget = \"/tmp/out\"\n")
+			args := append([]string{"--config", configPath}, tt.args...)
+			cmd, flags := setupCmd(t, args)
+			resolved, err := resolve(cmd, flags, tt.positionals...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resolved.SourcesNarrowed != tt.want {
+				t.Errorf("SourcesNarrowed = %t, want %t", resolved.SourcesNarrowed, tt.want)
+			}
+		})
+	}
+}

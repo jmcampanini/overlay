@@ -39,6 +39,8 @@ type Resolved struct {
 	SourceLabels      []string
 	Substituter       *substitute.Resolver
 	SubstituteExclude discover.Ignorer
+	StatePath         string
+	SourcesNarrowed   bool
 }
 
 type rawLoadedConfig struct {
@@ -104,7 +106,7 @@ type sourceResolution struct {
 // runtime settings bundle. It returns an error when Overlay-specific runtime
 // validation fails.
 func resolve(command *cobra.Command, flags *globalFlags, positionalSources ...string) (Resolved, error) {
-	logger := log.NewWithOptions(os.Stderr, log.Options{
+	logger := log.NewWithOptions(command.ErrOrStderr(), log.Options{
 		ReportTimestamp: false,
 	})
 	switch {
@@ -125,6 +127,10 @@ func resolve(command *cobra.Command, flags *globalFlags, positionalSources ...st
 		return r, err
 	}
 	r.RawConfig = raw.Config
+	configBase, _ := configBaseFromReport(raw.Report)
+	r.StatePath = filepath.Join(configBase, ".overlay.state.json")
+	sourceProvenance := raw.Report.Updates[configPathSources]
+	r.SourcesNarrowed = len(positionalSources) > 0 || sourceProvenance == configloader.SourceEnv || sourceProvenance == pflagloader.SourcePFlag
 
 	effective := deriveEffectiveConfig(raw, positionalSources...)
 	r.Effective = effective
