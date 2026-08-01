@@ -1212,6 +1212,145 @@ func TestRunStateLifecycle(t *testing.T) {
 		}
 	})
 
+	t.Run("no-state ignores corrupt state and leaves it byte identical", func(t *testing.T) {
+		src := t.TempDir()
+		target := t.TempDir()
+		statePath := filepath.Join(t.TempDir(), ".overlay.state.json")
+		writeFile(t, filepath.Join(src, "a.olay.base.conf"), "a\n")
+		writeFile(t, statePath, "{")
+		before, err := os.ReadFile(statePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		err = Run(Options{
+			Settings: discover.Settings{
+				SourceDirs: []string{src},
+				TargetDir:  target,
+				Ignore:     discover.NoopIgnorer(),
+			},
+			StatePath: statePath,
+			NoState:   true,
+			Logger:    newTestLogger(),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		contents, readErr := os.ReadFile(filepath.Join(target, "a.conf"))
+		if readErr != nil || string(contents) != "a\n" {
+			t.Fatalf("target = %q, %v", contents, readErr)
+		}
+		after, readErr := os.ReadFile(statePath)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if !reflect.DeepEqual(after, before) {
+			t.Fatalf("corrupt state changed: before %q after %q", before, after)
+		}
+	})
+
+	t.Run("state path is required only when maintaining state", func(t *testing.T) {
+		settings := discover.Settings{
+			SourceDirs: []string{t.TempDir()},
+			TargetDir:  t.TempDir(),
+			Ignore:     discover.NoopIgnorer(),
+		}
+		if err := Run(Options{Settings: settings, Logger: newTestLogger()}); err == nil || !strings.Contains(err.Error(), "state path is required") {
+			t.Fatalf("stateful error = %v, want required state path", err)
+		}
+		if err := Run(Options{Settings: settings, NoState: true, Logger: newTestLogger()}); err != nil {
+			t.Fatalf("stateless Run: %v", err)
+		}
+	})
+
+	t.Run("no-state zero groups leaves sidecar absent", func(t *testing.T) {
+		statePath := filepath.Join(t.TempDir(), ".overlay.state.json")
+		err := Run(Options{
+			Settings: discover.Settings{
+				SourceDirs: []string{t.TempDir()},
+				TargetDir:  t.TempDir(),
+				Ignore:     discover.NoopIgnorer(),
+			},
+			StatePath: statePath,
+			NoState:   true,
+			Logger:    newTestLogger(),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, statErr := os.Stat(statePath); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("state sidecar must remain absent, stat error = %v", statErr)
+		}
+	})
+
+	t.Run("no-state continue writes clean targets without partial claims", func(t *testing.T) {
+		src := t.TempDir()
+		target := t.TempDir()
+		statePath := filepath.Join(t.TempDir(), ".overlay.state.json")
+		legacy := filepath.Join(target, "legacy.conf")
+		writeFile(t, legacy, "legacy\n")
+		if err := state.Save(statePath, []state.Entry{{Target: legacy, Source: src}}); err != nil {
+			t.Fatal(err)
+		}
+		before, err := os.ReadFile(statePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(src, "bad.olay.base.json"), "{")
+		writeFile(t, filepath.Join(src, "good.olay.base.conf"), "good\n")
+
+		err = Run(Options{
+			Settings: discover.Settings{
+				SourceDirs: []string{src},
+				TargetDir:  target,
+				Ignore:     discover.NoopIgnorer(),
+			},
+			ContinueOnError: true,
+			StatePath:       statePath,
+			NoState:         true,
+			Logger:          newTestLogger(),
+		})
+		if err == nil {
+			t.Fatal("expected render summary error")
+		}
+		contents, readErr := os.ReadFile(filepath.Join(target, "good.conf"))
+		if readErr != nil || string(contents) != "good\n" {
+			t.Fatalf("clean target = %q, %v", contents, readErr)
+		}
+		after, readErr := os.ReadFile(statePath)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if !reflect.DeepEqual(after, before) {
+			t.Fatalf("state changed on stateless partial render:\nbefore: %s\nafter: %s", before, after)
+		}
+	})
+
+	t.Run("no-state still rejects state path collision", func(t *testing.T) {
+		src := t.TempDir()
+		target := t.TempDir()
+		statePath := filepath.Join(target, ".overlay.state.json")
+		writeFile(t, filepath.Join(src, "dot-overlay.state.olay.base.json"), `{"value":true}`)
+
+		err := Run(Options{
+			Settings: discover.Settings{
+				SourceDirs: []string{src},
+				TargetDir:  target,
+				DotPrefix:  true,
+				Ignore:     discover.NoopIgnorer(),
+			},
+			StatePath: statePath,
+			NoState:   true,
+			Logger:    newTestLogger(),
+		})
+		if err == nil || !strings.Contains(err.Error(), "collides with a rendered target") {
+			t.Fatalf("error = %v, want state target collision", err)
+		}
+		if _, statErr := os.Stat(statePath); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("colliding target must not be written, stat error = %v", statErr)
+		}
+	})
+
 	t.Run("success claims every output", func(t *testing.T) {
 		src := t.TempDir()
 		target := t.TempDir()

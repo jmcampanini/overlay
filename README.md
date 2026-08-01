@@ -194,6 +194,21 @@ Run `overlay config` to see loaded values, GoConfigLoader provenance, and commen
 For the complete config schema run `overlay docs`. Every subcommand
 documents profile resolution in its `--help` output.
 
+### Stateless renders
+
+By default, `overlay render` maintains `.overlay.state.json` so later orphan
+detection knows which targets it owns. For disposable output that must not affect
+that registry, use the render-only `--no-state` flag:
+
+```shell
+overlay render --no-state generated
+```
+
+Targets are still discovered, composed, substituted, and written normally, but
+the state file is not read, validated, created, garbage-collected, or updated.
+This also means malformed existing state does not block the render and remains
+byte-identical. A target that aliases the state file path is still rejected.
+
 ### Diff output and pipes
 
 `overlay diff` prints standard unified diff to stdout and exits:
@@ -222,9 +237,15 @@ loaded. The state is machine-specific, so add `.overlay.state.json` to your
 `.gitignore` rather than committing it.
 
 `overlay orphans` compares that registry with the active plan and prints each
-orphan's absolute path to stdout, one path per line. It is read-only and
-performs detection only: it neither deletes files nor modifies or garbage
-collects the state file. It exits:
+orphan's absolute path to stdout, one path per line. With `--json`, it emits the
+same sorted paths as a top-level JSON array. JSON mode always writes valid JSON
+on successful detection: `[]` when empty or a populated array when findings
+exist, followed by a newline. It uses literal `&`, `<`, and `>` characters and
+JSON escaping for unusual path characters such as newlines, quotes, and
+backslashes.
+
+The command is read-only and performs detection only: it neither deletes files
+nor modifies or garbage collects the state file. It exits:
 
 - **0** — no orphans found.
 - **1** — at least one orphan found.
@@ -239,7 +260,19 @@ $ overlay orphans
 ```
 
 The one-path-per-line output can be piped into the tooling of your choice after
-reviewing the paths.
+reviewing the paths. Callers that need unambiguous path boundaries can capture
+JSON while handling its exit status separately:
+
+```shell
+overlay orphans --json > orphans.json
+status=$?
+if [ "$status" -le 1 ]; then
+  jq . orphans.json
+else
+  rm -f orphans.json
+  exit "$status"
+fi
+```
 
 The registry only knows outputs claimed by renders that maintain it. Files
 rendered before this feature was available are invisible to orphan detection

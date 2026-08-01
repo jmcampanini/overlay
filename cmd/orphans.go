@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -13,7 +16,8 @@ import (
 )
 
 func newOrphansCmd(flags *globalFlags) *cobra.Command {
-	return &cobra.Command{
+	var jsonOutput bool
+	command := &cobra.Command{
 		Use:   "orphans [source...]",
 		Short: "Show rendered targets that are no longer produced by the active plan.",
 		Long:  "Compare the render state with the current active plan and print stale target\npaths. Positional sources select package roots for this run.\n" + sourceSelectionHelp + "\n" + orphansOutputHelp + "\n" + profilePrecedenceHelp,
@@ -66,10 +70,17 @@ func newOrphansCmd(flags *globalFlags) *cobra.Command {
 				r.Logger.Error(fmt.Errorf("detect orphans: %w", err))
 				return ExitCode(2)
 			}
-			for _, orphan := range found {
-				if _, err := fmt.Fprintln(command.OutOrStdout(), orphan.Target); err != nil {
+			if jsonOutput {
+				if err := writeOrphansJSON(command.OutOrStdout(), found); err != nil {
 					r.Logger.Error(fmt.Errorf("write stdout: %w", err))
 					return ExitCode(2)
+				}
+			} else {
+				for _, orphan := range found {
+					if _, err := fmt.Fprintln(command.OutOrStdout(), orphan.Target); err != nil {
+						r.Logger.Error(fmt.Errorf("write stdout: %w", err))
+						return ExitCode(2)
+					}
 				}
 			}
 			if len(found) > 0 {
@@ -79,6 +90,30 @@ func newOrphansCmd(flags *globalFlags) *cobra.Command {
 		},
 		SilenceErrors: true,
 	}
+	command.Flags().BoolVar(&jsonOutput, "json", false, "write orphan paths as a JSON array")
+	return command
+}
+
+func writeOrphansJSON(w io.Writer, found []orphans.Orphan) error {
+	paths := make([]string, len(found))
+	for i, orphan := range found {
+		paths[i] = orphan.Target
+	}
+
+	var output bytes.Buffer
+	encoder := json.NewEncoder(&output)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(paths); err != nil {
+		return fmt.Errorf("encode JSON: %w", err)
+	}
+	written, err := w.Write(output.Bytes())
+	if err != nil {
+		return err
+	}
+	if written != output.Len() {
+		return io.ErrShortWrite
+	}
+	return nil
 }
 
 func activeTargetSet(groups []discover.Group) (map[string]struct{}, error) {

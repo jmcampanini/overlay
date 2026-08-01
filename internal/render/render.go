@@ -31,6 +31,7 @@ type Options struct {
 	Substituter       *substitute.Resolver
 	SubstituteExclude discover.Ignorer
 	StatePath         string
+	NoState           bool
 	Logger            *log.Logger
 }
 
@@ -89,13 +90,18 @@ func Run(opts Options) error {
 	if opts.Logger == nil {
 		opts.Logger = log.Default()
 	}
-	if opts.StatePath == "" {
+	maintainState := !opts.NoState
+	if maintainState && opts.StatePath == "" {
 		return fmt.Errorf("state path is required")
 	}
 
-	prior, err := state.Load(opts.StatePath)
-	if err != nil && !errors.Is(err, state.ErrNotExist) {
-		return err
+	var prior []state.Entry
+	if maintainState {
+		var err error
+		prior, err = state.Load(opts.StatePath)
+		if err != nil && !errors.Is(err, state.ErrNotExist) {
+			return err
+		}
 	}
 
 	result, err := discover.WalkDetailed(opts.Settings)
@@ -115,7 +121,7 @@ func Run(opts Options) error {
 	if len(groups) == 0 {
 		WarnUnusedPins(opts.Substituter, nil, opts.Logger)
 		opts.Logger.Debugf("no overlay files found in %s", strings.Join(opts.Settings.SourceDirs, ", "))
-		return saveRenderState(opts.StatePath, prior, nil, nil)
+		return finishRender(opts.NoState, opts.StatePath, prior, nil, nil)
 	}
 
 	mergeOptions := MergeOptions{
@@ -135,18 +141,24 @@ func Run(opts Options) error {
 		opts.Logger.Errorf("render %s: %v", cg.Group.TargetPath, cg.Err)
 	}
 
-	claimed := make([]state.Entry, 0, len(clean))
+	var claimed []state.Entry
+	if maintainState {
+		claimed = make([]state.Entry, 0, len(clean))
+	}
 	var writeFailed int
 	for _, cg := range clean {
-		entry, err := stateEntry(cg.Group)
-		if err != nil {
-			renderErr := fmt.Errorf("render %s: record state: %w", cg.Group.TargetPath, err)
-			if opts.ContinueOnError {
-				opts.Logger.Error(renderErr)
-				writeFailed++
-				continue
+		var entry state.Entry
+		if maintainState {
+			entry, err = stateEntry(cg.Group)
+			if err != nil {
+				renderErr := fmt.Errorf("render %s: record state: %w", cg.Group.TargetPath, err)
+				if opts.ContinueOnError {
+					opts.Logger.Error(renderErr)
+					writeFailed++
+					continue
+				}
+				return finishRender(opts.NoState, opts.StatePath, prior, claimed, renderErr)
 			}
-			return saveRenderState(opts.StatePath, prior, claimed, renderErr)
 		}
 		if err := writeGroup(cg, opts.Logger); err != nil {
 			if opts.ContinueOnError {
@@ -154,17 +166,19 @@ func Run(opts Options) error {
 				writeFailed++
 				continue
 			}
-			return saveRenderState(opts.StatePath, prior, claimed, fmt.Errorf("render %s: %w", cg.Group.TargetPath, err))
+			return finishRender(opts.NoState, opts.StatePath, prior, claimed, fmt.Errorf("render %s: %w", cg.Group.TargetPath, err))
 		}
-		claimed = append(claimed, entry)
+		if maintainState {
+			claimed = append(claimed, entry)
+		}
 	}
 	totalFailed := len(failed) + writeFailed
 	succeeded := len(clean) - writeFailed
 	opts.Logger.Infof("overlayed %d %s", succeeded, pluralize(succeeded, "file", "files"))
 	if totalFailed > 0 {
-		return saveRenderState(opts.StatePath, prior, claimed, fmt.Errorf("%d %s failed to render", totalFailed, pluralize(totalFailed, "file", "files")))
+		return finishRender(opts.NoState, opts.StatePath, prior, claimed, fmt.Errorf("%d %s failed to render", totalFailed, pluralize(totalFailed, "file", "files")))
 	}
-	return saveRenderState(opts.StatePath, prior, claimed, nil)
+	return finishRender(opts.NoState, opts.StatePath, prior, claimed, nil)
 }
 
 // A target can alias the manifest through symlinks or filesystem case rules.
@@ -310,6 +324,13 @@ func stateEntry(group discover.Group) (state.Entry, error) {
 		return state.Entry{}, fmt.Errorf("resolve source path: %w", err)
 	}
 	return state.Entry{Target: target, Source: source}, nil
+}
+
+func finishRender(noState bool, path string, prior, claimed []state.Entry, renderErr error) error {
+	if noState {
+		return renderErr
+	}
+	return saveRenderState(path, prior, claimed, renderErr)
 }
 
 func saveRenderState(path string, prior, claimed []state.Entry, renderErr error) error {

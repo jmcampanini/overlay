@@ -69,6 +69,13 @@ Variable substitution:
   write $${NAME} to emit a literal ${NAME}. See 'overlay docs' for the full
   reference.`
 
+const renderStateHelp = `
+Ownership state:
+  By default, render records successfully written targets in
+  .overlay.state.json for later orphan detection. --no-state writes targets
+  normally without reading, validating, creating, garbage-collecting, or
+  updating that file. Targets that alias the state path remain rejected.`
+
 // diffOutputHelp documents the diff subcommand's output format, exit
 // codes, and suggested pipes.
 const diffOutputHelp = `
@@ -89,7 +96,9 @@ Suggested pipes for easier reading:
 
 const orphansOutputHelp = `
 Output format:
-  Absolute target paths on stdout, one per line.
+  By default, absolute target paths on stdout, one per line.
+  With --json, a top-level JSON array of those paths in the same order.
+  Successful JSON output always ends with a newline and is [] when empty.
 
 Exit codes:
   0   no orphaned targets found
