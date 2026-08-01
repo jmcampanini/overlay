@@ -1,40 +1,16 @@
 package cmd
 
 import (
-	"bytes"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/jmcampanini/overlay/internal/state"
 )
-
-type rootResult struct {
-	code   int
-	stdout string
-	stderr string
-}
-
-func runRoot(t *testing.T, args ...string) rootResult {
-	t.Helper()
-	var stdout, stderr bytes.Buffer
-	root := newRootCmd()
-	root.SetOut(&stdout)
-	root.SetErr(&stderr)
-	root.SetArgs(args)
-	err := root.Execute()
-	if err == nil {
-		return rootResult{stdout: stdout.String(), stderr: stderr.String()}
-	}
-	var code ExitCode
-	if !errors.As(err, &code) {
-		t.Fatalf("command returned a non-ExitCode error: %v\nstderr:\n%s", err, stderr.String())
-	}
-	return rootResult{code: int(code), stdout: stdout.String(), stderr: stderr.String()}
-}
 
 func orphansFixture(t *testing.T, configBody string) (configPath, target string) {
 	t.Helper()
@@ -46,6 +22,94 @@ func orphansFixture(t *testing.T, configBody string) (configPath, target string)
 	target = filepath.Join(dir, "target")
 	writeFile(t, configPath, "target = \""+target+"\"\n"+configBody)
 	return configPath, target
+}
+
+func TestOrphansJSONFlagIsOrphansScoped(t *testing.T) {
+	root := newRootCmd()
+	for commandName, want := range map[string]bool{
+		"orphans": true,
+		"render":  false,
+		"diff":    false,
+		"plan":    false,
+		"config":  false,
+	} {
+		command, _, err := root.Find([]string{commandName})
+		if err != nil {
+			t.Fatalf("find %s: %v", commandName, err)
+		}
+		if got := command.Flags().Lookup("json") != nil; got != want {
+			t.Errorf("%s has --json = %t, want %t", commandName, got, want)
+		}
+	}
+}
+
+func TestOrphansCmdJSONOutput(t *testing.T) {
+	configPath, target := orphansFixture(t, "")
+	sourceDir := filepath.Dir(configPath)
+	aLayer := filepath.Join(sourceDir, "a.olay.base.conf")
+	zLayer := filepath.Join(sourceDir, "z.olay.base.conf")
+	writeFile(t, aLayer, "a\n")
+	writeFile(t, zLayer, "z\n")
+	if result := runRoot(t, "render", "--config", configPath); result.code != 0 {
+		t.Fatalf("render exit = %d, want 0; stderr:\n%s", result.code, result.stderr)
+	}
+
+	clean := runRoot(t, "orphans", "--json", "--config", configPath)
+	if clean.code != 0 || clean.stdout != "[]\n" {
+		t.Fatalf("clean orphans = exit %d stdout %q, want exit 0 stdout %q; stderr:\n%s", clean.code, clean.stdout, "[]\n", clean.stderr)
+	}
+
+	if err := os.Remove(aLayer); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(zLayer); err != nil {
+		t.Fatal(err)
+	}
+	result := runRoot(t, "orphans", "--json", "--config", configPath)
+	if result.code != 1 {
+		t.Fatalf("exit = %d, want 1; stderr:\n%s", result.code, result.stderr)
+	}
+	var got []string
+	if err := json.Unmarshal([]byte(result.stdout), &got); err != nil {
+		t.Fatalf("decode stdout %q: %v", result.stdout, err)
+	}
+	want := []string{filepath.Join(target, "a.conf"), filepath.Join(target, "z.conf")}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("JSON paths = %#v, want %#v", got, want)
+	}
+	if !strings.HasSuffix(result.stdout, "\n") {
+		t.Errorf("stdout missing trailing newline: %q", result.stdout)
+	}
+}
+
+func TestOrphansCmdJSONRoundTripsUnusualPathCharacters(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows path separators cannot represent the backslash filename case")
+	}
+	configPath, targetDir := orphansFixture(t, "")
+	target := filepath.Join(targetDir, "line\nquote\"backslash\\snowman-☃&<>.conf")
+	writeFile(t, target, "owned\n")
+	if err := state.Save(filepath.Join(filepath.Dir(configPath), ".overlay.state.json"), []state.Entry{{
+		Target: target,
+		Source: filepath.Dir(configPath),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	result := runRoot(t, "orphans", "--json", "--config", configPath)
+	if result.code != 1 {
+		t.Fatalf("exit = %d, want 1; stderr:\n%s", result.code, result.stderr)
+	}
+	var got []string
+	if err := json.Unmarshal([]byte(result.stdout), &got); err != nil {
+		t.Fatalf("decode stdout %q: %v", result.stdout, err)
+	}
+	if want := []string{target}; !reflect.DeepEqual(got, want) {
+		t.Errorf("JSON paths = %#v, want %#v", got, want)
+	}
+	if !strings.Contains(result.stdout, "&<>") {
+		t.Errorf("stdout HTML-escaped path characters: %q", result.stdout)
+	}
 }
 
 func TestOrphansCmdMissingBaselineIsExitTwoWithEmptyStdout(t *testing.T) {
@@ -97,27 +161,38 @@ func TestOrphansCmdInvalidStateIsExitTwoWithEmptyStdout(t *testing.T) {
 }
 
 func TestOrphansCmdInspectionFailureIsExitTwoWithEmptyStdout(t *testing.T) {
-	configPath, _ := orphansFixture(t, "")
-	invalidTarget := filepath.Join(filepath.Dir(configPath), "invalid\x00target")
-	manifest, err := json.Marshal(struct {
-		Entries []state.Entry `json:"entries"`
-	}{Entries: []state.Entry{{Target: invalidTarget, Source: filepath.Dir(configPath)}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, filepath.Join(filepath.Dir(configPath), ".overlay.state.json"), string(manifest))
+	for _, tt := range []struct {
+		name  string
+		flags []string
+	}{
+		{name: "default"},
+		{name: "json", flags: []string{"--json"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			configPath, _ := orphansFixture(t, "")
+			invalidTarget := filepath.Join(filepath.Dir(configPath), "invalid\x00target")
+			manifest, err := json.Marshal(struct {
+				Entries []state.Entry `json:"entries"`
+			}{Entries: []state.Entry{{Target: invalidTarget, Source: filepath.Dir(configPath)}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, filepath.Join(filepath.Dir(configPath), ".overlay.state.json"), string(manifest))
 
-	result := runRoot(t, "orphans", "--config", configPath)
-	if result.code != 2 {
-		t.Fatalf("exit = %d, want 2; stderr:\n%s", result.code, result.stderr)
-	}
-	if result.stdout != "" {
-		t.Errorf("stdout = %q, want empty", result.stdout)
-	}
-	for _, want := range []string{"detect orphans", "inspect owned target"} {
-		if !strings.Contains(result.stderr, want) {
-			t.Errorf("stderr missing %q:\n%s", want, result.stderr)
-		}
+			args := append([]string{"orphans"}, tt.flags...)
+			result := runRoot(t, append(args, "--config", configPath)...)
+			if result.code != 2 {
+				t.Fatalf("exit = %d, want 2; stderr:\n%s", result.code, result.stderr)
+			}
+			if result.stdout != "" {
+				t.Errorf("stdout = %q, want empty", result.stdout)
+			}
+			for _, want := range []string{"detect orphans", "inspect owned target"} {
+				if !strings.Contains(result.stderr, want) {
+					t.Errorf("stderr missing %q:\n%s", want, result.stderr)
+				}
+			}
+		})
 	}
 }
 
