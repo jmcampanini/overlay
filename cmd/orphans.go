@@ -70,18 +70,9 @@ func newOrphansCmd(flags *globalFlags) *cobra.Command {
 				r.Logger.Error(fmt.Errorf("detect orphans: %w", err))
 				return ExitCode(2)
 			}
-			if jsonOutput {
-				if err := writeOrphansJSON(command.OutOrStdout(), found); err != nil {
-					r.Logger.Error(fmt.Errorf("write stdout: %w", err))
-					return ExitCode(2)
-				}
-			} else {
-				for _, orphan := range found {
-					if _, err := fmt.Fprintln(command.OutOrStdout(), orphan.Target); err != nil {
-						r.Logger.Error(fmt.Errorf("write stdout: %w", err))
-						return ExitCode(2)
-					}
-				}
+			if err := writeOrphans(command.OutOrStdout(), found, jsonOutput); err != nil {
+				r.Logger.Error(fmt.Errorf("write stdout: %w", err))
+				return ExitCode(2)
 			}
 			if len(found) > 0 {
 				return ExitCode(1)
@@ -94,7 +85,16 @@ func newOrphansCmd(flags *globalFlags) *cobra.Command {
 	return command
 }
 
-func writeOrphansJSON(w io.Writer, found []orphans.Orphan) error {
+func writeOrphans(w io.Writer, found []orphans.Orphan, jsonOutput bool) error {
+	if !jsonOutput {
+		for _, orphan := range found {
+			if _, err := fmt.Fprintln(w, orphan.Target); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
 	paths := make([]string, len(found))
 	for i, orphan := range found {
 		paths[i] = orphan.Target
