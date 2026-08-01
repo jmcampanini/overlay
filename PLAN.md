@@ -4,7 +4,7 @@
 
 Add two opt-in CLI capabilities needed by callers that render disposable output and safely automate orphan handling:
 
-1. `overlay render --no-state` renders normally without reading, validating, creating, modifying, or collision-checking `.overlay.state.json`.
+1. `overlay render --no-state` renders normally without reading, validating, creating, or modifying `.overlay.state.json`.
 2. `overlay orphans --json` writes the detected absolute target paths as a JSON array while preserving the existing exit-code contract.
 
 Both flags are additive. Existing invocations and default output remain unchanged.
@@ -15,12 +15,11 @@ Both flags are additive. Existing invocations and default output remain unchange
 
 - Make `--no-state` a render-only invocation flag, not a config field or environment variable. Statelessness is an explicit property of one disposable render and should not be persisted accidentally.
 - Preserve discovery, composition, substitution, `--continue`, target writes, logging, and render exit behavior.
-- Bypass the entire ownership-state lifecycle:
-  - Do not require or resolve a usable state path for rendering behavior.
+- Bypass the ownership-state lifecycle:
   - Do not load or validate existing state.
-  - Do not check rendered targets for collisions with the state path.
   - Do not construct ownership claims solely for persistence.
   - Do not create, garbage-collect, or save state, including zero-group and partial-success runs.
+- Keep the state-target collision guard: a stateless render still refuses to write a target that aliases the state file path, so the guarantee below holds unconditionally. The already-resolved state path is consumed for this check only.
 - A malformed existing state file must not prevent a stateless render, and the file must remain byte-identical.
 - Keep normal stateful rendering as the default.
 
@@ -33,17 +32,17 @@ Both flags are additive. Existing invocations and default output remain unchange
   - Findings: populated array plus a trailing newline, exit `1`.
 - Preserve operational failures as exit `2`, with diagnostics on stderr and no partial JSON on stdout.
 - Keep the default one-path-per-line output unchanged.
-- Encode paths with Go's JSON encoder so embedded newlines, quotes, backslashes, and Unicode remain unambiguous.
+- Encode paths with Go's JSON encoder so embedded newlines, quotes, backslashes, and Unicode remain unambiguous. Disable HTML escaping so `&`, `<`, and `>` in paths stay literal.
 
 ## Implementation outline
 
 1. **Render CLI flag**
    - Add the command-local `--no-state` flag in `cmd/render.go`.
-   - Pass the selected mode explicitly into `render.Options`; avoid using an empty state path as an implicit mode switch.
+   - Pass the selected mode explicitly into `render.Options` as a `NoState bool`; avoid using an empty state path as an implicit mode switch. The "state path is required" validation applies only to stateful runs.
    - Extend render help text to explain that output is written normally but ownership state is untouched.
 
 2. **Render orchestration**
-   - Refactor `internal/render.Run` so state setup, collision checks, claim construction, and state saves are conditional on state maintenance.
+   - Refactor `internal/render.Run` so state loading, claim construction, and state saves are conditional on state maintenance; the state-target collision guard runs in both modes.
    - Keep shared composition and write paths identical between stateful and stateless renders.
    - Ensure every success and failure branch returns directly in stateless mode rather than entering state-save behavior.
 
@@ -62,7 +61,7 @@ Both flags are additive. Existing invocations and default output remain unchange
 These tests protect real CLI contracts at the layers closest to likely defects:
 
 - **Render command tests:** prove `--no-state` is render-scoped, accepted by `render`, and leaves the sidecar absent or byte-identical while still writing targets.
-- **Render orchestration tests:** prove stateless rendering skips malformed-state loading, state-path collision checks, zero-group initialization, partial-success claims, and final state saves without changing ordinary rendering behavior.
+- **Render orchestration tests:** prove stateless rendering skips malformed-state loading, zero-group initialization, partial-success claims, and final state saves — while still rejecting a target that collides with the state path — without changing ordinary rendering behavior.
 - **Orphans command tests:** prove `--json` emits `[]` with exit `0`, emits sorted paths with exit `1`, safely round-trips unusual path characters, leaves stdout empty on exit `2`, and does not alter default line output.
 - Keep each behavior owned at one primary layer; do not duplicate the full state or orphan detection matrices.
 
