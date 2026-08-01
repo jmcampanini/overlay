@@ -16,9 +16,7 @@ func newDiffCmd(flags *globalFlags) *cobra.Command {
 		RunE: func(command *cobra.Command, args []string) error {
 			r, err := resolve(command, flags, args...)
 			if err != nil {
-				if _, writeErr := fmt.Fprintln(command.ErrOrStderr(), "overlay:", err); writeErr != nil {
-					return ExitCode(2)
-				}
+				_, _ = fmt.Fprintln(command.ErrOrStderr(), "overlay:", err)
 				return ExitCode(2)
 			}
 			hasDiff, err := diff.Run(diff.Options{

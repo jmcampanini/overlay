@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/jmcampanini/overlay/internal/state"
@@ -127,10 +129,53 @@ func TestDetect(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			opts, want := tt.run(t, t.TempDir())
-			if got := Detect(opts); !reflect.DeepEqual(got, want) {
+			got, err := Detect(opts)
+			if err != nil {
+				t.Fatalf("Detect() error = %v", err)
+			}
+			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("Detect() = %#v, want %#v", got, want)
 			}
 		})
+	}
+}
+
+func TestDetectSkipsTargetAliasedByActivePlan(t *testing.T) {
+	physicalRoot := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "target-alias")
+	if err := os.Symlink(physicalRoot, alias); err != nil {
+		t.Fatal(err)
+	}
+	physicalTarget := regularFile(t, physicalRoot, "active.conf")
+	aliasedTarget := filepath.Join(alias, "active.conf")
+
+	got, err := Detect(Options{
+		Entries:     []state.Entry{{Target: aliasedTarget, Source: filepath.Join(physicalRoot, "source")}},
+		PlanTargets: map[string]struct{}{physicalTarget: {}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("Detect() = %#v, want no orphan for active file alias", got)
+	}
+}
+
+func TestDetectErrorsWhenOwnedTargetCannotBeInspected(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "invalid\x00target")
+	got, err := Detect(Options{
+		Entries: []state.Entry{{Target: target, Source: filepath.Join(t.TempDir(), "source")}},
+	})
+	if err == nil {
+		t.Fatal("Detect() error = nil")
+	}
+	if got != nil {
+		t.Fatalf("Detect() = %#v, want nil on inspection failure", got)
+	}
+	for _, want := range []string{"inspect owned target", strconv.Quote(target)} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("Detect() error = %q, want %q", err, want)
+		}
 	}
 }
 

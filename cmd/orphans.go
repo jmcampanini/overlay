@@ -20,9 +20,7 @@ func newOrphansCmd(flags *globalFlags) *cobra.Command {
 		RunE: func(command *cobra.Command, args []string) error {
 			r, err := resolve(command, flags, args...)
 			if err != nil {
-				if _, writeErr := fmt.Fprintln(command.ErrOrStderr(), "overlay:", err); writeErr != nil {
-					return ExitCode(2)
-				}
+				_, _ = fmt.Fprintln(command.ErrOrStderr(), "overlay:", err)
 				return ExitCode(2)
 			}
 
@@ -58,12 +56,16 @@ func newOrphansCmd(flags *globalFlags) *cobra.Command {
 				r.Logger.Error(err)
 				return ExitCode(2)
 			}
-			found := orphans.Detect(orphans.Options{
+			found, err := orphans.Detect(orphans.Options{
 				Entries:         entries,
 				PlanTargets:     planTargets,
 				SelectedSources: selectedSources,
 				Narrowed:        r.SourcesNarrowed,
 			})
+			if err != nil {
+				r.Logger.Error(fmt.Errorf("detect orphans: %w", err))
+				return ExitCode(2)
+			}
 			for _, orphan := range found {
 				if _, err := fmt.Fprintln(command.OutOrStdout(), orphan.Target); err != nil {
 					r.Logger.Error(fmt.Errorf("write stdout: %w", err))

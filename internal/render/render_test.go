@@ -1177,6 +1177,41 @@ func TestRunSuppressesUnusedPinWarningOnComposeFailure(t *testing.T) {
 }
 
 func TestRunStateLifecycle(t *testing.T) {
+	t.Run("corrupt state aborts before writing", func(t *testing.T) {
+		src := t.TempDir()
+		target := t.TempDir()
+		statePath := filepath.Join(t.TempDir(), ".overlay.state.json")
+		writeFile(t, filepath.Join(src, "a.olay.base.conf"), "a\n")
+		writeFile(t, statePath, "{")
+		before, err := os.ReadFile(statePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		err = Run(Options{
+			Settings: discover.Settings{
+				SourceDirs: []string{src},
+				TargetDir:  target,
+				Ignore:     discover.NoopIgnorer(),
+			},
+			StatePath: statePath,
+			Logger:    newTestLogger(),
+		})
+		if err == nil || !strings.Contains(err.Error(), "invalid state file") {
+			t.Fatalf("error = %v, want invalid state failure", err)
+		}
+		if _, statErr := os.Stat(filepath.Join(target, "a.conf")); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("target must not be written, stat error = %v", statErr)
+		}
+		after, readErr := os.ReadFile(statePath)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if !reflect.DeepEqual(after, before) {
+			t.Fatalf("corrupt state changed: before %q after %q", before, after)
+		}
+	})
+
 	t.Run("success claims every output", func(t *testing.T) {
 		src := t.TempDir()
 		target := t.TempDir()

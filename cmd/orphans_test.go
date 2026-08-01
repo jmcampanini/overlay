@@ -2,11 +2,14 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jmcampanini/overlay/internal/state"
 )
 
 type rootResult struct {
@@ -90,6 +93,31 @@ func TestOrphansCmdInvalidStateIsExitTwoWithEmptyStdout(t *testing.T) {
 	}
 	if !strings.Contains(result.stderr, "delete it and re-run overlay render") {
 		t.Errorf("stderr missing re-baseline remedy:\n%s", result.stderr)
+	}
+}
+
+func TestOrphansCmdInspectionFailureIsExitTwoWithEmptyStdout(t *testing.T) {
+	configPath, _ := orphansFixture(t, "")
+	invalidTarget := filepath.Join(filepath.Dir(configPath), "invalid\x00target")
+	manifest, err := json.Marshal(struct {
+		Entries []state.Entry `json:"entries"`
+	}{Entries: []state.Entry{{Target: invalidTarget, Source: filepath.Dir(configPath)}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(filepath.Dir(configPath), ".overlay.state.json"), string(manifest))
+
+	result := runRoot(t, "orphans", "--config", configPath)
+	if result.code != 2 {
+		t.Fatalf("exit = %d, want 2; stderr:\n%s", result.code, result.stderr)
+	}
+	if result.stdout != "" {
+		t.Errorf("stdout = %q, want empty", result.stdout)
+	}
+	for _, want := range []string{"detect orphans", "inspect owned target"} {
+		if !strings.Contains(result.stderr, want) {
+			t.Errorf("stderr missing %q:\n%s", want, result.stderr)
+		}
 	}
 }
 

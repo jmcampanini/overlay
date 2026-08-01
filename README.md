@@ -230,14 +230,16 @@ collects the state file. It exits:
 - **1** — at least one orphan found.
 - **2** — resolution, state, or I/O failure.
 
-Inspect the output before removing anything. If it contains exactly the files
-you intend to delete, the interim cleanup pattern is:
+Inspect the output before acting on it:
 
-```shell
-overlay orphans
-# After inspecting the output:
-overlay orphans | xargs rm
+```text
+$ overlay orphans
+/Users/x/.config/old-app/config.toml
+/Users/x/.local/share/old-tool/settings.json
 ```
+
+The one-path-per-line output can be piped into the tooling of your choice after
+reviewing the paths.
 
 The registry only knows outputs claimed by renders that maintain it. Files
 rendered before this feature was available are invisible to orphan detection

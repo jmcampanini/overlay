@@ -167,6 +167,8 @@ func Run(opts Options) error {
 	return saveRenderState(opts.StatePath, prior, claimed, nil)
 }
 
+// A target can alias the manifest through symlinks or filesystem case rules.
+// Reject it before writing, or the state rename would replace rendered output.
 func rejectStateTargetCollision(statePath string, groups []discover.Group) error {
 	resolvedStatePath, err := resolveFilesystemPath(statePath)
 	if err != nil {
@@ -191,6 +193,8 @@ func rejectStateTargetCollision(statePath string, groups []discover.Group) error
 	return nil
 }
 
+// Case behavior can vary by volume or directory, so probe filesystem identity
+// instead of inferring it from the operating system.
 func caseFoldedPathsAlias(first, second string) bool {
 	if !strings.EqualFold(filepath.Base(first), filepath.Base(second)) {
 		return false
@@ -247,6 +251,8 @@ func alternateFilenameCase(name string) string {
 	return name
 }
 
+// Resolve existing prefixes and dangling symlinks so not-yet-created targets
+// can be compared by the filesystem location they will ultimately reach.
 func resolveFilesystemPath(path string) (string, error) {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
