@@ -123,7 +123,7 @@ func Run(opts Options) error {
 	if len(groups) == 0 {
 		WarnUnusedPins(opts.Substituter, nil, opts.Logger)
 		opts.Logger.Debugf("no overlay files found in %s", strings.Join(opts.Settings.SourceDirs, ", "))
-		return finishRender(opts.NoState, opts.StatePath, prior, nil, nil)
+		return saveRenderStateIfEnabled(maintainState, opts.StatePath, prior, nil, nil)
 	}
 
 	mergeOptions := MergeOptions{
@@ -160,7 +160,7 @@ func Run(opts Options) error {
 					writeFailed++
 					continue
 				}
-				return finishRender(opts.NoState, opts.StatePath, prior, claimed, renderErr)
+				return saveRenderStateIfEnabled(maintainState, opts.StatePath, prior, claimed, renderErr)
 			}
 		}
 		if err := writeGroup(cg, opts.Logger); err != nil {
@@ -169,7 +169,7 @@ func Run(opts Options) error {
 				writeFailed++
 				continue
 			}
-			return finishRender(opts.NoState, opts.StatePath, prior, claimed, fmt.Errorf("render %s: %w", cg.Group.TargetPath, err))
+			return saveRenderStateIfEnabled(maintainState, opts.StatePath, prior, claimed, fmt.Errorf("render %s: %w", cg.Group.TargetPath, err))
 		}
 		if maintainState {
 			claimed = append(claimed, entry)
@@ -179,9 +179,9 @@ func Run(opts Options) error {
 	succeeded := len(clean) - writeFailed
 	opts.Logger.Infof("overlayed %d %s", succeeded, pluralize(succeeded, "file", "files"))
 	if totalFailed > 0 {
-		return finishRender(opts.NoState, opts.StatePath, prior, claimed, fmt.Errorf("%d %s failed to render", totalFailed, pluralize(totalFailed, "file", "files")))
+		return saveRenderStateIfEnabled(maintainState, opts.StatePath, prior, claimed, fmt.Errorf("%d %s failed to render", totalFailed, pluralize(totalFailed, "file", "files")))
 	}
-	return finishRender(opts.NoState, opts.StatePath, prior, claimed, nil)
+	return saveRenderStateIfEnabled(maintainState, opts.StatePath, prior, claimed, nil)
 }
 
 // A target can alias the manifest through symlinks or filesystem case rules.
@@ -329,8 +329,8 @@ func stateEntry(group discover.Group) (state.Entry, error) {
 	return state.Entry{Target: target, Source: source}, nil
 }
 
-func finishRender(noState bool, path string, prior, claimed []state.Entry, renderErr error) error {
-	if noState {
+func saveRenderStateIfEnabled(enabled bool, path string, prior, claimed []state.Entry, renderErr error) error {
+	if !enabled {
 		return renderErr
 	}
 	return saveRenderState(path, prior, claimed, renderErr)
