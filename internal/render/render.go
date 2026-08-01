@@ -5,9 +5,11 @@ package render
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"charm.land/log/v2"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/jmcampanini/overlay/internal/document"
 	"github.com/jmcampanini/overlay/internal/merge"
 	"github.com/jmcampanini/overlay/internal/rendermode"
+	"github.com/jmcampanini/overlay/internal/state"
 	"github.com/jmcampanini/overlay/internal/substitute"
 )
 
@@ -27,6 +30,7 @@ type Options struct {
 	RenderRules       []config.RenderRule
 	Substituter       *substitute.Resolver
 	SubstituteExclude discover.Ignorer
+	StatePath         string
 	Logger            *log.Logger
 }
 
@@ -85,6 +89,15 @@ func Run(opts Options) error {
 	if opts.Logger == nil {
 		opts.Logger = log.Default()
 	}
+	if opts.StatePath == "" {
+		return fmt.Errorf("state path is required")
+	}
+
+	prior, err := state.Load(opts.StatePath)
+	if err != nil && !errors.Is(err, state.ErrNotExist) {
+		return err
+	}
+
 	result, err := discover.WalkDetailed(opts.Settings)
 	if err != nil {
 		return fmt.Errorf("discover: %w", err)
@@ -96,10 +109,13 @@ func Run(opts Options) error {
 		opts.Logger.Infof("skipping %s (no active layers)", stem)
 	}
 	groups := result.Active
+	if err := rejectStateTargetCollision(opts.StatePath, groups); err != nil {
+		return err
+	}
 	if len(groups) == 0 {
 		WarnUnusedPins(opts.Substituter, nil, opts.Logger)
 		opts.Logger.Debugf("no overlay files found in %s", strings.Join(opts.Settings.SourceDirs, ", "))
-		return nil
+		return saveRenderState(opts.StatePath, prior, nil, nil)
 	}
 
 	mergeOptions := MergeOptions{
@@ -119,24 +135,192 @@ func Run(opts Options) error {
 		opts.Logger.Errorf("render %s: %v", cg.Group.TargetPath, cg.Err)
 	}
 
+	claimed := make([]state.Entry, 0, len(clean))
 	var writeFailed int
 	for _, cg := range clean {
+		entry, err := stateEntry(cg.Group)
+		if err != nil {
+			renderErr := fmt.Errorf("render %s: record state: %w", cg.Group.TargetPath, err)
+			if opts.ContinueOnError {
+				opts.Logger.Error(renderErr)
+				writeFailed++
+				continue
+			}
+			return saveRenderState(opts.StatePath, prior, claimed, renderErr)
+		}
 		if err := writeGroup(cg, opts.Logger); err != nil {
 			if opts.ContinueOnError {
 				opts.Logger.Errorf("render %s: %v", cg.Group.TargetPath, err)
 				writeFailed++
 				continue
 			}
-			return fmt.Errorf("render %s: %w", cg.Group.TargetPath, err)
+			return saveRenderState(opts.StatePath, prior, claimed, fmt.Errorf("render %s: %w", cg.Group.TargetPath, err))
 		}
+		claimed = append(claimed, entry)
 	}
 	totalFailed := len(failed) + writeFailed
 	succeeded := len(clean) - writeFailed
 	opts.Logger.Infof("overlayed %d %s", succeeded, pluralize(succeeded, "file", "files"))
 	if totalFailed > 0 {
-		return fmt.Errorf("%d %s failed to render", totalFailed, pluralize(totalFailed, "file", "files"))
+		return saveRenderState(opts.StatePath, prior, claimed, fmt.Errorf("%d %s failed to render", totalFailed, pluralize(totalFailed, "file", "files")))
+	}
+	return saveRenderState(opts.StatePath, prior, claimed, nil)
+}
+
+// A target can alias the manifest through symlinks or filesystem case rules.
+// Reject it before writing, or the state rename would replace rendered output.
+func rejectStateTargetCollision(statePath string, groups []discover.Group) error {
+	resolvedStatePath, err := resolveFilesystemPath(statePath)
+	if err != nil {
+		return fmt.Errorf("resolve state path: %w", err)
+	}
+	stateInfo, _ := os.Stat(statePath)
+	for _, group := range groups {
+		resolvedTarget, err := resolveFilesystemPath(group.TargetPath)
+		if err != nil {
+			return fmt.Errorf("resolve target path: %w", err)
+		}
+		collides := resolvedTarget == resolvedStatePath || caseFoldedPathsAlias(resolvedStatePath, resolvedTarget)
+		if !collides && stateInfo != nil {
+			if targetInfo, statErr := os.Stat(group.TargetPath); statErr == nil {
+				collides = os.SameFile(stateInfo, targetInfo)
+			}
+		}
+		if collides {
+			return fmt.Errorf("state path %q collides with a rendered target", resolvedStatePath)
+		}
 	}
 	return nil
+}
+
+// Case behavior can vary by volume or directory, so probe filesystem identity
+// instead of inferring it from the operating system.
+func caseFoldedPathsAlias(first, second string) bool {
+	if !strings.EqualFold(filepath.Base(first), filepath.Base(second)) {
+		return false
+	}
+	firstDir := filepath.Dir(first)
+	secondDir := filepath.Dir(second)
+	firstInfo, firstErr := os.Stat(firstDir)
+	secondInfo, secondErr := os.Stat(secondDir)
+	if firstErr != nil || secondErr != nil || !os.SameFile(firstInfo, secondInfo) {
+		return false
+	}
+	return caseInsensitiveDirectory(firstDir)
+}
+
+func caseInsensitiveDirectory(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err == nil {
+		for _, entry := range entries {
+			alternate := alternateFilenameCase(entry.Name())
+			if alternate == entry.Name() {
+				continue
+			}
+			originalInfo, originalErr := os.Lstat(filepath.Join(dir, entry.Name()))
+			alternateInfo, alternateErr := os.Lstat(filepath.Join(dir, alternate))
+			if originalErr != nil || alternateErr != nil {
+				if errors.Is(alternateErr, fs.ErrNotExist) {
+					return false
+				}
+				continue
+			}
+			return os.SameFile(originalInfo, alternateInfo)
+		}
+	}
+
+	parent := filepath.Dir(dir)
+	alternate := alternateFilenameCase(filepath.Base(dir))
+	if parent == dir || alternate == filepath.Base(dir) {
+		return false
+	}
+	originalInfo, originalErr := os.Stat(dir)
+	alternateInfo, alternateErr := os.Stat(filepath.Join(parent, alternate))
+	return originalErr == nil && alternateErr == nil && os.SameFile(originalInfo, alternateInfo)
+}
+
+func alternateFilenameCase(name string) string {
+	for i := range len(name) {
+		switch {
+		case name[i] >= 'a' && name[i] <= 'z':
+			return name[:i] + string(name[i]-'a'+'A') + name[i+1:]
+		case name[i] >= 'A' && name[i] <= 'Z':
+			return name[:i] + string(name[i]-'A'+'a') + name[i+1:]
+		}
+	}
+	return name
+}
+
+// Resolve existing prefixes and dangling symlinks so not-yet-created targets
+// can be compared by the filesystem location they will ultimately reach.
+func resolveFilesystemPath(path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	current := absolute
+	var missing []string
+	seenSymlinks := map[string]struct{}{}
+	for {
+		resolved, err := filepath.EvalSymlinks(current)
+		if err == nil {
+			for i := len(missing) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, missing[i])
+			}
+			return resolved, nil
+		}
+		if errors.Is(err, syscall.ENOTDIR) {
+			return absolute, nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return "", err
+		}
+		if info, lstatErr := os.Lstat(current); lstatErr == nil && info.Mode()&os.ModeSymlink != 0 {
+			if _, seen := seenSymlinks[current]; seen {
+				return "", fmt.Errorf("symlink cycle at %q", current)
+			}
+			seenSymlinks[current] = struct{}{}
+			destination, readErr := os.Readlink(current)
+			if readErr != nil {
+				return "", readErr
+			}
+			if filepath.IsAbs(destination) {
+				current = filepath.Clean(destination)
+			} else {
+				current = filepath.Join(filepath.Dir(current), destination)
+			}
+			continue
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return absolute, nil
+		}
+		missing = append(missing, filepath.Base(current))
+		current = parent
+	}
+}
+
+func stateEntry(group discover.Group) (state.Entry, error) {
+	target, err := filepath.Abs(group.TargetPath)
+	if err != nil {
+		return state.Entry{}, fmt.Errorf("resolve target path: %w", err)
+	}
+	source, err := filepath.Abs(group.SourceDir)
+	if err != nil {
+		return state.Entry{}, fmt.Errorf("resolve source path: %w", err)
+	}
+	return state.Entry{Target: target, Source: source}, nil
+}
+
+func saveRenderState(path string, prior, claimed []state.Entry, renderErr error) error {
+	if err := state.Save(path, state.Merge(prior, claimed)); err != nil {
+		saveErr := fmt.Errorf("save state: %w", err)
+		if renderErr != nil {
+			return errors.Join(renderErr, saveErr)
+		}
+		return saveErr
+	}
+	return renderErr
 }
 
 // WarnUnusedPins logs pinned variables that no composed target consumed. It is

@@ -2,19 +2,11 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/jmcampanini/overlay/internal/diff"
 )
-
-// DiffExitCode wraps an exit code so main can detect it and exit without
-// the generic "error" wrapping that would print an extra message.
-type DiffExitCode int
-
-// Error satisfies the error interface.
-func (e DiffExitCode) Error() string { return fmt.Sprintf("diff exit code %d", int(e)) }
 
 func newDiffCmd(flags *globalFlags) *cobra.Command {
 	return &cobra.Command{
@@ -24,8 +16,8 @@ func newDiffCmd(flags *globalFlags) *cobra.Command {
 		RunE: func(command *cobra.Command, args []string) error {
 			r, err := resolve(command, flags, args...)
 			if err != nil {
-				fmt.Fprintln(os.Stderr, "overlay:", err)
-				return DiffExitCode(2)
+				_, _ = fmt.Fprintln(command.ErrOrStderr(), "overlay:", err)
+				return ExitCode(2)
 			}
 			hasDiff, err := diff.Run(diff.Options{
 				Settings:          r.Settings,
@@ -35,14 +27,14 @@ func newDiffCmd(flags *globalFlags) *cobra.Command {
 				Substituter:       r.Substituter,
 				SubstituteExclude: r.SubstituteExclude,
 				Logger:            r.Logger,
-				Out:               os.Stdout,
+				Out:               command.OutOrStdout(),
 			})
 			if err != nil {
 				r.Logger.Error(err)
-				return DiffExitCode(2)
+				return ExitCode(2)
 			}
 			if hasDiff {
-				return DiffExitCode(1)
+				return ExitCode(1)
 			}
 			return nil
 		},

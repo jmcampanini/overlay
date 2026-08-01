@@ -43,7 +43,8 @@ func TestDiffIdentical(t *testing.T) {
 			TargetDir:  target,
 			Ignore:     discover.NoopIgnorer(),
 		},
-		Logger: silentLogger(),
+		StatePath: filepath.Join(t.TempDir(), ".overlay.state.json"),
+		Logger:    silentLogger(),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +166,12 @@ func TestDiffAppendUsesRenderRules(t *testing.T) {
 		Profiles:   []string{"work"},
 		Ignore:     discover.NoopIgnorer(),
 	}
-	if err := render.Run(render.Options{Settings: settings, RenderRules: rules, Logger: silentLogger()}); err != nil {
+	if err := render.Run(render.Options{
+		Settings:    settings,
+		RenderRules: rules,
+		StatePath:   filepath.Join(t.TempDir(), ".overlay.state.json"),
+		Logger:      silentLogger(),
+	}); err != nil {
 		t.Fatal(err)
 	}
 

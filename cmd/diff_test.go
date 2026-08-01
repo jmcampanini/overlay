@@ -7,7 +7,7 @@ import (
 )
 
 // runDiff executes the real diff command and returns its exit code: 0 when
-// RunE returns nil, otherwise the wrapped DiffExitCode value.
+// RunE returns nil, otherwise the wrapped ExitCode value.
 func runDiff(t *testing.T, args ...string) int {
 	t.Helper()
 	root := newRootCmd()
@@ -16,11 +16,11 @@ func runDiff(t *testing.T, args ...string) int {
 	if err == nil {
 		return 0
 	}
-	var ec DiffExitCode
+	var ec ExitCode
 	if errors.As(err, &ec) {
 		return int(ec)
 	}
-	t.Fatalf("diff returned a non-DiffExitCode error: %v", err)
+	t.Fatalf("diff returned a non-ExitCode error: %v", err)
 	return -1
 }
 

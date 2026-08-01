@@ -33,6 +33,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(
 		newRenderCmd(flags),
 		newDiffCmd(flags),
+		newOrphansCmd(flags),
 		newPlanCmd(flags),
 		newConfigCmd(flags),
 		newDocsCmd(),

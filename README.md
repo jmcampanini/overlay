@@ -187,6 +187,7 @@ Run `overlay config` to see loaded values, GoConfigLoader provenance, and commen
 | `overlay render` | Merge active layers and write output files to the target. |
 | `overlay diff` | Print a git-style unified diff vs. the current target files. Exit 1 if any file differs. |
 | `overlay plan` | Dry-run: print an aligned table of what would be generated. |
+| `overlay orphans` | Print rendered files that are no longer produced by the active plan. Exit 1 if any are found. |
 | `overlay config` | Print loaded configuration, GoConfigLoader provenance, and effective runtime comments. `--validate <path>` validates the effective runtime config for a file using env vars and config-backed flags. |
 | `overlay docs` | Print the full `.overlay.toml` schema reference. |
 
@@ -209,6 +210,40 @@ overlay diff | bat --language=diff
 overlay diff | git diff --no-index --color /dev/null /dev/stdin
 overlay diff | diff-so-fancy
 ```
+
+### Orphan detection
+
+A source can stop producing a target after it is deleted, renamed, removed from
+`sources`, or made inactive by a profile change. Because the current checkout
+cannot identify files rendered earlier, `overlay render` maintains a
+per-machine ownership registry named `.overlay.state.json`. It lives beside the
+loaded config file, or in the current working directory when no config file is
+loaded. The state is machine-specific, so add `.overlay.state.json` to your
+`.gitignore` rather than committing it.
+
+`overlay orphans` compares that registry with the active plan and prints each
+orphan's absolute path to stdout, one path per line. It is read-only and
+performs detection only: it neither deletes files nor modifies or garbage
+collects the state file. It exits:
+
+- **0** — no orphans found.
+- **1** — at least one orphan found.
+- **2** — resolution, state, or I/O failure.
+
+Inspect the output before acting on it:
+
+```text
+$ overlay orphans
+/Users/x/.config/old-app/config.toml
+/Users/x/.local/share/old-tool/settings.json
+```
+
+The one-path-per-line output can be piped into the tooling of your choice after
+reviewing the paths.
+
+The registry only knows outputs claimed by renders that maintain it. Files
+rendered before this feature was available are invisible to orphan detection
+until they are rendered again to establish the baseline.
 
 ## Configuration
 
