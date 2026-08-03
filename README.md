@@ -381,12 +381,9 @@ is off and files containing `${...}` render as they did before.
   to ask the TOML encoder to indent nested tables and array-table values.
 - **Hidden directories are skipped by default.** Set
   `traverse_hidden = true` if you need to descend into `.foo` directories.
-- **Symlinks are not followed** during the source walk in v1. See the
-  roadmap below.
-
-## Roadmap
-
-- Symlink following during source walk (with inode-based loop detection).
+- **Symlinks are not followed** during the source walk in v1; explicit
+  symlink semantics are tracked in
+  [#34](https://github.com/jmcampanini/overlay/issues/34).
 
 ## Development
 
