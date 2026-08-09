@@ -264,6 +264,24 @@ func TestSchemaDocsDescribeRenderRules(t *testing.T) {
 	}
 }
 
+func TestSchemaDocsDescribeYAMLExtensionIdentity(t *testing.T) {
+	docs := strings.Join(strings.Fields(SchemaDocs), " ")
+	for _, want := range []string{
+		".yaml and .yml forms are matched case-insensitively and use the same YAML document format and parser",
+		"exact extension spelling, including case, is part of the group identity",
+		"same source root, relative directory, and stem must use one exact extension spelling",
+		"after the normal traversal filters and includes inactive-profile layers",
+		"Mixed spellings",
+		"discovery error",
+		"Different stems, relative directories, and source roots choose independently",
+		`path = "config.yaml" governs config.yaml and does not govern config.yml`,
+	} {
+		if !strings.Contains(docs, want) {
+			t.Fatalf("SchemaDocs missing YAML extension contract %q", want)
+		}
+	}
+}
+
 func TestLoadExplicitFalseOverridesDefault(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".overlay.toml")

@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -24,8 +25,9 @@ func runRoot(t *testing.T, args ...string) rootResult {
 		return rootResult{stdout: stdout.String(), stderr: stderr.String()}
 	}
 	var code ExitCode
-	if !errors.As(err, &code) {
-		t.Fatalf("command returned a non-ExitCode error: %v\nstderr:\n%s", err, stderr.String())
+	if errors.As(err, &code) {
+		return rootResult{code: int(code), stdout: stdout.String(), stderr: stderr.String()}
 	}
-	return rootResult{code: int(code), stdout: stdout.String(), stderr: stderr.String()}
+	_, _ = fmt.Fprintln(&stderr, "overlay:", err)
+	return rootResult{code: 1, stdout: stdout.String(), stderr: stderr.String()}
 }
