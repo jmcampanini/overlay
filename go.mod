@@ -1,6 +1,6 @@
 module github.com/jmcampanini/overlay
 
-go 1.26.3
+go 1.26.5
 
 require (
 	charm.land/lipgloss/v2 v2.0.5
@@ -33,6 +33,12 @@ require (
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d // indirect
-	golang.org/x/sync v0.18.0 // indirect
-	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/mod v0.38.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/telemetry v0.0.0-20260708182218-49f421fb7959 // indirect
+	golang.org/x/tools v0.48.0 // indirect
+	golang.org/x/vuln v1.6.0 // indirect
 )
+
+tool golang.org/x/vuln/cmd/govulncheck
