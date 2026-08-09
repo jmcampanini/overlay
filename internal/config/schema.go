@@ -94,8 +94,9 @@ FIELDS
     type:    repeated table
     default: []
     Optional per-target rules that choose an explicit render strategy. A rule
-    matches the rendered target-relative path after normal target mapping,
-    including dot_prefix behavior. For example, with dot_prefix = true:
+    matches the final extension-bearing target-relative path after normal target
+    mapping, including dot_prefix behavior and exact extension spelling. For
+    example, with dot_prefix = true:
 
       npm/dot-npmrc.olay.base -> <target>/.npmrc
 
@@ -110,7 +111,9 @@ FIELDS
       path = ".npmrc"
         Required. Exact rendered target-relative path. Use slash-separated paths
         such as ".ssh/config" or ".claude/settings.json". The source-relative
-        overlay name, such as "dot-npmrc", is not the matching API.
+        overlay name, such as "dot-npmrc", is not the matching API. Extension
+        spelling is part of the match: path = "config.yaml" governs config.yaml
+        and does not govern config.yml.
 
       strategy = "append"
         Required. Supported values are exactly:
@@ -270,6 +273,19 @@ The stem is required and may contain dots. The profile name "base" is always
 first, "local" is always last, and any other name is a user profile. If an
 extension is present, it must be one filename segment with no additional dots.
 
+The .yaml and .yml forms are matched case-insensitively and use the same YAML
+document format and parser. The exact extension spelling, including case, is
+part of the group identity and is retained in the rendered target:
+
+  config.olay.base.yml                    -> config.yml
+
+All discovered YAML layers with the same source root, relative directory, and
+stem must use one exact extension spelling. This check runs after the normal
+traversal filters and includes inactive-profile layers. Mixed spellings such as
+config.olay.base.yaml with config.olay.work.yml, or case variants such as .yaml
+with .YAML, are a discovery error. Different stems, relative directories, and
+source roots choose independently.
+
 By default, JSON, TOML, and YAML overlays are mergeable structured formats:
 
   dot-claude/settings.olay.base.json      -> base layer (always first)
@@ -281,6 +297,7 @@ By default, JSON, TOML, and YAML overlays are mergeable structured formats:
 With dot_prefix = true and target = "~/", those layers merge into:
 
   ~/.claude/settings.json
+  ~/lazygit/config.yml
 
 YAML inputs must be single-document config-style YAML with a root mapping.
 Empty/comment-only YAML layers are accepted as no-op empty maps. Mapping values
