@@ -69,6 +69,8 @@ overlay render pi codex
 
 - `<ext>` is optional. If present, it must be a single filename segment.
 - By default, `json`, `toml`, `yaml`, and `yml` overlays are merged; every other extension, plus extensionless overlays, is copied through as a whole file.
+- The `.yaml` and `.yml` forms (matched case-insensitively) use the same YAML document format and parser. The exact extension spelling, including case, is part of the group identity and is retained in the rendered target: `config.olay.base.yml` renders to `config.yml`.
+- All discovered YAML layers with the same source root, relative directory, and stem must use one exact extension spelling. This check runs after the normal traversal filters and includes inactive-profile layers. Mixed spellings such as `config.olay.base.yaml` with `config.olay.work.yml`, or case variants such as `.yaml` with `.YAML`, are a discovery error. Different stems, relative directories, and source roots choose independently.
 - `<profile>` names the layer. `base` and `local` are **reserved**: `base` always merges first, `local` always merges last, with any active user profiles in between. User profiles can be named anything else.
 - `base` is optional; if absent the merge starts from an empty document.
 - Path segments beginning with `dot-` are rewritten to leading dots in the output path when `dot_prefix` is enabled (e.g. `dot-claude` → `.claude`).
@@ -90,7 +92,7 @@ path = ".npmrc"
 strategy = "append"
 ```
 
-Rules match the final target-relative path after `dot_prefix` mapping, so `dot-npmrc.olay.base` matches `path = ".npmrc"`. `append` concatenates active layers in Overlay order, inserting one newline between adjacent non-empty layers only when needed. `copy` forces whole-file copy behavior, including for JSON, TOML, or YAML targets that would otherwise merge.
+Rules match the final extension-bearing target-relative path after `dot_prefix` mapping, so `dot-npmrc.olay.base` matches `path = ".npmrc"`. Extension spelling is part of the match: `path = "config.yaml"` governs `config.yaml` and does not govern `config.yml`. `append` concatenates active layers in Overlay order, inserting one newline between adjacent non-empty layers only when needed. `copy` forces whole-file copy behavior, including for JSON, TOML, or YAML targets that would otherwise merge.
 
 Output is deterministic: keys are alphabetized in JSON, TOML, and YAML so `overlay diff` stays trustworthy and golden-file tests are stable. JSON and YAML numeric output is normalized; whole-valued floats such as `1.0` may render as `1`.
 
@@ -280,7 +282,7 @@ A reference to an unset variable fails the run **before anything is written**, n
 - **YAML input and output are normalized.** YAML merge inputs must be single-document root mappings; empty/comment-only YAML layers are accepted as no-op empty maps. Rendered YAML uses deterministic block style with 2-space indentation. Comments, source formatting, and source key order are not preserved; root sequences/scalars, explicit root null, multi-document streams, non-string or complex mapping keys, aliases, and custom tags are rejected.
 - **TOML tables are unindented by default.** Set `toml_indent_tables = true` to ask the TOML encoder to indent nested tables and array-table values.
 - **Hidden directories are skipped by default.** Set `traverse_hidden = true` if you need to descend into `.foo` directories.
-- **Symlinks are not followed** during the source walk in v1; explicit symlink semantics are tracked in [#34](https://github.com/jmcampanini/overlay/issues/34).
+- **Symlink behavior is not yet a stable contract.** Source-side behavior is tracked in [#54](https://github.com/jmcampanini/overlay/issues/54), and target-write behavior is tracked in [#34](https://github.com/jmcampanini/overlay/issues/34).
 
 ## Development
 

@@ -194,7 +194,16 @@ func walkSource(s Settings, absSource string) ([]Group, []string, error) {
 		targetRelPath string
 		layers        map[string]string
 	}
+	type yamlKey struct {
+		relDir string
+		stem   string
+	}
+	type yamlExtension struct {
+		spelling string
+		relPath  string
+	}
 	groups := make(map[key]*groupInfo)
+	yamlExtensions := make(map[yamlKey]yamlExtension)
 
 	walkErr := filepath.WalkDir(absSource, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -233,6 +242,19 @@ func walkSource(s Settings, absSource string) ([]Group, []string, error) {
 		}
 		if relDir == "." {
 			relDir = ""
+		}
+		if format == document.FormatYAML {
+			yk := yamlKey{relDir: relDir, stem: stem}
+			first, exists := yamlExtensions[yk]
+			if exists && first.spelling != ext {
+				return fmt.Errorf(
+					"yaml overlay extension conflict: %q uses %q while %q uses %q; one exact extension spelling is required for layers under the same source root, relative directory, and stem",
+					filepath.ToSlash(first.relPath), "."+first.spelling, filepath.ToSlash(rel), "."+ext,
+				)
+			}
+			if !exists {
+				yamlExtensions[yk] = yamlExtension{spelling: ext, relPath: rel}
+			}
 		}
 		k := key{relDir: relDir, stem: stem, ext: ext}
 		info, exists := groups[k]

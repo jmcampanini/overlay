@@ -168,6 +168,8 @@ func TestWalkYAMLStructuredFormats(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, filepath.Join(dir, "config.olay.base.yaml"), `app: base`)
 	writeTestFile(t, filepath.Join(dir, "theme.olay.base.yml"), `name: dark`)
+	writeTestFile(t, filepath.Join(dir, "upper.olay.base.YAML"), `name: base`)
+	writeTestFile(t, filepath.Join(dir, "upper.olay.local.YAML"), `name: local`)
 
 	active, inactive, err := Walk(Settings{
 		SourceDirs: []string{dir},
@@ -180,18 +182,121 @@ func TestWalkYAMLStructuredFormats(t *testing.T) {
 	if len(inactive) != 0 {
 		t.Fatalf("expected no inactive groups, got %d", len(inactive))
 	}
-	if len(active) != 2 {
-		t.Fatalf("expected 2 active groups, got %d", len(active))
+	if len(active) != 3 {
+		t.Fatalf("expected 3 active groups, got %d", len(active))
 	}
 	for _, g := range active {
 		if g.Format != document.FormatYAML {
 			t.Fatalf("Format = %s, want yaml", g.Format)
 		}
 	}
-	got := []string{active[0].TargetPath, active[1].TargetPath}
-	want := []string{filepath.Join("/tmp/out", "config.yaml"), filepath.Join("/tmp/out", "theme.yml")}
+	got := []string{active[0].TargetPath, active[1].TargetPath, active[2].TargetPath}
+	want := []string{
+		filepath.Join("/tmp/out", "config.yaml"),
+		filepath.Join("/tmp/out", "theme.yml"),
+		filepath.Join("/tmp/out", "upper.YAML"),
+	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("targets = %v, want %v", got, want)
+	}
+}
+
+func TestWalkRejectsMixedYAMLExtensionSpellings(t *testing.T) {
+	tests := []struct {
+		name     string
+		files    []string
+		profiles []string
+	}{
+		{
+			name:     "aliases",
+			files:    []string{"nested/config.olay.base.yaml", "nested/config.olay.work.yml"},
+			profiles: []string{"work"},
+		},
+		{
+			name:  "case mismatch",
+			files: []string{"nested/config.olay.base.YAML", "nested/config.olay.local.yaml"},
+		},
+		{
+			name:  "inactive profile",
+			files: []string{"nested/config.olay.base.yaml", "nested/config.olay.dormant.yml"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, name := range tc.files {
+				writeTestFile(t, filepath.Join(dir, filepath.FromSlash(name)), "value: true\n")
+			}
+
+			_, _, err := Walk(Settings{
+				SourceDirs: []string{dir},
+				TargetDir:  "/tmp/out",
+				Profiles:   tc.profiles,
+				Ignore:     NoopIgnorer(),
+			})
+			if err == nil {
+				t.Fatal("expected YAML extension conflict")
+			}
+			for _, name := range tc.files {
+				if !strings.Contains(err.Error(), name) {
+					t.Errorf("error = %v, want source-relative filename %q", err, name)
+				}
+			}
+			if !strings.Contains(err.Error(), "one exact extension spelling is required") {
+				t.Errorf("error is not actionable: %v", err)
+			}
+		})
+	}
+}
+
+func TestWalkAllowsDifferentYAMLExtensionsAcrossGroupingBoundaries(t *testing.T) {
+	dir := t.TempDir()
+	first := filepath.Join(dir, "first")
+	second := filepath.Join(dir, "second")
+	writeTestFile(t, filepath.Join(first, "same", "one.olay.base.yaml"), "value: 1\n")
+	writeTestFile(t, filepath.Join(first, "same", "two.olay.base.yml"), "value: 2\n")
+	writeTestFile(t, filepath.Join(first, "left", "shared.olay.base.yaml"), "value: 3\n")
+	writeTestFile(t, filepath.Join(first, "right", "shared.olay.base.yml"), "value: 4\n")
+	writeTestFile(t, filepath.Join(first, "rooted.olay.base.YAML"), "value: 5\n")
+	writeTestFile(t, filepath.Join(second, "rooted.olay.base.yml"), "value: 6\n")
+
+	active, inactive, err := Walk(Settings{
+		SourceDirs: []string{first, second},
+		TargetDir:  "/tmp/out",
+		Ignore:     NoopIgnorer(),
+	})
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if len(active) != 6 || len(inactive) != 0 {
+		t.Fatalf("groups = active %d, inactive %d; want active 6, inactive 0", len(active), len(inactive))
+	}
+}
+
+func TestWalkFiltersIgnoredYAMLExtensionConflict(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "config.olay.base.yaml"), "value: base\n")
+	writeTestFile(t, filepath.Join(dir, "config.olay.work.yml"), "value: work\n")
+	ignorer, err := NewGlobIgnorer([]string{"config.olay.work.yml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	active, inactive, err := Walk(Settings{
+		SourceDirs: []string{dir},
+		TargetDir:  "/tmp/out",
+		Profiles:   []string{"work"},
+		Ignore:     ignorer,
+	})
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if len(active) != 1 || len(inactive) != 0 {
+		t.Fatalf("groups = active %d, inactive %d; want active 1, inactive 0", len(active), len(inactive))
+	}
+	if len(active[0].Layers) != 1 || active[0].Layers[0].Profile != ProfileBase {
+		t.Fatalf("layers = %+v, want only base", active[0].Layers)
 	}
 }
 
