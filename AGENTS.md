@@ -1,12 +1,11 @@
 ## Build and validate
 
-Use `make` — do not invoke `go build` / `go test` / `golangci-lint` directly.
-
-Run `make help` for the task list. Key tasks:
-
-- `make build` — compile to `build/overlay`.
-- `make test` — `go test -race ./...`.
-- `make check` — `fmt-check` + `tidy-check` + `lint` + `test`. **Run this before declaring work done.**
+- Use `make` — do not invoke `go build` / `go test` / `golangci-lint` directly.
+- Run `make help` to discover the task list.
+- Use these key tasks:
+  - Run `make build` to compile to `build/overlay`.
+  - Run `make test` to execute `go test -race ./...`.
+  - Run `make check` to execute `fmt-check` + `tidy-check` + `lint` + `test`. **Run this before declaring work done.**
 
 ## Conventions
 
@@ -18,4 +17,4 @@ Run `make help` for the task list. Key tasks:
 
 ## Before committing
 
-Always run `make check`. It is the single source of truth for "this is ready".
+- Always run `make check`. It is the single source of truth for "this is ready".
