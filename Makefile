@@ -22,10 +22,10 @@ test: ## Run tests with the race detector.
 	go test -race $(PKG)
 
 lint: ## Run golangci-lint.
-	golangci-lint run $(PKG)
+	go tool golangci-lint run $(PKG)
 
 lint-fix: ## Run golangci-lint with --fix.
-	golangci-lint run --fix $(PKG)
+	go tool golangci-lint run --fix $(PKG)
 
 fmt: ## Format tracked Go files.
 	@if [ -n "$(GOFMT_FILES)" ]; then gofmt -w $(GOFMT_FILES); fi
