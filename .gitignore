@@ -1,7 +1,7 @@
 # Agent scratch paths
 .claude/
 .claude-plans/
-.claude-sandbox/
+.sandbox/
 .codex-*
 
 # Local build artifacts
