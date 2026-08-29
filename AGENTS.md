@@ -11,7 +11,6 @@
 
 - The binary is built to `build/overlay`, not the repo root. `./build/` is gitignored.
 - Generated fixture output goes under `testdata/fixtures/*/.generated/`, which is gitignored.
-- Keep production `.go` files free of references to prior implementations or legacy scripts. Tests, `.sandbox/`, and `.claude-plans/` can reference them.
 
 ## Before committing
 
