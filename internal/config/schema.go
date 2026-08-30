@@ -22,7 +22,7 @@ FIELDS
 
   target = "~/"
     type:    string
-    default: (none — required)
+    default: (none - required)
     The directory where rendered files are written. A leading "~" is expanded
     to the current user's home directory; "$VAR" and "${VAR}" are expanded
     from the environment. TOML relative paths are resolved from the config
@@ -166,8 +166,8 @@ VARIABLE SUBSTITUTION
 Reference syntax. Inside substituting content, ${NAME} is replaced with the
 variable's value when NAME matches the POSIX name charset
 [A-Za-z_][A-Za-z0-9_]* AND starts with a substitute_prefixes entry. Bare
-$NAME is never substituted. Anything else — ${name:-default}, ${a.b},
-${UNLISTED_PREFIX}, $HOME — passes through byte-identical, so files full of
+$NAME is never substituted. Anything else - ${name:-default}, ${a.b},
+${UNLISTED_PREFIX}, $HOME - passes through byte-identical, so files full of
 shell or tool syntax stay untouched.
 
 Escape. $${NAME} emits a literal ${NAME}. The escape is recognized exactly
@@ -208,7 +208,7 @@ position, so re-pinning a value you already passed will not override a
 different value given in between. A pin whose name matches no
 substitute_prefixes entry can never take effect and is an error; a prefixed
 pin consumed by no target logs a warning. Pins affect content substitution
-only — never env_profiles, never $VAR expansion in target/sources paths.
+only - never env_profiles, never $VAR expansion in target/sources paths.
 
 Errors. A reference to an unset variable fails the run; a variable set to
 the empty string substitutes as empty. Render composes every target in
@@ -216,7 +216,7 @@ memory first: on failure it reports every failing target with all of its
 missing variables and writes nothing (--continue writes the clean targets
 and exits non-zero). diff exits 2 on missing variables. plan shows each
 substituting target's variables in a VARS column, marks missing ones, and
-exits non-zero — so failures are detectable from a dry run.
+exits non-zero - so failures are detectable from a dry run.
 
 CONFIG-BACKED ENVIRONMENT VARIABLES
 

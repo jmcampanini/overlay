@@ -81,7 +81,7 @@ func RenderWithOptions(w io.Writer, groups []discover.Group, profiles []string, 
 		}
 		row := []string{collapseHome(g.TargetPath), decision.Mode.String(), layerDisplay(g, decision.Mode)}
 		if substituting {
-			cell := "—"
+			cell := "-"
 			if decision.Substitute {
 				cg := render.ComposeGroup(g, mergeOptions)
 				cell = varsDisplay(cg)

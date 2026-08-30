@@ -23,7 +23,7 @@ brew upgrade --fetch-HEAD overlay
 
 ```shell
 make build
-# binary at ./build/overlay — copy or symlink onto your PATH
+# binary at ./build/overlay - copy or symlink onto your PATH
 ```
 
 ## Quick start
@@ -173,9 +173,9 @@ Targets are still discovered, composed, substituted, and written normally, but t
 
 `overlay diff` prints standard unified diff to stdout and exits:
 
-- **0** — all target files match the rendered output.
-- **1** — at least one file differs.
-- **2** — resolution, render (e.g. missing variables), or I/O error.
+- **0** - all target files match the rendered output.
+- **1** - at least one file differs.
+- **2** - resolution, render (e.g. missing variables), or I/O error.
 
 Pipe it into any diff viewer:
 
@@ -194,9 +194,9 @@ A source can stop producing a target after it is deleted, renamed, removed from 
 
 The command is read-only and performs detection only: it neither deletes files nor modifies or garbage collects the state file. It exits:
 
-- **0** — no orphans found.
-- **1** — at least one orphan found.
-- **2** — resolution, state, or I/O failure.
+- **0** - no orphans found.
+- **1** - at least one orphan found.
+- **2** - resolution, state, or I/O failure.
 
 Inspect the output before acting on it:
 
@@ -262,7 +262,7 @@ lit   = ${DOTFILES_THEME_GHOSTTY}
 home  = ${HOME}
 ```
 
-The escape `$${NAME}` emits a literal reference; `${HOME}` passes through because `HOME` matches no listed prefix — shell fragments, tmux configs, and starship syntax stay untouched. For mergeable JSON/TOML/YAML targets, substitution happens inside each parsed layer before merge, for string values and mapping keys; the final serializer quotes and escapes substituted strings safely. For append and copy targets, substitution runs once on the final composed bytes. Substituted values are never re-scanned.
+The escape `$${NAME}` emits a literal reference; `${HOME}` passes through because `HOME` matches no listed prefix - shell fragments, tmux configs, and starship syntax stay untouched. For mergeable JSON/TOML/YAML targets, substitution happens inside each parsed layer before merge, for string values and mapping keys; the final serializer quotes and escapes substituted strings safely. For append and copy targets, substitution runs once on the final composed bytes. Substituted values are never re-scanned.
 
 To exempt a whole file, list its target-relative path or a doublestar glob in `substitute_exclude` (matched like `render_rules` paths, mirroring `ignore`); an excluded target is not substituted, escapes included. As with `ignore`, a pattern with no `/` matches by base name at any depth, so `theme.sh` excludes `.config/shell/theme.sh`; add a `/` to anchor it to a specific path.
 
@@ -278,7 +278,7 @@ A reference to an unset variable fails the run **before anything is written**, n
 
 ## Notes
 
-- **JSON, TOML, and YAML keys are alphabetized on output.** This is deliberate — it keeps `overlay diff` stable and makes golden-file tests cheap. If your source files had a hand-curated key order, it will not be preserved in the merged output.
+- **JSON, TOML, and YAML keys are alphabetized on output.** This is deliberate - it keeps `overlay diff` stable and makes golden-file tests cheap. If your source files had a hand-curated key order, it will not be preserved in the merged output.
 - **YAML input and output are normalized.** YAML merge inputs must be single-document root mappings; empty/comment-only YAML layers are accepted as no-op empty maps. Rendered YAML uses deterministic block style with 2-space indentation. Comments, source formatting, and source key order are not preserved; root sequences/scalars, explicit root null, multi-document streams, non-string or complex mapping keys, aliases, and custom tags are rejected.
 - **TOML tables are unindented by default.** Set `toml_indent_tables = true` to ask the TOML encoder to indent nested tables and array-table values.
 - **Hidden directories are skipped by default.** Set `traverse_hidden = true` if you need to descend into `.foo` directories.
