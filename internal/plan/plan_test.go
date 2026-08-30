@@ -289,7 +289,7 @@ func TestRenderVarsColumn(t *testing.T) {
 		t.Errorf("error should name missing variable: %v", err)
 	}
 	out := buf.String()
-	for _, want := range []string{"VARS", "PRE_SET", "PRE_GONE (missing!)", "—"} {
+	for _, want := range []string{"VARS", "PRE_SET", "PRE_GONE (missing!)", "-"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("plan output missing %q:\n%s", want, out)
 		}

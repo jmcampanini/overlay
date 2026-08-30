@@ -66,7 +66,7 @@ func TargetRelativePath(relDir, stem, ext string, dotPrefix bool) (string, error
 
 // ExpandPath expands a leading ~ to the user's home directory and any
 // $VAR or ${VAR} sequences from the environment. Undefined environment
-// variables produce an error rather than silently expanding to "" — so
+// variables produce an error rather than silently expanding to "" - so
 // a typo in $XDG_CONIFG_HOME doesn't cause overlay to write to /foo.
 func ExpandPath(p string) (string, error) {
 	if p == "" {

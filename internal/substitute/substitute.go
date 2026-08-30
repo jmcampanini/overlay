@@ -150,7 +150,7 @@ func (r *Resolver) Apply(content []byte) ([]byte, Result) {
 			continue
 		}
 		// A ${...} that is not a matching reference passes through byte-identical,
-		// together with everything up to the brace that balances the outer "{" —
+		// together with everything up to the brace that balances the outer "{" -
 		// or to end of input if it never closes. Tracking depth means a nested
 		// reference inside an unsupported expression, whether balanced
 		// (${X:-${PRE_Y}}) or unbalanced (${BROKEN${PRE_Y}), is never substituted.

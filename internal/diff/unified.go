@@ -113,7 +113,7 @@ func diffHunks(a, b []string, context int) []hunk {
 	return hunks
 }
 
-// opIndexes returns the (aIndex, bIndex) at position `at` in ops — i.e.,
+// opIndexes returns the (aIndex, bIndex) at position `at` in ops - i.e.,
 // how many a-lines and b-lines precede the op at index `at`.
 func opIndexes(ops []op, at int) (int, int) {
 	ai, bi := 0, 0

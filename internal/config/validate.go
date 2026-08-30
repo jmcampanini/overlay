@@ -10,7 +10,7 @@ import (
 	"github.com/jmcampanini/overlay/internal/substitute"
 )
 
-// reservedProfiles cannot appear in the profiles list — they name the
+// reservedProfiles cannot appear in the profiles list - they name the
 // special base and local layers.
 var reservedProfiles = []string{"base", "local"}
 

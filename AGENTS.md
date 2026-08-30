@@ -1,6 +1,6 @@
 ## Build and validate
 
-- Use `make` — do not invoke `go build` / `go test` / `golangci-lint` directly.
+- Use `make` - do not invoke `go build` / `go test` / `golangci-lint` directly.
 - Run `make help` to discover the task list.
 - Use these key tasks:
   - Run `make build` to compile to `build/overlay`.
