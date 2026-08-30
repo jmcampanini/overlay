@@ -10,10 +10,7 @@
 ## Conventions
 
 - The binary is built to `build/overlay`, not the repo root. `./build/` is gitignored.
-- Scratch/smoke output goes under `.claude-sandbox/<scenario>/` — not `/tmp/`. This directory is auto-created and gitignored.
 - Generated fixture output goes under `testdata/fixtures/*/.generated/`, which is gitignored.
-- Keep production `.go` files free of references to prior implementations or legacy scripts. Tests, `.claude-sandbox/`, and `.claude-plans/` can reference them.
-- Skip comments in `.go` files unless explaining why a non-obvious choice was necessary.
 
 ## Before committing
 

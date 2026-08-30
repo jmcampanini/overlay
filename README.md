@@ -293,5 +293,3 @@ make test        # go test -race ./...
 make check       # fmt-check + tidy-check + lint + test
 make clean       # remove ./build, coverage files, and test cache
 ```
-
-The `.claude-sandbox/` directory is auto-created for local experiments and is gitignored.
