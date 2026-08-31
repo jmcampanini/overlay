@@ -10,7 +10,7 @@ type Config struct {
 	Sources          []string     `toml:"sources" config:"sources" pflag_singular:"source" help:"override source directories from config"`
 	Target           string       `toml:"target" config:"target" help:"override target directory from config"`
 	DotPrefix        bool         `toml:"dot_prefix"`
-	Profiles         []string     `toml:"profiles" config:"profiles" pflag_singular:"profile" help:"profile list; --profiles accepts comma-separated values"`
+	Profiles         []string     `toml:"profiles" config:"profiles" pflag_singular:"profile" help:"profile list; --profiles takes comma-separated values"`
 	EnvProfiles      []string     `toml:"env_profiles"`
 	ContinueOnError  bool         `toml:"continue_on_error" config:"continue" help:"continue past invalid source files"`
 	TOMLIndentTables bool         `toml:"toml_indent_tables"`
@@ -32,7 +32,7 @@ type Config struct {
 	// Vars pins variable values per invocation. It is deliberately not
 	// loadable from .overlay.toml: a committed pin would permanently shadow
 	// the ambient environment that substitution exists to consume.
-	Vars []string `toml:"-" config:"vars" pflag_singular:"var" help:"pin variables as NAME=value; --vars accepts comma-separated pairs"`
+	Vars []string `toml:"-" config:"vars" pflag_singular:"var" help:"pin NAME=value; --vars takes comma-separated pairs"`
 }
 
 // RenderStrategy is the user-configured rendering behavior for one target.

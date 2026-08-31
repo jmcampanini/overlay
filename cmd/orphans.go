@@ -20,7 +20,39 @@ func newOrphansCmd(flags *globalFlags) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "orphans [source...]",
 		Short: "Show rendered targets that are no longer produced by the active plan.",
-		Long:  "Compare the render state with the current active plan and print stale target\npaths. Positional sources select package roots for this run.\n" + sourceSelectionHelp + "\n" + orphansOutputHelp + "\n" + profilePrecedenceHelp,
+		Long: `Compare the render state with the current active plan and print stale target
+paths. Positional sources select package roots for this run.
+
+The state is .overlay.state.json beside the loaded config file, or in the
+current directory when no config file is loaded. It lists the targets that
+earlier renders without --no-state wrote, so a target rendered before the
+registry existed, or with --no-state, is invisible until rendered again. A
+recorded target is an orphan when the current plan no longer produces it
+and it still exists as a regular file that is not the same file as an
+active target; entries whose target is gone or is not a regular file are
+skipped. When sources are narrowed by positional arguments, --source or
+--sources, or OVERLAY_SOURCES, only entries owned by the selected sources
+are judged. Reads the config file, the state file, the source directories,
+and the recorded targets; writes nothing, never deletes a file, and never
+modifies the state. A missing state file is an error that asks you to run
+'overlay render' first; a malformed one names the file and asks you to
+delete it and render again.
+
+` + sourceSelectionHelp + `
+
+` + fileConventionHelp + `
+
+` + orphansOutputHelp + `
+
+` + streamContractHelp + `
+
+` + profilePrecedenceHelp,
+		Example: `  # review the paths before acting on them
+  overlay orphans
+  # capture JSON and keep the exit status
+  overlay orphans --json > orphans.json; status=$?
+  # judge only the entries owned by the pi source root
+  overlay orphans pi`,
 		RunE: func(command *cobra.Command, args []string) error {
 			r, err := resolve(command, flags, args...)
 			if err != nil {
