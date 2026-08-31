@@ -11,6 +11,7 @@
 
 - The binary is built to `build/overlay`, not the repo root. `./build/` is gitignored.
 - Generated fixture output goes under `testdata/fixtures/*/.generated/`, which is gitignored.
+- Command help is the canonical user-facing documentation and the README is a landing page; keep both consistent with observable behavior.
 
 ## Before committing
 
