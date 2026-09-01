@@ -278,7 +278,7 @@ func TestDiffMissingVarsErrors(t *testing.T) {
 			TargetDir:  target,
 			Ignore:     discover.NoopIgnorer(),
 		},
-		Substituter: substitute.NewResolver([]string{"PRE_"}, nil, nil),
+		Substituter: substitute.NewResolver([]string{"PRE_*"}, nil, nil),
 		Logger:      silentLogger(),
 		Out:         &buf,
 	})
@@ -305,7 +305,7 @@ func TestDiffComparesSubstitutedContent(t *testing.T) {
 				TargetDir:  target,
 				Ignore:     discover.NoopIgnorer(),
 			},
-			Substituter: substitute.NewResolver([]string{"PRE_"}, map[string]string{"PRE_BG": value}, nil),
+			Substituter: substitute.NewResolver([]string{"PRE_*"}, map[string]string{"PRE_BG": value}, nil),
 			Logger:      silentLogger(),
 			Out:         &buf,
 		})
@@ -342,7 +342,7 @@ func TestDiffContinueOnComposeFailureDiffsCleanTargets(t *testing.T) {
 			Ignore:     discover.NoopIgnorer(),
 		},
 		ContinueOnError: true,
-		Substituter:     substitute.NewResolver([]string{"PRE_"}, map[string]string{"PRE_FG": "new"}, nil),
+		Substituter:     substitute.NewResolver([]string{"PRE_*"}, map[string]string{"PRE_FG": "new"}, nil),
 		Logger:          silentLogger(),
 		Out:             &buf,
 	})

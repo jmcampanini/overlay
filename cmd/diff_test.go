@@ -52,7 +52,7 @@ func TestDiffCmdExitCodeDrift(t *testing.T) {
 }
 
 func TestDiffCmdExitCodeMissingVar(t *testing.T) {
-	cfg, _ := diffFixture(t, "substitute_prefixes = [\"PRE_\"]\n")
+	cfg, _ := diffFixture(t, "substitute = [\"PRE_*\"]\n")
 	writeFile(t, filepath.Join(filepath.Dir(cfg), "y.olay.base.conf"), "v=${PRE_MISSING}\n")
 	if got := runDiff(t, "--config", cfg); got != 2 {
 		t.Errorf("missing-var diff exit = %d, want 2", got)

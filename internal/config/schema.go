@@ -138,16 +138,17 @@ FIELDS
     normalized paths. Valid rules that do not match the current source/profile
     selection are allowed silently.
 
-  substitute_prefixes = ["DOTFILES_THM_", "DOTFILES_THEME_"]   # example
+  substitute = ["HOME", "DOTFILES_THEME_*"]   # example
     type:    array of strings
     default: []
     The variable-substitution switch. When non-empty, ${NAME} references in
     rendered output are replaced for every target (opt targets out with
-    substitute_exclude). Each entry is a literal name prefix and must match
-    [A-Za-z_][A-Za-z0-9_]*; only variables whose names start with a listed
-    prefix are ever substituted. When empty (the default), substitution is
-    fully off and output is byte-identical to prior overlay versions. See
-    VARIABLE SUBSTITUTION.
+    substitute_exclude). Each entry selects one exact variable name unless it
+    ends in "*", which selects every variable whose name starts with the part
+    before "*". The exact name or prefix must match
+    [A-Za-z_][A-Za-z0-9_]*. A bare "*" and other wildcard forms are invalid.
+    When empty (the default), substitution is fully off. See VARIABLE
+    SUBSTITUTION.
 
   substitute_exclude = [".config/shell/**"]   # example
     type:    array of strings (doublestar glob patterns)
@@ -159,20 +160,22 @@ FIELDS
     An exact path with no wildcards is a valid single-target exclusion. As
     with the ignore field, a pattern with no "/" matches by base name at any
     depth ("theme.sh" excludes ".config/shell/theme.sh"); add a "/" to anchor
-    it. With substitute_prefixes empty the list is inert.
+    it. With substitute empty the list is inert.
 
 VARIABLE SUBSTITUTION
 
 Reference syntax. Inside substituting content, ${NAME} is replaced with the
 variable's value when NAME matches the POSIX name charset
-[A-Za-z_][A-Za-z0-9_]* AND starts with a substitute_prefixes entry. Bare
-$NAME is never substituted. Anything else - ${name:-default}, ${a.b},
-${UNLISTED_PREFIX}, $HOME - passes through byte-identical, so files full of
-shell or tool syntax stay untouched.
+[A-Za-z_][A-Za-z0-9_]* AND matches a substitute selector. A selector with no
+"*" matches exactly, so HOME authorizes ${HOME} but not ${HOMEBREW_PREFIX}.
+A terminal "*" requests prefix matching, so DOTFILES_THEME_* authorizes
+${DOTFILES_THEME_BG}. Bare $NAME is never substituted. Anything else -
+${name:-default}, ${a.b}, ${UNSELECTED}, $HOME - passes through
+byte-identical, so files full of shell or tool syntax stay untouched.
 
 Escape. $${NAME} emits a literal ${NAME}. The escape is recognized exactly
 where the reference would otherwise substitute: $$ alone, shell's $$ (PID),
-and $${HOME} under a non-matching prefix all pass through unchanged. The
+and $${HOME} when HOME is not selected all pass through unchanged. The
 escape is only interpreted in substituting targets.
 
 Opting out. A whole target can be excluded from substitution by listing its
@@ -205,10 +208,10 @@ Precedence follows the profiles convention:
 --vars and OVERLAY_VARS are comma-split, so values containing commas must
 use --var. An exact duplicate NAME=value entry collapses to its first
 position, so re-pinning a value you already passed will not override a
-different value given in between. A pin whose name matches no
-substitute_prefixes entry can never take effect and is an error; a prefixed
-pin consumed by no target logs a warning. Pins affect content substitution
-only - never env_profiles, never $VAR expansion in target/sources paths.
+different value given in between. A pin whose name matches no substitute
+selector can never take effect and is an error; a selected pin consumed by no
+target logs a warning. Pins affect content substitution only - never
+env_profiles, never $VAR expansion in target/sources paths.
 
 Errors. A reference to an unset variable fails the run; a variable set to
 the empty string substitutes as empty. Render composes every target in

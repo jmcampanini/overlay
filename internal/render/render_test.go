@@ -684,7 +684,7 @@ func writeFile(t *testing.T, path, content string) {
 }
 
 func newSubstituter(pins map[string]string, environ ...string) *substitute.Resolver {
-	return substitute.NewResolver([]string{"PRE_"}, pins, environ)
+	return substitute.NewResolver([]string{"PRE_*"}, pins, environ)
 }
 
 func TestRunSubstitutesAcrossModesAndFormats(t *testing.T) {

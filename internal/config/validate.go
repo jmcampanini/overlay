@@ -35,16 +35,15 @@ func (c Config) Validate() error {
 	if err := ValidateRenderRules(c.RenderRules); err != nil {
 		return err
 	}
-	return ValidateSubstitutePrefixes(c.SubstitutePrefixes)
+	return ValidateSubstitute(c.Substitute)
 }
 
-// ValidateSubstitutePrefixes checks that every prefix entry is a non-empty
-// POSIX-shaped name fragment. An empty entry would match every variable,
-// silently turning prefix gating into substitute-everything.
-func ValidateSubstitutePrefixes(prefixes []string) error {
-	for i, p := range prefixes {
-		if !substitute.ValidName(p) {
-			return fmt.Errorf("substitute_prefixes[%d] %q must match [A-Za-z_][A-Za-z0-9_]*", i, p)
+// ValidateSubstitute checks that every selector is an exact POSIX-shaped
+// variable name or one followed by a terminal "*" for prefix matching.
+func ValidateSubstitute(selectors []string) error {
+	for i, selector := range selectors {
+		if !substitute.ValidSelector(selector) {
+			return fmt.Errorf("substitute[%d] %q must be a variable name or a non-empty variable name prefix followed by '*'", i, selector)
 		}
 	}
 	return nil

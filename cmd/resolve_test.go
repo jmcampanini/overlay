@@ -1057,7 +1057,7 @@ func TestResolveVarFlagsLastWins(t *testing.T) {
 	t.Chdir(dir)
 	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
 target = "/tmp/out"
-substitute_prefixes = ["OVERLAYTEST_"]
+substitute = ["OVERLAYTEST_*"]
 `)
 	cmd, g := setupCmd(t, []string{"--var", "OVERLAYTEST_A=1", "--var", "OVERLAYTEST_A=2"})
 	r, err := resolve(cmd, g)
@@ -1075,7 +1075,7 @@ func TestResolveVarsCommaSplitAndSingularWins(t *testing.T) {
 	t.Chdir(dir)
 	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
 target = "/tmp/out"
-substitute_prefixes = ["OVERLAYTEST_"]
+substitute = ["OVERLAYTEST_*"]
 `)
 	cmd, g := setupCmd(t, []string{"--vars", "OVERLAYTEST_A=1,OVERLAYTEST_B=2", "--var", "OVERLAYTEST_A=3"})
 	r, err := resolve(cmd, g)
@@ -1093,7 +1093,7 @@ func TestResolveVarsEnvLoadsAndIsReplacedByFlags(t *testing.T) {
 	t.Chdir(dir)
 	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
 target = "/tmp/out"
-substitute_prefixes = ["OVERLAYTEST_"]
+substitute = ["OVERLAYTEST_*"]
 `)
 	t.Setenv("OVERLAY_VARS", "OVERLAYTEST_A=env")
 
@@ -1134,17 +1134,17 @@ func TestResolveDeadPinErrors(t *testing.T) {
 	t.Chdir(dir)
 	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
 target = "/tmp/out"
-substitute_prefixes = ["OVERLAYTEST_"]
+substitute = ["HOME"]
 `)
-	cmd, g := setupCmd(t, []string{"--var", "OTHERPREFIX_A=1"})
-	if _, err := resolve(cmd, g); err == nil || !strings.Contains(err.Error(), "substitute_prefixes") {
+	cmd, g := setupCmd(t, []string{"--var", "HOMEBREW_PREFIX=/brew"})
+	if _, err := resolve(cmd, g); err == nil || !strings.Contains(err.Error(), "substitute") {
 		t.Fatalf("dead pin should error, got: %v", err)
 	}
 
 	writeFile(t, filepath.Join(dir, ".overlay.toml"), "target = \"/tmp/out\"\n")
 	cmd, g = setupCmd(t, []string{"--var", "OVERLAYTEST_A=1"})
 	if _, err := resolve(cmd, g); err == nil || !strings.Contains(err.Error(), "none configured") {
-		t.Fatalf("pin with no prefixes configured should error, got: %v", err)
+		t.Fatalf("pin with no selectors configured should error, got: %v", err)
 	}
 }
 
@@ -1153,7 +1153,7 @@ func TestResolveMalformedPinErrors(t *testing.T) {
 	t.Chdir(dir)
 	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
 target = "/tmp/out"
-substitute_prefixes = ["OVERLAYTEST_"]
+substitute = ["OVERLAYTEST_*"]
 `)
 	for _, pin := range []string{"NOEQUALS", "1BAD=x"} {
 		cmd, g := setupCmd(t, []string{"--var", pin})
@@ -1169,7 +1169,7 @@ func TestResolvePinsDoNotAffectPathsOrEnvProfiles(t *testing.T) {
 	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
 target = "$OVERLAYTEST_TGT"
 env_profiles = ["OVERLAYTEST_PROFILES"]
-substitute_prefixes = ["OVERLAYTEST_"]
+substitute = ["OVERLAYTEST_*"]
 `)
 	t.Setenv("OVERLAYTEST_TGT", "/env/target")
 	t.Setenv("OVERLAYTEST_PROFILES", "envprof")
@@ -1194,7 +1194,7 @@ func TestResolveBuildsSubstituter(t *testing.T) {
 	t.Chdir(dir)
 	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
 target = "/tmp/out"
-substitute_prefixes = ["OVERLAYTEST_"]
+substitute = ["OVERLAYTEST_AMBIENT"]
 `)
 	t.Setenv("OVERLAYTEST_AMBIENT", "fromenv")
 	cmd, g := setupCmd(t, []string{"--var", "OVERLAYTEST_AMBIENT=frompin"})
@@ -1203,7 +1203,7 @@ substitute_prefixes = ["OVERLAYTEST_"]
 		t.Fatal(err)
 	}
 	if !r.Substituter.Enabled() {
-		t.Fatal("substituter should be enabled with prefixes configured")
+		t.Fatal("substituter should be enabled with selectors configured")
 	}
 	out, res := r.Substituter.Apply([]byte("${OVERLAYTEST_AMBIENT}"))
 	if string(out) != "frompin" {
@@ -1220,7 +1220,7 @@ substitute_prefixes = ["OVERLAYTEST_"]
 		t.Fatal(err)
 	}
 	if r.Substituter.Enabled() {
-		t.Error("substituter should be disabled without prefixes")
+		t.Error("substituter should be disabled without selectors")
 	}
 }
 
@@ -1230,7 +1230,7 @@ func TestPrintConfigVarsProvenanceWithoutTomlEcho(t *testing.T) {
 	cfgPath := filepath.Join(dir, ".overlay.toml")
 	writeFile(t, cfgPath, `
 target = "/tmp/out"
-substitute_prefixes = ["OVERLAYTEST_"]
+substitute = ["OVERLAYTEST_*"]
 `)
 	cmd, g := setupCmd(t, []string{"--config", cfgPath, "--var", "OVERLAYTEST_A=1"})
 	raw, err := loadRawConfig(cmd, g)
@@ -1243,8 +1243,8 @@ substitute_prefixes = ["OVERLAYTEST_"]
 	}
 	out := buf.String()
 	assertProvenanceRow(t, out, "vars", `["OVERLAYTEST_A=1"]`, pflagloader.SourcePFlag)
-	if !strings.Contains(out, `substitute_prefixes = ["OVERLAYTEST_"]`) {
-		t.Errorf("substitute_prefixes missing from raw TOML echo:\n%s", out)
+	if !strings.Contains(out, `substitute = ["OVERLAYTEST_*"]`) {
+		t.Errorf("substitute missing from raw TOML echo:\n%s", out)
 	}
 	for _, line := range strings.Split(out, "\n") {
 		if strings.HasPrefix(line, "vars") {
@@ -1258,7 +1258,7 @@ func TestResolveVarsEnvMultiplePairs(t *testing.T) {
 	t.Chdir(dir)
 	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
 target = "/tmp/out"
-substitute_prefixes = ["OVERLAYTEST_"]
+substitute = ["OVERLAYTEST_*"]
 `)
 	t.Setenv("OVERLAY_VARS", "OVERLAYTEST_A=1,OVERLAYTEST_B=2")
 	cmd, g := setupCmd(t, nil)
@@ -1278,7 +1278,7 @@ func TestPrintConfigEchoesSubstituteExclude(t *testing.T) {
 	cfgPath := filepath.Join(dir, ".overlay.toml")
 	writeFile(t, cfgPath, `
 target = "/tmp/out"
-substitute_prefixes = ["OVERLAYTEST_"]
+substitute = ["OVERLAYTEST_*"]
 substitute_exclude = [".config/shell/**"]
 
 [[render_rules]]
@@ -1305,7 +1305,7 @@ func TestResolveRejectsBadSubstituteExcludeGlob(t *testing.T) {
 	t.Chdir(dir)
 	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
 target = "/tmp/out"
-substitute_prefixes = ["OVERLAYTEST_"]
+substitute = ["OVERLAYTEST_*"]
 substitute_exclude = ["[unterminated"]
 `)
 	cmd, g := setupCmd(t, nil)
@@ -1319,7 +1319,7 @@ func TestResolveSubstituteExcludeBuildsMatcher(t *testing.T) {
 	t.Chdir(dir)
 	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
 target = "/tmp/out"
-substitute_prefixes = ["OVERLAYTEST_"]
+substitute = ["OVERLAYTEST_*"]
 substitute_exclude = [".config/shell/**"]
 `)
 	cmd, g := setupCmd(t, nil)
@@ -1343,7 +1343,7 @@ func TestResolveNoSubstituteExcludeMatchesNothing(t *testing.T) {
 	t.Chdir(dir)
 	writeFile(t, filepath.Join(dir, ".overlay.toml"), `
 target = "/tmp/out"
-substitute_prefixes = ["OVERLAYTEST_"]
+substitute = ["OVERLAYTEST_*"]
 `)
 	cmd, g := setupCmd(t, nil)
 	r, err := resolve(cmd, g)

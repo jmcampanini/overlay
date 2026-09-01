@@ -277,7 +277,7 @@ func TestRenderVarsColumn(t *testing.T) {
 		t.Fatal(err)
 	}
 	opts := Options{
-		Substituter:       substitute.NewResolver([]string{"PRE_"}, map[string]string{"PRE_SET": "v"}, nil),
+		Substituter:       substitute.NewResolver([]string{"PRE_*"}, map[string]string{"PRE_SET": "v"}, nil),
 		SubstituteExclude: exclude,
 	}
 	var buf bytes.Buffer
@@ -311,7 +311,7 @@ func TestRenderVarsColumnAllResolved(t *testing.T) {
 			Layers:        []discover.Layer{{Profile: "base", Path: layer}},
 		},
 	}
-	opts := Options{Substituter: substitute.NewResolver([]string{"PRE_"}, map[string]string{"PRE_SET": "v"}, nil)}
+	opts := Options{Substituter: substitute.NewResolver([]string{"PRE_*"}, map[string]string{"PRE_SET": "v"}, nil)}
 	var buf bytes.Buffer
 	if err := RenderWithOptions(&buf, groups, nil, []string{"./src"}, "/tmp/out", opts); err != nil {
 		t.Fatalf("all vars resolved, plan should succeed: %v", err)
@@ -336,7 +336,7 @@ func TestRenderVarsColumnComposeError(t *testing.T) {
 			Layers:        []discover.Layer{{Profile: "base", Path: layer}},
 		},
 	}
-	opts := Options{Substituter: substitute.NewResolver([]string{"PRE_"}, nil, nil)}
+	opts := Options{Substituter: substitute.NewResolver([]string{"PRE_*"}, nil, nil)}
 	var buf bytes.Buffer
 	err := RenderWithOptions(&buf, groups, nil, []string{"./src"}, "/tmp/out", opts)
 	if err == nil {

@@ -20,6 +20,21 @@ func TestValidName(t *testing.T) {
 	}
 }
 
+func TestValidSelector(t *testing.T) {
+	valid := []string{"HOME", "_", "DOTFILES_THEME_*", "A1*"}
+	invalid := []string{"", "*", "HOME**", "HOME*BREW", "HOME?", "1HOME", "A-B"}
+	for _, selector := range valid {
+		if !ValidSelector(selector) {
+			t.Errorf("ValidSelector(%q) = false, want true", selector)
+		}
+	}
+	for _, selector := range invalid {
+		if ValidSelector(selector) {
+			t.Errorf("ValidSelector(%q) = true, want false", selector)
+		}
+	}
+}
+
 func TestParsePins(t *testing.T) {
 	pins, err := ParsePins([]string{"A=1", "B=", "C=x=y", "A=2"})
 	if err != nil {
@@ -40,23 +55,43 @@ func TestParsePinsErrors(t *testing.T) {
 }
 
 func TestDeadPins(t *testing.T) {
-	pins := map[string]string{"PRE_A": "1", "OTHER": "2", "PRE_B": "3"}
-	if got := DeadPins(pins, []string{"PRE_"}); !reflect.DeepEqual(got, []string{"OTHER"}) {
-		t.Errorf("DeadPins = %v, want [OTHER]", got)
+	pins := map[string]string{"HOME": "1", "HOMEBREW_PREFIX": "2", "PRE_A": "3", "OTHER": "4"}
+	if got := DeadPins(pins, []string{"HOME", "PRE_*"}); !reflect.DeepEqual(got, []string{"HOMEBREW_PREFIX", "OTHER"}) {
+		t.Errorf("DeadPins = %v, want [HOMEBREW_PREFIX OTHER]", got)
 	}
 	got := DeadPins(pins, nil)
-	want := []string{"OTHER", "PRE_A", "PRE_B"}
+	want := []string{"HOME", "HOMEBREW_PREFIX", "OTHER", "PRE_A"}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("DeadPins(no prefixes) = %v, want %v", got, want)
+		t.Errorf("DeadPins(no selectors) = %v, want %v", got, want)
 	}
 }
 
 func newTestResolver() *Resolver {
 	return NewResolver(
-		[]string{"PRE_"},
+		[]string{"PRE_*"},
 		map[string]string{"PRE_PINNED": "pinned", "PRE_SHADOWED": "frompin", "PRE_UNUSED": "z"},
 		[]string{"PRE_ENV=fromenv", "PRE_SHADOWED=fromenv", "PRE_EMPTY=", "HOME=/home/u"},
 	)
+}
+
+func TestApplyExactAndPrefixSelectors(t *testing.T) {
+	r := NewResolver(
+		[]string{"HOME", "DOTFILES_THEME_*"},
+		nil,
+		[]string{"HOME=/home/u", "HOMEBREW_PREFIX=/brew", "DOTFILES_THEME_BG=dark"},
+	)
+
+	out, result := r.Apply([]byte("${HOME}|${HOMEBREW_PREFIX}|${DOTFILES_THEME_BG}"))
+
+	if got, want := string(out), "/home/u|${HOMEBREW_PREFIX}|dark"; got != want {
+		t.Errorf("Apply() output = %q, want %q", got, want)
+	}
+	if want := []string{"DOTFILES_THEME_BG", "HOME"}; !reflect.DeepEqual(result.Consumed, want) {
+		t.Errorf("Apply() consumed = %v, want %v", result.Consumed, want)
+	}
+	if result.Missing != nil {
+		t.Errorf("Apply() missing = %v, want nil", result.Missing)
+	}
 }
 
 func TestApplySubstitution(t *testing.T) {
@@ -113,7 +148,7 @@ func TestApplySubstitution(t *testing.T) {
 }
 
 func TestApplyValueNeverRescanned(t *testing.T) {
-	r := NewResolver([]string{"PRE_"}, map[string]string{"PRE_A": "${PRE_B}"}, []string{"PRE_B=resolved"})
+	r := NewResolver([]string{"PRE_*"}, map[string]string{"PRE_A": "${PRE_B}"}, []string{"PRE_B=resolved"})
 	out, res := r.Apply([]byte("${PRE_A}"))
 	if string(out) != "${PRE_B}" {
 		t.Errorf("output = %q, want literal ${PRE_B}", out)
@@ -126,7 +161,7 @@ func TestApplyValueNeverRescanned(t *testing.T) {
 func TestApplyDisabledResolver(t *testing.T) {
 	r := NewResolver(nil, nil, []string{"PRE_ENV=v"})
 	if r.Enabled() {
-		t.Fatal("resolver with no prefixes should be disabled")
+		t.Fatal("resolver with no selectors should be disabled")
 	}
 	in := "x=${PRE_ENV} y=$${PRE_ENV}"
 	out, res := r.Apply([]byte(in))

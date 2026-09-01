@@ -1,4 +1,4 @@
-// Package substitute implements prefix-gated ${NAME} variable substitution
+// Package substitute implements selector-gated ${NAME} variable substitution
 // over composed render output, with $$-doubling as the literal escape.
 package substitute
 
@@ -31,6 +31,16 @@ func ValidName(s string) bool {
 	return true
 }
 
+// ValidSelector reports whether s is a valid exact variable name or a valid
+// variable name prefix followed by "*". A bare "*" is invalid.
+func ValidSelector(s string) bool {
+	prefix, isPrefix := strings.CutSuffix(s, "*")
+	if isPrefix {
+		return ValidName(prefix)
+	}
+	return ValidName(s)
+}
+
 // ParsePins parses repeated NAME=value entries into a pin map. Later entries
 // overwrite earlier ones. NAME= pins the empty string; a missing '=' or an
 // invalid name is an error.
@@ -49,12 +59,12 @@ func ParsePins(entries []string) (map[string]string, error) {
 	return pins, nil
 }
 
-// DeadPins returns the sorted pin names that match no configured prefix and
+// DeadPins returns the sorted pin names that match no configured selector and
 // therefore can never be referenced by any target.
-func DeadPins(pins map[string]string, prefixes []string) []string {
+func DeadPins(pins map[string]string, selectors []string) []string {
 	var dead []string
 	for name := range pins {
-		if !matchesPrefix(name, prefixes) {
+		if !matchesSelector(name, selectors) {
 			dead = append(dead, name)
 		}
 	}
@@ -70,21 +80,21 @@ type Result struct {
 	Missing  []string
 }
 
-// Resolver substitutes prefix-gated ${NAME} references using a single
+// Resolver substitutes selector-gated ${NAME} references using a single
 // environment snapshot overlaid with pins. It accumulates consumed names
 // across Apply calls so unused pins can be reported once per invocation.
 // Not safe for concurrent use.
 type Resolver struct {
-	prefixes []string
-	values   map[string]string
-	pins     map[string]string
-	consumed map[string]struct{}
+	selectors []string
+	values    map[string]string
+	pins      map[string]string
+	consumed  map[string]struct{}
 }
 
 // NewResolver snapshots environ (in "K=V" form, as returned by os.Environ)
 // and overlays pins on top, so pinned values win over the ambient
 // environment.
-func NewResolver(prefixes []string, pins map[string]string, environ []string) *Resolver {
+func NewResolver(selectors []string, pins map[string]string, environ []string) *Resolver {
 	values := make(map[string]string, len(environ)+len(pins))
 	for _, kv := range environ {
 		if k, v, ok := strings.Cut(kv, "="); ok {
@@ -95,17 +105,17 @@ func NewResolver(prefixes []string, pins map[string]string, environ []string) *R
 		values[k] = v
 	}
 	return &Resolver{
-		prefixes: slices.Clone(prefixes),
-		values:   values,
-		pins:     maps.Clone(pins),
-		consumed: make(map[string]struct{}),
+		selectors: slices.Clone(selectors),
+		values:    values,
+		pins:      maps.Clone(pins),
+		consumed:  make(map[string]struct{}),
 	}
 }
 
-// Enabled reports whether substitution is on: a non-empty prefix list is the
+// Enabled reports whether substitution is on: a non-empty selector list is the
 // feature's global switch.
 func (r *Resolver) Enabled() bool {
-	return r != nil && len(r.prefixes) > 0
+	return r != nil && len(r.selectors) > 0
 }
 
 // Apply substitutes references in one target's composed content with a single
@@ -129,7 +139,7 @@ func (r *Resolver) Apply(content []byte) ([]byte, Result) {
 			continue
 		}
 		if i+1 < len(content) && content[i+1] == '$' {
-			if name, end, ok := matchReference(content, i+2); ok && matchesPrefix(name, r.prefixes) {
+			if name, end, ok := matchReference(content, i+2); ok && matchesSelector(name, r.selectors) {
 				out = append(out, content[i+1:end]...)
 				i = end
 				continue
@@ -138,7 +148,7 @@ func (r *Resolver) Apply(content []byte) ([]byte, Result) {
 			i++
 			continue
 		}
-		if name, end, ok := matchReference(content, i+1); ok && matchesPrefix(name, r.prefixes) {
+		if name, end, ok := matchReference(content, i+1); ok && matchesSelector(name, r.selectors) {
 			consumed[name] = struct{}{}
 			r.consumed[name] = struct{}{}
 			if value, found := r.values[name]; found {
@@ -212,9 +222,15 @@ func matchReference(content []byte, j int) (string, int, bool) {
 	return name, k + 1, true
 }
 
-func matchesPrefix(name string, prefixes []string) bool {
-	for _, p := range prefixes {
-		if strings.HasPrefix(name, p) {
+func matchesSelector(name string, selectors []string) bool {
+	for _, selector := range selectors {
+		if prefix, isPrefix := strings.CutSuffix(selector, "*"); isPrefix {
+			if strings.HasPrefix(name, prefix) {
+				return true
+			}
+			continue
+		}
+		if name == selector {
 			return true
 		}
 	}

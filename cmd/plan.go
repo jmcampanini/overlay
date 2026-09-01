@@ -21,7 +21,7 @@ The table goes to stdout between an 'Active profiles:' and 'Sources:'
 header and an 'N files will be generated' summary, with paths under the
 home directory shortened to ~. Columns are TARGET, MODE (merge, copy, or
 append), LAYERS (the active layers in order, with '(winner: NAME)' for
-copy), and, when substitute_prefixes is set, VARS listing each
+copy), and, when substitute is set, VARS listing each
 substituting target's variables with unset ones marked '(missing!)'. The
 header row is bold and the table keeps its ANSI escapes even when stdout
 is not a terminal or NO_COLOR is set. Substituting targets are composed in
