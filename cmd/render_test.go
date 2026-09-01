@@ -77,3 +77,31 @@ func TestRenderCmdNoStateWritesTargetWithoutCreatingSidecar(t *testing.T) {
 		t.Fatalf("state sidecar must remain absent, stat error = %v", err)
 	}
 }
+
+func TestRenderCmdUsesExactAndPrefixSubstituteSelectors(t *testing.T) {
+	for _, key := range []string{"OVERLAY_SOURCES", "OVERLAY_TARGET", "OVERLAY_PROFILES"} {
+		unsetEnv(t, key)
+	}
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".overlay.toml")
+	target := filepath.Join(dir, "target")
+	writeFile(t, configPath, "sources = [\"source\"]\ntarget = \""+target+"\"\nsubstitute = [\"HOME\", \"DOTFILES_THEME_*\"]\n")
+	writeFile(t, filepath.Join(dir, "source", "settings.olay.base.conf"), "home=${HOME}\nbrew=${HOMEBREW_PREFIX}\ntheme=${DOTFILES_THEME_BG}\n")
+	t.Setenv("HOME", "/portable/home")
+	t.Setenv("HOMEBREW_PREFIX", "/brew")
+	t.Setenv("DOTFILES_THEME_BG", "dark")
+
+	result := runRoot(t, "render", "--no-state", "--config", configPath)
+
+	if result.code != 0 {
+		t.Fatalf("render exit = %d, want 0; stderr:\n%s", result.code, result.stderr)
+	}
+	contents, err := os.ReadFile(filepath.Join(target, "settings.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "home=/portable/home\nbrew=${HOMEBREW_PREFIX}\ntheme=dark\n"
+	if string(contents) != want {
+		t.Errorf("target = %q, want %q", contents, want)
+	}
+}

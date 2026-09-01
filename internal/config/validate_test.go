@@ -169,7 +169,7 @@ func TestValidateRenderRulesValid(t *testing.T) {
 	path := filepath.Join(dir, ".overlay.toml")
 	writeFile(t, path, `
 target = "~/"
-substitute_prefixes = ["DOTFILES_THM_", "DOTFILES_THEME_"]
+substitute = ["HOME", "DOTFILES_THEME_*"]
 substitute_exclude = [".config/shell/**", ".config/fzf/.fzfrc"]
 
 [[render_rules]]
@@ -185,13 +185,13 @@ strategy = "copy"
 	}
 }
 
-func TestValidateSubstitutePrefixes(t *testing.T) {
-	if err := ValidateSubstitutePrefixes([]string{"DOTFILES_", "_X", "A1"}); err != nil {
-		t.Errorf("expected valid prefixes, got: %v", err)
+func TestValidateSubstitute(t *testing.T) {
+	if err := ValidateSubstitute([]string{"HOME", "DOTFILES_*", "_X", "A1*"}); err != nil {
+		t.Errorf("expected valid selectors, got: %v", err)
 	}
-	for _, p := range []string{"", " ", "1A", "A-B", "A.B"} {
-		if err := ValidateSubstitutePrefixes([]string{p}); err == nil {
-			t.Errorf("prefix %q: expected error", p)
+	for _, selector := range []string{"", " ", "*", "HOME**", "HOME*BREW", "HOME?", "1A", "A-B", "A.B"} {
+		if err := ValidateSubstitute([]string{selector}); err == nil {
+			t.Errorf("selector %q: expected error", selector)
 		}
 	}
 }

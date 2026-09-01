@@ -107,11 +107,12 @@ is blank or padded with whitespace is an error.`
 // always visible in --help output.
 const varsPrecedenceHelp = `Variable substitution:
 
-  When .overlay.toml sets substitute_prefixes, ${NAME} references whose names
-  match a listed prefix are replaced. Mergeable JSON/TOML/YAML layers
-  substitute string values and mapping keys before merge; copy and append
-  targets substitute final bytes. Values resolve with this precedence, highest
-  to lowest:
+  When .overlay.toml sets substitute, ${NAME} references whose names match an
+  exact selector or a selector ending in '*' are replaced. A terminal '*'
+  requests prefix matching; a bare '*' is invalid. Mergeable JSON/TOML/YAML
+  layers substitute string values and mapping keys before merge; copy and
+  append targets substitute final bytes. Values resolve with this precedence,
+  highest to lowest:
 
     1. --vars A=1,B=2 then repeated --var NAME=value (later wins per name)
     2. OVERLAY_VARS=A=1,B=2 (fully replaced when any vars flag is set)
@@ -120,14 +121,14 @@ const varsPrecedenceHelp = `Variable substitution:
   --vars and OVERLAY_VARS are comma-split; values containing commas must use
   --var. An exact duplicate NAME=value collapses to its first position, so
   re-pinning a value passed earlier will not override a different value given
-  in between. Pins whose names match no configured prefix are errors. A
+  in between. Pins whose names match no configured selector are errors. A
   reference to an unset variable fails the run before anything is written;
   write $${NAME} to emit a literal ${NAME}. See 'overlay docs' for the full
   reference.
 
-  With substitute_prefixes unset, substitution is off and ${...} text renders
+  With substitute unset, substitution is off and ${...} text renders
   unchanged. There is no vars key in .overlay.toml. A reference whose name
-  matches no listed prefix, such as ${HOME}, passes through unchanged, and a
+  matches no selector passes through unchanged, and a
   substituted value is never re-scanned. A target whose target-relative path
   matches a substitute_exclude pattern is not substituted, escapes included;
   as with ignore, a pattern with no '/' matches by base name at any depth.
@@ -174,7 +175,7 @@ const configPrecedenceHelp = `Configuration precedence:
   --target, --profiles/--profile, --continue, and --vars/--var, which every
   command accepts (docs ignores them). dot_prefix, env_profiles,
   toml_indent_tables, ignore, traverse_hidden, respect_gitignore,
-  render_rules, substitute_prefixes, and substitute_exclude are read only
+  render_rules, substitute, and substitute_exclude are read only
   from the file; an OVERLAY_ variable for one of them is ignored. An unknown
   key in the file, including vars, is an error. target must be set by the
   file, the environment, or --target for every command except docs and the

@@ -19,14 +19,14 @@ type Config struct {
 	RespectGitignore bool         `toml:"respect_gitignore"`
 	RenderRules      []RenderRule `toml:"render_rules"`
 
-	// SubstitutePrefixes is the variable-substitution switch: a non-empty
-	// list enables substitution, for every target, of ${NAME} references
-	// whose variable names start with one of these prefixes.
-	SubstitutePrefixes []string `toml:"substitute_prefixes"`
+	// Substitute is the variable-substitution switch: a non-empty list enables
+	// substitution, for every target, of ${NAME} references whose variable
+	// names match an exact-name or terminal-wildcard selector.
+	Substitute []string `toml:"substitute"`
 
 	// SubstituteExclude opts targets out of substitution by doublestar glob,
 	// matched against the rendered target-relative path. It is the inverse of
-	// the substitute_prefixes switch and mirrors the ignore field.
+	// the substitute switch and mirrors the ignore field.
 	SubstituteExclude []string `toml:"substitute_exclude"`
 
 	// Vars pins variable values per invocation. It is deliberately not

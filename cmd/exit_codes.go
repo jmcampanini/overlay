@@ -26,7 +26,7 @@ exit status, so they use 2 for failures; every other command uses 1.
      or flag), a --config file that cannot be loaded, an invalid
      .overlay.toml (an unknown key, a bad value, an invalid render_rules,
      ignore, or substitute_exclude entry, a reserved profile name, a
-     missing target), a pin matching no substitute_prefixes entry, for
+     missing target), a pin matching no substitute selector, for
      'plan' a discovery error or a substituting target with missing
      variables or that cannot compose, and for 'render' a discovery
      error, a layer that cannot be parsed, a missing variable, a target
