@@ -260,5 +260,5 @@ func validateEntries(entries []Entry) error {
 }
 
 func invalidError(path string, err error) error {
-	return fmt.Errorf("invalid state file %q: %v; delete it and re-run overlay render to establish a baseline", path, err)
+	return fmt.Errorf("invalid state file %q: %w; delete it and re-run overlay render to establish a baseline", path, err)
 }

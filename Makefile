@@ -1,12 +1,11 @@
-.PHONY: help build test lint lint-fix fmt fmt-check tidy tidy-check vuln check clean
+.PHONY: help build test lint lint-fix fmt fmt-check tidy tidy-check version-check vuln check clean
 
 BUILD_DIR   := build
 BINARY      := $(BUILD_DIR)/overlay
 CMD         := .
 PKG         := ./...
-GOFMT_FILES := $(shell git ls-files --cached --others --exclude-standard '*.go' | while IFS= read -r file; do [ -f "$$file" ] && printf '%s\n' "$$file"; done)
 
-VERSION := $(shell git describe --tags --dirty --always 2>/dev/null || date -u '+%Y-%m-%dT%H:%M:%SZ')
+VERSION := $(shell git describe --tags --dirty --always 2>/dev/null || printf 'unknown')
 LDFLAGS := -ldflags "-X github.com/jmcampanini/overlay/cmd.Version=$(VERSION)"
 
 .DEFAULT_GOAL := help
@@ -16,10 +15,10 @@ help: ## Show this help.
 
 build: ## Build overlay into ./build/overlay.
 	@mkdir -p $(BUILD_DIR)
-	go build $(LDFLAGS) -o $(BINARY) $(CMD)
+	go build -trimpath -buildvcs=false $(LDFLAGS) -o $(BINARY) $(CMD)
 
-test: ## Run tests with the race detector.
-	go test -race $(PKG)
+test: ## Run all tests uncached with the race detector.
+	go test -count=1 -race $(PKG)
 
 lint: ## Run golangci-lint.
 	go tool golangci-lint run $(PKG)
@@ -27,17 +26,11 @@ lint: ## Run golangci-lint.
 lint-fix: ## Run golangci-lint with --fix.
 	go tool golangci-lint run --fix $(PKG)
 
-fmt: ## Format tracked Go files.
-	@if [ -n "$(GOFMT_FILES)" ]; then gofmt -w $(GOFMT_FILES); fi
+fmt: ## Format Go source files.
+	go tool golangci-lint fmt
 
-fmt-check: ## Fail if tracked Go files need gofmt.
-	@files="$$(gofmt -l $(GOFMT_FILES))"; \
-	if [ -n "$$files" ]; then \
-		echo "gofmt needed:"; \
-		echo "$$files"; \
-		echo "Run: make fmt"; \
-		exit 1; \
-	fi
+fmt-check: ## Verify formatting without changing files.
+	go tool golangci-lint fmt --diff
 
 tidy: ## Apply go mod tidy.
 	go mod tidy
@@ -48,10 +41,18 @@ tidy-check: ## Fail if go mod tidy would change go.mod/go.sum.
 	if [ -n "$$out" ]; then echo "$$out"; echo "go mod tidy would change go.mod/go.sum"; exit 1; fi; \
 	echo "go mod tidy failed (rc=$$rc)"; exit $$rc
 
+version-check: build ## Verify the built binary reports the injected version.
+	@case "$(VERSION)" in unknown|n/a|"") echo "degenerate version identity: '$(VERSION)'"; exit 1;; esac
+	@out="$$($(BINARY) --version)" || exit $$?; \
+	if [ "$$out" != "overlay version $(VERSION)" ]; then \
+		echo "version mismatch: got '$$out', want 'overlay version $(VERSION)'"; \
+		exit 1; \
+	fi
+
 vuln: ## Check dependencies and reachable code for known vulnerabilities.
 	go tool govulncheck ./...
 
-check: fmt-check tidy-check lint test vuln ## Run all non-mutating checks.
+check: fmt-check tidy-check lint test build version-check vuln ## Run the complete local verification contract.
 
 clean: ## Remove build artifacts, coverage files, and test cache.
 	rm -rf $(BUILD_DIR) out dist coverage.out coverage.html *.coverprofile
