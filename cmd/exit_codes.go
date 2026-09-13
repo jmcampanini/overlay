@@ -16,8 +16,8 @@ exit status, so they use 2 for failures; every other command uses 1.
      printed the reference. --help, --version, a bare 'overlay', and this
      topic also exit 0. A configured source directory that does not exist
      and a group with no active layer are skipped with a log line, not a
-     failure. 'overlay help NAME' with an unknown NAME prints 'Unknown
-     help topic' and the root usage on stderr and still exits 0.
+     failure. 'overlay help NAME' with an unknown NAME prints the root
+     help on stdout and still exits 0.
   1  'diff': at least one target differs from its rendered output.
      'orphans': at least one orphan was found. Both print the result on
      stdout and nothing about it on stderr; --json does not change the

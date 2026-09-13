@@ -62,7 +62,7 @@ Then `pi/dot-pi/agent/models.olay.base.json` renders to `~/.pi/agent/models.json
 | `overlay diff [source...]` | Print a unified diff between rendered output and the current target files; exit 1 on drift. |
 | `overlay render [source...]` | Write the rendered files and record them in `.overlay.state.json`. |
 | `overlay render --no-state` | Write the files without reading or updating the ownership state. |
-| `overlay orphans [--json]` | List targets an earlier render wrote that the current plan no longer produces; exit 1 when any exist. |
+| `overlay orphans [source...] [--json]` | List targets an earlier render wrote that the current plan no longer produces; exit 1 when any exist. |
 | `overlay config [--validate PATH]` | Print the effective configuration with provenance, or validate one file. |
 | `overlay docs` | Print the `.overlay.toml` schema reference. |
 
