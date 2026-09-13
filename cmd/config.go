@@ -1,10 +1,6 @@
 package cmd
 
-import (
-	"os"
-
-	"github.com/spf13/cobra"
-)
+import "github.com/spf13/cobra"
 
 func newConfigCmd(flags *globalFlags) *cobra.Command {
 	var validatePath string
@@ -47,11 +43,12 @@ as 'field: message' lines after 'overlay:' on stderr. --validate ignores
 --config and prints nothing on success.
 
 For the full schema reference with field descriptions, run: overlay docs`,
+		Args: cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			if validatePath != "" {
 				return runConfigValidate(command, validatePath)
 			}
-			return printLoadedConfig(command, flags, os.Stdout)
+			return printLoadedConfig(command, flags, command.OutOrStdout())
 		},
 	}
 	cmd.Flags().StringVar(&validatePath, "validate", "", "validate PATH as effective runtime config and exit")

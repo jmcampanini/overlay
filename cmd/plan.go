@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"os"
-
 	"github.com/spf13/cobra"
 
 	"github.com/jmcampanini/overlay/internal/discover"
@@ -42,6 +40,7 @@ error names every failing target); --continue does not change that.
 ` + mergeSemanticsHelp + `
 
 ` + varsPrecedenceHelp,
+		Args: cobra.ArbitraryArgs,
 		Example: `  # .overlay.toml: profiles = ["base-tools"]
   #                env_profiles = ["DOTFILES_PROFILE", "HOST_PROFILE"]
   overlay plan                            # Active profiles: [base-tools]
@@ -67,7 +66,7 @@ error names every failing target); --continue does not change that.
 				r.Logger.Infof("skipping %s (no active layers)", stem)
 			}
 			return plan.RenderWithOptions(
-				os.Stdout,
+				command.OutOrStdout(),
 				result.Active,
 				r.Settings.Profiles,
 				r.SourceLabels,
