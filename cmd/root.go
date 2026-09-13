@@ -58,6 +58,11 @@ statuses, and 'overlay docs' for the .overlay.toml schema reference.`,
 		SilenceErrors: true,
 	}
 	flags.bindPersistentFlags(root)
+	// Find strips flags before Execute registers --help and --version, so
+	// register them now or `overlay --help --config x` reports x as an unknown
+	// command.
+	root.InitDefaultHelpFlag()
+	root.InitDefaultVersionFlag()
 
 	root.AddCommand(
 		newRenderCmd(flags),

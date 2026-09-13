@@ -38,6 +38,7 @@ stderr; later errors print as ERRO lines.
 ` + mergeSemanticsHelp + `
 
 ` + varsPrecedenceHelp,
+		Args: cobra.ArbitraryArgs,
 		RunE: func(command *cobra.Command, args []string) error {
 			r, err := resolve(command, flags, args...)
 			if err != nil {

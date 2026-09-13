@@ -40,6 +40,7 @@ the state file; writes only the targets and the state file.
 ` + mergeSemanticsHelp + `
 
 ` + varsPrecedenceHelp,
+		Args: cobra.ArbitraryArgs,
 		RunE: func(command *cobra.Command, args []string) error {
 			r, err := resolve(command, flags, args...)
 			if err != nil {

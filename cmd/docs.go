@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -22,8 +21,9 @@ file convention. It is plain text on stdout with no terminal escapes, and
 no configuration is read. Command help (--help on each command and
 'overlay help exit-codes') is the canonical contract; docs supplements it
 with the longer reference.`,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			_, err := fmt.Fprint(os.Stdout, config.SchemaDocs)
+		Args: cobra.NoArgs,
+		RunE: func(command *cobra.Command, _ []string) error {
+			_, err := fmt.Fprint(command.OutOrStdout(), config.SchemaDocs)
 			return err
 		},
 	}

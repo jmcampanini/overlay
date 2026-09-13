@@ -53,21 +53,31 @@ func TestExitCodesTopicPrintsSameHelpFromBothEntryPoints(t *testing.T) {
 			t.Fatalf("exit-codes help missing %q:\n%s", want, direct.stdout)
 		}
 	}
+}
 
-	extra := runRoot(t, "exit-codes", "extra")
-	if extra.code == 0 || !strings.Contains(extra.stderr, "extra") {
-		t.Fatalf("exit-codes extra = exit %d stderr %q, want nonzero exit naming the operand", extra.code, extra.stderr)
+// TestEveryApplicationCommandDeclaresPositionalGrammar walks a fresh tree.
+// The root is left to Cobra, which rejects unknown subcommands and routes its
+// help command through that path; every other command states its grammar, and
+// a group needs a runner because Cobra prints help for a non-runnable command
+// before it validates operands.
+func TestEveryApplicationCommandDeclaresPositionalGrammar(t *testing.T) {
+	root := newRootCmd()
+
+	for _, command := range applicationCommands(root) {
+		if command == root {
+			continue
+		}
+		if command.Args == nil {
+			t.Errorf("%q has no Args validator", command.CommandPath())
+		}
+		if command.HasSubCommands() && command.RunE == nil {
+			t.Errorf("%q has subcommands but no RunE", command.CommandPath())
+		}
 	}
 }
 
 func TestEveryApplicationCommandHasWrappedLongHelp(t *testing.T) {
-	root := newRootCmd()
-
-	var visit func(*cobra.Command)
-	visit = func(command *cobra.Command) {
-		if command.Name() == "help" || command.Name() == "completion" {
-			return
-		}
+	for _, command := range applicationCommands(newRootCmd()) {
 		if strings.TrimSpace(command.Long) == "" {
 			t.Errorf("%q has no long help", command.CommandPath())
 		}
@@ -78,9 +88,23 @@ func TestEveryApplicationCommandHasWrappedLongHelp(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// applicationCommands returns the root and every command it owns, skipping
+// Cobra's help and completion commands.
+func applicationCommands(root *cobra.Command) []*cobra.Command {
+	var commands []*cobra.Command
+	var visit func(*cobra.Command)
+	visit = func(command *cobra.Command) {
+		if command.Name() == "help" || command.Name() == "completion" {
+			return
+		}
+		commands = append(commands, command)
 		for _, child := range command.Commands() {
 			visit(child)
 		}
 	}
 	visit(root)
+	return commands
 }

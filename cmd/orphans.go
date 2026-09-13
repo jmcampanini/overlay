@@ -53,6 +53,7 @@ delete it and render again.
   overlay orphans --json > orphans.json; status=$?
   # judge only the entries owned by the pi source root
   overlay orphans pi`,
+		Args: cobra.ArbitraryArgs,
 		RunE: func(command *cobra.Command, args []string) error {
 			r, err := resolve(command, flags, args...)
 			if err != nil {
