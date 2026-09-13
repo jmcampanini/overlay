@@ -53,10 +53,6 @@ or accesses the network.
 Run 'overlay <command> --help' for each command's contract, 'overlay config
 --help' for the configuration report, 'overlay help exit-codes' for exit
 statuses, and 'overlay docs' for the .overlay.toml schema reference.`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
-		},
 		Version:       Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
