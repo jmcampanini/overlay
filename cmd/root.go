@@ -53,9 +53,10 @@ or accesses the network.
 Run 'overlay <command> --help' for each command's contract, 'overlay config
 --help' for the configuration report, 'overlay help exit-codes' for exit
 statuses, and 'overlay docs' for the .overlay.toml schema reference.`,
-		Version:       Version,
-		SilenceUsage:  true,
-		SilenceErrors: true,
+		Version:            Version,
+		DisableSuggestions: true,
+		SilenceUsage:       true,
+		SilenceErrors:      true,
 	}
 	flags.bindPersistentFlags(root)
 	// Find strips flags before Execute registers --help and --version, so
