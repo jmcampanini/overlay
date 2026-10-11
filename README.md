@@ -39,9 +39,9 @@ layers = ["abc", "xyz"]
 
 [[source]]
 url = "git@github.com:jmcampanini/dotfiles-base.git"
-path = "~/dotfiles/base"
+path = "~/code/github.com/jmcampanini/dotfiles-base"
 
 [[source]]
 url = "git@github.com:jmcampanini/dotfiles-xyz.git"
-path = "~/dotfiles/xyz"
+path = "~/code/github.com/jmcampanini/dotfiles-xyz"
 ```
