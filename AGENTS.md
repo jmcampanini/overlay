@@ -1,0 +1,8 @@
+- Use the Makefile targets for routine validation.
+- `make help` - list all available Makefile targets.
+- `make build` - build the `overlay` binary to `build/overlay`. Override with `BUILD_DIR=...` or `BIN=...`.
+- `make check` - run `fmt-check`, `tidy-check`, `lint`, `test`, `build`, `version-check`, and `vuln`; use before pushing.
+- `make clean` - remove build artifacts and the Go test cache.
+- Tests under `cmd` and `internal/gitrepo` run the real `git` binary against fixture repositories and fail when it is absent.
+- Keep command help the canonical user-facing documentation and the README a landing page; keep both consistent with observable behavior.
+- Keep every configuration struct tag in `internal/config`; other packages receive validated values from it.
