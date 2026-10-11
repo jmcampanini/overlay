@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-overlay is supported only at the latest commit on the `main` branch. There are no stable releases or supported older versions.
+overlay is supported only at the latest release. Older releases and commits on `main` between releases receive no fixes; upgrade to the latest release before reporting.
 
 ## Reporting a vulnerability
 
@@ -14,6 +14,6 @@ When possible, include in the private report:
 
 - the affected behavior and its potential impact;
 - reproduction steps;
-- the affected revision: the output of `overlay --version`, or the commit you installed from.
+- the affected version: the output of `overlay --version`.
 
 Reports are handled on a best-effort basis. There is no guaranteed response, remediation, or disclosure timeline.

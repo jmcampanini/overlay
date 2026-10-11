@@ -37,6 +37,13 @@ jobs:
       - name: Check
         run: make check
 
+      - name: Build release artifacts without publishing
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --snapshot --clean
+
       - name: Verify check left the working tree unchanged
         if: always()
         run: |

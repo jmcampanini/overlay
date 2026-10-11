@@ -6,20 +6,36 @@ Command help is the canonical reference: `overlay --help` and each command's `--
 
 ## Install
 
-overlay distributes from HEAD only; there is no release channel or tagged binary.
+Each release ships binaries for Linux (amd64 and arm64) and macOS on Apple Silicon (arm64), with a SHA-256 checksums file and GitHub build provenance attestations. Releases are at <https://github.com/jmcampanini/overlay/releases>.
+
+### mise
+
+```sh
+mise use -g github:jmcampanini/overlay
+```
+
+mise verifies the checksum and the attestation on download.
 
 ### Homebrew
 
 ```sh
-brew tap jmcampanini/overlay https://github.com/jmcampanini/overlay
-brew install --HEAD jmcampanini/overlay/overlay
+brew install jmcampanini/tap/overlay
 ```
 
-Upgrade to the latest commit:
+The cask removes macOS's quarantine attribute after install because the binary is not notarized.
+
+### Direct download
+
+Download the archive and checksums file for a release, verify them, and put `overlay` on your `PATH`:
 
 ```sh
-brew upgrade --fetch-HEAD overlay
+gh release download --repo jmcampanini/overlay --pattern '*_linux_amd64.tar.gz' --pattern '*_checksums.txt'
+sha256sum --check --ignore-missing overlay_*_checksums.txt
+gh attestation verify overlay_*_linux_amd64.tar.gz --repo jmcampanini/overlay
+tar -xzf overlay_*_linux_amd64.tar.gz overlay
 ```
+
+On macOS use `shasum -a 256 --check` and the `darwin_arm64` archive. A binary downloaded through a browser carries the quarantine attribute and macOS refuses to run it; clear it with `xattr -d com.apple.quarantine overlay`. Downloads made with `curl` or `gh` do not have the attribute.
 
 ### From source
 
