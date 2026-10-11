@@ -54,9 +54,9 @@ bootstrap. On success stdout gets one line per source, 'cloned NAME into
 PATH' or 'exists NAME at PATH', then 'wrote FILE'.`,
 		Example: `  overlay bootstrap \
     --source-url git@github.com:jmcampanini/dotfiles-base.git \
-    --source-path ~/dotfiles/base \
+    --source-path ~/code/github.com/jmcampanini/dotfiles-base \
     --source-url git@github.com:jmcampanini/dotfiles-xyz.git \
-    --source-path ~/dotfiles/xyz \
+    --source-path ~/code/github.com/jmcampanini/dotfiles-xyz \
     --layers abc,xyz`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
