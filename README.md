@@ -35,13 +35,13 @@ To build from source, run `make build` and copy `./build/overlay` onto your `PAT
 overlay reads `$XDG_CONFIG_HOME/overlay/config.toml`, or `~/.config/overlay/config.toml` when `XDG_CONFIG_HOME` is empty, and searches nowhere else. `--config PATH` reads an explicit file that must exist, or for `bootstrap` names the file to write. Layers can also be chosen per invocation with `OVERLAY_LAYERS`, `--layers`, or `--layer`; `overlay config --help` documents the precedence and every field.
 
 ```toml
-layers = ["personal", "server"]
+layers = ["abc", "xyz"]
 
 [[source]]
 url = "git@github.com:jmcampanini/dotfiles-base.git"
 path = "~/dotfiles/base"
 
 [[source]]
-url = "git@github.com:jmcampanini/dotfiles-personal.git"
-path = "~/dotfiles/personal"
+url = "git@github.com:jmcampanini/dotfiles-xyz.git"
+path = "~/dotfiles/xyz"
 ```

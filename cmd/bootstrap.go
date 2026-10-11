@@ -55,9 +55,9 @@ PATH' or 'exists NAME at PATH', then 'wrote FILE'.`,
 		Example: `  overlay bootstrap \
     --source-url git@github.com:jmcampanini/dotfiles-base.git \
     --source-path ~/dotfiles/base \
-    --source-url git@github.com:jmcampanini/dotfiles-personal.git \
-    --source-path ~/dotfiles/personal \
-    --layers personal,server`,
+    --source-url git@github.com:jmcampanini/dotfiles-xyz.git \
+    --source-path ~/dotfiles/xyz \
+    --layers abc,xyz`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runBootstrap(cmd.Context(), req, cmd.OutOrStdout(), cmd.ErrOrStderr())
