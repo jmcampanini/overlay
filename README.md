@@ -6,43 +6,16 @@ Command help is the canonical reference: `overlay --help` and each command's `--
 
 ## Install
 
-Each release ships binaries for Linux (amd64 and arm64) and macOS on Apple Silicon (arm64), with a SHA-256 checksums file and GitHub build provenance attestations. Releases are at <https://github.com/jmcampanini/overlay/releases>.
-
-### mise
+Releases ship binaries for Linux (amd64, arm64) and macOS on Apple Silicon.
 
 ```sh
-mise use -g github:jmcampanini/overlay
+mise use -g github:jmcampanini/overlay   # mise
+brew install jmcampanini/tap/overlay     # Homebrew
 ```
 
-mise verifies the checksum and the attestation on download.
+Or download an archive from the [releases page](https://github.com/jmcampanini/overlay/releases) and put `overlay` on your `PATH`. Each release includes a SHA-256 checksums file and GitHub build provenance attestations. On macOS, a browser download needs `xattr -d com.apple.quarantine overlay` before it runs; mise, Homebrew, `curl`, and `gh` downloads do not.
 
-### Homebrew
-
-```sh
-brew install jmcampanini/tap/overlay
-```
-
-The cask removes macOS's quarantine attribute after install because the binary is not notarized.
-
-### Direct download
-
-Download the archive and checksums file for a release, verify them, and put `overlay` on your `PATH`:
-
-```sh
-gh release download --repo jmcampanini/overlay --pattern '*_linux_amd64.tar.gz' --pattern '*_checksums.txt'
-sha256sum --check --ignore-missing overlay_*_checksums.txt
-gh attestation verify overlay_*_linux_amd64.tar.gz --repo jmcampanini/overlay
-tar -xzf overlay_*_linux_amd64.tar.gz overlay
-```
-
-On macOS use `shasum -a 256 --check` and the `darwin_arm64` archive. A binary downloaded through a browser carries the quarantine attribute and macOS refuses to run it; clear it with `xattr -d com.apple.quarantine overlay`. Downloads made with `curl` or `gh` do not have the attribute.
-
-### From source
-
-```sh
-make build
-# then copy ./build/overlay to a directory on your PATH
-```
+To build from source, run `make build` and copy `./build/overlay` onto your `PATH`.
 
 ## Representative commands
 
