@@ -6,27 +6,16 @@ Command help is the canonical reference: `overlay --help` and each command's `--
 
 ## Install
 
-overlay distributes from HEAD only; there is no release channel or tagged binary.
-
-### Homebrew
+Releases ship binaries for Linux (amd64, arm64) and macOS on Apple Silicon.
 
 ```sh
-brew tap jmcampanini/overlay https://github.com/jmcampanini/overlay
-brew install --HEAD jmcampanini/overlay/overlay
+mise use -g github:jmcampanini/overlay   # mise
+brew install jmcampanini/tap/overlay     # Homebrew
 ```
 
-Upgrade to the latest commit:
+Or download an archive from the [releases page](https://github.com/jmcampanini/overlay/releases) and put `overlay` on your `PATH`. Each release includes a SHA-256 checksums file and GitHub build provenance attestations. On macOS, a browser download needs `xattr -d com.apple.quarantine overlay` before it runs; mise, Homebrew, `curl`, and `gh` downloads do not.
 
-```sh
-brew upgrade --fetch-HEAD overlay
-```
-
-### From source
-
-```sh
-make build
-# then copy ./build/overlay to a directory on your PATH
-```
+To build from source, run `make build` and copy `./build/overlay` onto your `PATH`.
 
 ## Representative commands
 

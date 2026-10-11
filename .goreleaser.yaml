@@ -1,0 +1,86 @@
+# GoReleaser configuration. Run `make release-snapshot` to build release
+# artifacts locally without publishing; the Release workflow publishes on
+# every v* tag.
+version: 2
+
+project_name: overlay
+
+builds:
+  - id: overlay
+    main: .
+    binary: overlay
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: darwin
+        goarch: amd64
+    flags:
+      - -trimpath
+      - -buildvcs=false
+    ldflags:
+      # Keep the v prefix so a release binary reports the same string as
+      # `make build` on the tagged commit.
+      - -s -w -X github.com/jmcampanini/overlay/cmd.Version=v{{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+  algorithm: sha256
+
+changelog:
+  # GitHub generates the notes from merged pull requests, shaped by
+  # .github/release.yml.
+  use: github-native
+
+release:
+  github:
+    owner: jmcampanini
+    name: overlay
+  draft: false
+  prerelease: auto
+
+homebrew_casks:
+  - name: overlay
+    homepage: https://github.com/jmcampanini/overlay
+    description: Render layered dotfiles from source repositories into a target directory
+    binaries:
+      - overlay
+    directory: Casks
+    commit_msg_template: "Update overlay to {{ .Tag }}"
+    commit_author:
+      name: github-actions[bot]
+      email: 41898282+github-actions[bot]@users.noreply.github.com
+    # Prerelease tags publish a GitHub Release but do not update the tap.
+    skip_upload: auto
+    # Pushed over SSH with a deploy key on homebrew-tap, since the workflow
+    # token cannot write to another repository.
+    repository:
+      owner: jmcampanini
+      name: homebrew-tap
+      branch: main
+      git:
+        url: ssh://git@github.com/jmcampanini/homebrew-tap.git
+        private_key: "{{ envOrDefault \"HOMEBREW_TAP_DEPLOY_KEY\" \"\" }}"
+    hooks:
+      post:
+        # The binary is not notarized. Homebrew quarantines cask downloads,
+        # so remove the attribute or Gatekeeper refuses to run the binary.
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/overlay"]
+          end

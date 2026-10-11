@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help build install test fmt fmt-check tidy tidy-check lint version-check vuln check clean
+.PHONY: help build install test fmt fmt-check tidy tidy-check lint version-check vuln check release-snapshot clean
 
 BUILD_DIR ?= build
 BIN ?= $(BUILD_DIR)/overlay
@@ -48,6 +48,11 @@ vuln: ## Check dependencies and reachable code for known vulnerabilities.
 
 check: fmt-check tidy-check lint test build version-check vuln ## Run the complete local verification contract.
 
+release-snapshot: ## Build release archives into dist/ with GoReleaser without publishing.
+	@command -v goreleaser >/dev/null 2>&1 || { echo "goreleaser not found on PATH; install it with 'mise use -g goreleaser' or 'brew install goreleaser'"; exit 1; }
+	goreleaser check
+	goreleaser release --snapshot --clean
+
 clean: ## Remove local build artifacts and the Go test cache.
-	rm -rf $(BUILD_DIR)
+	rm -rf $(BUILD_DIR) dist
 	go clean -testcache
