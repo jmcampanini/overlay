@@ -17,8 +17,6 @@ Or download an archive from the [releases page](https://github.com/jmcampanini/o
 
 To build from source, run `make build` and copy `./build/overlay` onto your `PATH`.
 
-For the full first-run sequence on a new machine, from prerequisites to a bootstrapped configuration, see [BOOTSTRAP.md](BOOTSTRAP.md).
-
 ## Representative commands
 
 | Command | Result |
