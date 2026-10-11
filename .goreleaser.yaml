@@ -67,11 +67,15 @@ homebrew_casks:
       email: 41898282+github-actions[bot]@users.noreply.github.com
     # Prerelease tags publish a GitHub Release but do not update the tap.
     skip_upload: auto
+    # Pushed over SSH with a deploy key on homebrew-tap, since the workflow
+    # token cannot write to another repository.
     repository:
       owner: jmcampanini
       name: homebrew-tap
       branch: main
-      token: "{{ envOrDefault \"HOMEBREW_TAP_GITHUB_TOKEN\" \"\" }}"
+      git:
+        url: ssh://git@github.com/jmcampanini/homebrew-tap.git
+        private_key: "{{ envOrDefault \"HOMEBREW_TAP_DEPLOY_KEY\" \"\" }}"
     hooks:
       post:
         # The binary is not notarized. Homebrew quarantines cask downloads,
