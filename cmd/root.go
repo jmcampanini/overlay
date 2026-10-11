@@ -18,7 +18,8 @@ directory.
 overlay reads one configuration file that lists the layers to apply and the
 git repositories that provide files. 'overlay bootstrap' writes that file
 and clones the sources; 'overlay config' prints the configuration in
-effect. Rendering commands arrive in later releases.
+effect; 'overlay render' copies the files the layers select into the
+target directory, or with --dry-run only prints what it would write.
 
 ` + configFileHelp + `
 
@@ -28,7 +29,8 @@ lets git prompt for credentials. No command prompts and no command reads
 the network on its own.
 
 Run 'overlay config --help' for configuration precedence and the file
-schema, and 'overlay help exit-codes' for exit-status meanings.`,
+schema, 'overlay render --help' for the source manifest and the rendering
+rules, and 'overlay help exit-codes' for exit-status meanings.`,
 		Version:            Version,
 		DisableSuggestions: true,
 		SilenceUsage:       true,
@@ -47,6 +49,7 @@ schema, and 'overlay help exit-codes' for exit-status meanings.`,
 		bootstrapCommand(),
 		configCommand(),
 		exitCodesTopic(),
+		renderCommand(),
 	)
 
 	return cmd
