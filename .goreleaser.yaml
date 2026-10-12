@@ -62,17 +62,15 @@ homebrew_casks:
       - overlay
     # Homebrew runs 'overlay completion <shell>' from the staged binary at
     # install time and writes the scripts itself, so the archive ships no
-    # completion files. shell_parameter_format: cobra would be wrong here:
+    # completion files. Shells default to bash, zsh, and fish, the same
+    # stanza NaMo's formula calls. shell_parameter_format: cobra would be
+    # wrong here:
     # Homebrew then adds its own 'completion' argument and runs
     # 'overlay completion completion <shell>', which prints help text.
     generate_completions_from_executable:
       executable: overlay
       args:
         - completion
-      shells:
-        - bash
-        - zsh
-        - fish
     directory: Casks
     commit_msg_template: "Update overlay to {{ .Tag }}"
     commit_author:
