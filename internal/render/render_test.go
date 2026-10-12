@@ -560,7 +560,7 @@ func TestBuildTemplateFailuresWriteNothing(t *testing.T) {
 	}{
 		{name: "parse error", text: "{{ if .Home }}open\n", want: "unexpected EOF"},
 		{name: "unknown field", text: "{{ .Target }}\n", want: "can't evaluate field Target"},
-		{name: "unknown function", text: "{{ env \"HOME\" }}\n", want: "not defined"},
+		{name: "unknown function", text: "{{ now }}\n", want: "not defined"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

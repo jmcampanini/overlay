@@ -44,9 +44,14 @@ sources={{ range .Sources }}{{ .Name }}={{ .Path }};{{ end }}
 
 func TestRenderFunctions(t *testing.T) {
 	present := filepath.Join(t.TempDir(), "present")
-	if err := os.WriteFile(present, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(present, []byte("x\n\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	multiline := filepath.Join(t.TempDir(), "multiline")
+	if err := os.WriteFile(multiline, []byte("one\ntwo\r\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OVERLAY_TEST_SECRET", "hunter2")
 	dir := t.TempDir()
 	link := filepath.Join(t.TempDir(), "link")
 	if err := os.Symlink(present, link); err != nil {
@@ -68,6 +73,11 @@ func TestRenderFunctions(t *testing.T) {
 		{name: "fileExists dangling symlink", text: `{{ fileExists "` + dangling + `" }}`, want: "false"},
 		{name: "fileExists absent", text: `{{ fileExists "` + filepath.Join(dir, "missing") + `" }}`, want: "false"},
 		{name: "fileExists does not expand tilde", text: `{{ fileExists "~/` + filepath.Base(present) + `" }}`, want: "false"},
+		{name: "env set", text: `{{ env "OVERLAY_TEST_SECRET" }}`, want: "hunter2"},
+		{name: "env unset is empty", text: `{{ if env "OVERLAY_TEST_UNSET" }}set{{ else }}unset{{ end }}`, want: "unset"},
+		{name: "readFile strips trailing newlines", text: `{{ readFile "` + present + `" }}`, want: "x"},
+		{name: "readFile keeps inner newlines", text: `{{ readFile "` + multiline + `" }}`, want: "one\ntwo"},
+		{name: "readFile quoted", text: `{{ readFile "` + present + `" | printf "%q" }}`, want: `"x"`},
 		{name: "join layers", text: `{{ join "," .Layers }}`, want: "base,personal,local"},
 		{name: "join empty", text: `{{ join "," .Layers }}`, want: ""},
 		{name: "shellQuote plain", text: `{{ shellQuote "/home/me/.config" }}`, want: `'/home/me/.config'`},
@@ -109,9 +119,11 @@ func TestRenderFailures(t *testing.T) {
 	}{
 		{name: "parse error", text: `{{ if .Home }}unclosed`, want: "unexpected EOF"},
 		{name: "unknown field", text: `{{ .Target }}`, want: "can't evaluate field Target"},
-		{name: "unknown function", text: `{{ env "HOME" }}`, want: `function "env" not defined`},
+		{name: "unknown function", text: `{{ now }}`, want: `function "now" not defined`},
 		{name: "missing map key", text: `{{ index .Lookup "nope" }}`, want: "can't evaluate field Lookup"},
 		{name: "join with a non-list", text: `{{ join "," .Home }}`, want: "wrong type for value"},
+		{name: "readFile missing", text: `{{ readFile "` + filepath.Join(unreadable, "..", "missing") + `" }}`, want: "no such file"},
+		{name: "readFile directory", text: `{{ readFile "` + filepath.Dir(unreadable) + `" }}`, want: "is a directory"},
 		{name: "fileExists under an unreadable directory", text: `{{ fileExists "` + filepath.Join(unreadable, "x") + `" }}`, want: "permission denied"},
 	}
 	for _, tt := range tests {
@@ -122,7 +134,10 @@ func TestRenderFailures(t *testing.T) {
 
 			got, err := Render("failing", []byte(tt.text), testContext(t))
 
-			if err == nil || !strings.Contains(err.Error(), tt.want) {
+			if err == nil {
+				t.Fatalf("Render(%q) = %q, nil; want an error containing %q", tt.text, got, tt.want)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
 				t.Errorf("Render(%q) error = %v, want containing %q", tt.text, err, tt.want)
 			}
 			if !strings.Contains(err.Error(), "failing") {

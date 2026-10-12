@@ -49,7 +49,7 @@ url = "git@github.com:jmcampanini/dotfiles-xyz.git"
 path = "~/code/github.com/jmcampanini/dotfiles-xyz"
 ```
 
-Each source keeps an `overlay.toml` at its root that says which of its top-level directories (packages) each layer renders. A file's target path is its path inside the package with every `dot-` segment prefix turned into `.`, so `bash/dot-bashrc` lands at `~/.bashrc`. A file ending in `.tmpl` is a Go `text/template` that renders to the path without the suffix; templates see the layer order, the sources with their checkout paths, the home directory, the operating system, and the hostname, and can call `fileExists`, `shellQuote`, and `join`. Layers apply as `base`, the configured layers in order, then `local`, and a later layer's file replaces an earlier one at the same target. `overlay render --help` documents the manifest, the template data and functions, and every rule.
+Each source keeps an `overlay.toml` at its root that says which of its top-level directories (packages) each layer renders. A file's target path is its path inside the package with every `dot-` segment prefix turned into `.`, so `bash/dot-bashrc` lands at `~/.bashrc`. A file ending in `.tmpl` is a Go `text/template` that renders to the path without the suffix; templates see the layer order, the sources with their checkout paths, the home directory, the operating system, and the hostname, and can call `env`, `fileExists`, `readFile`, `shellQuote`, and `join`. Layers apply as `base`, the configured layers in order, then `local`, and a later layer's file replaces an earlier one at the same target. `overlay render --help` documents the manifest, the template data and functions, and every rule.
 
 ```toml
 [layers.base]

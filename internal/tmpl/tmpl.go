@@ -51,12 +51,14 @@ func Render(name string, text []byte, ctx Context) ([]byte, error) {
 }
 
 // newTemplate returns an empty template with overlay's options and
-// functions: a missing map key is an error, and fileExists, join, and
-// shellQuote are available beyond text/template's builtins.
+// functions: a missing map key is an error, and env, fileExists, join,
+// readFile, and shellQuote are available beyond text/template's builtins.
 func newTemplate(name string) *template.Template {
 	return template.New(name).Option("missingkey=error").Funcs(template.FuncMap{
+		"env":        os.Getenv,
 		"fileExists": fileExists,
 		"join":       join,
+		"readFile":   readFile,
 		"shellQuote": shellQuote,
 	})
 }
@@ -75,6 +77,18 @@ func fileExists(path string) (bool, error) {
 		return false, nil
 	}
 	return false, fmt.Errorf("fileExists %q: %w", path, err)
+}
+
+// readFile returns the content of the file at path with trailing newlines
+// removed, as $(cat path) would in a shell. The path is used as given, like
+// fileExists. A missing or unreadable file fails the template; guard an
+// optional file with fileExists.
+func readFile(path string) (string, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(string(content), "\r\n"), nil
 }
 
 // join concatenates items with sep between them, mirroring strings.Join

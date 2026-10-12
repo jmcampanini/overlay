@@ -71,14 +71,24 @@ than empty output. Every template sees the same data:
 
 Beyond the text/template builtins, templates may call:
 
+  env NAME         the environment variable's value, or "" when unset
   fileExists PATH  true when anything exists at PATH (a file, directory,
                    or other entry, following symbolic links); PATH is used
                    as given, ~ is not expanded, and an error other than
                    absence fails the render
+  readFile PATH    the file's content with trailing newlines removed, as
+                   $(cat PATH) would give; PATH is used as given, and a
+                   missing or unreadable file fails the render, so guard
+                   an optional file with fileExists
   shellQuote S     S single-quoted so bash, zsh, and fish read one literal
                    word; quotes and backslashes inside S are escaped
                    outside the quotes
   join SEP LIST    LIST's items concatenated with SEP between them
+
+A secret can stay in a file outside every source and be read at render
+time, for example {{ readFile (printf "%s/.config/overlay/local/api.key"
+.Home) }}. The plan output never prints rendered content, and the target
+takes the template's permission bits, so keep such a template at 600.
 
 For example, this loader sources every envs/env.LAYER that exists, in
 layer order and then source order:
