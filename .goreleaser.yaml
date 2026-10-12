@@ -60,6 +60,19 @@ homebrew_casks:
     description: Render layered dotfiles from source repositories into a target directory
     binaries:
       - overlay
+    # Homebrew runs 'overlay completion <shell>' from the staged binary at
+    # install time and writes the scripts itself, so the archive ships no
+    # completion files. shell_parameter_format: cobra would be wrong here:
+    # Homebrew then adds its own 'completion' argument and runs
+    # 'overlay completion completion <shell>', which prints help text.
+    generate_completions_from_executable:
+      executable: overlay
+      args:
+        - completion
+      shells:
+        - bash
+        - zsh
+        - fish
     directory: Casks
     commit_msg_template: "Update overlay to {{ .Tag }}"
     commit_author:
@@ -77,9 +90,11 @@ homebrew_casks:
         url: ssh://git@github.com/jmcampanini/homebrew-tap.git
         private_key: "{{ envOrDefault \"HOMEBREW_TAP_DEPLOY_KEY\" \"\" }}"
     hooks:
-      post:
+      pre:
         # The binary is not notarized. Homebrew quarantines cask downloads,
         # so remove the attribute or Gatekeeper refuses to run the binary.
+        # This runs as a preflight because Homebrew generates completions
+        # before any postflight, and generation runs the binary.
         install: |
           if OS.mac?
             system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/overlay"]
