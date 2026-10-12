@@ -2,3 +2,7 @@
 /dist/
 /.sandbox/
 .claude/
+
+# mise personal overrides
+mise.local.toml
+.mise.local.toml
