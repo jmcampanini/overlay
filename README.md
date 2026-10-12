@@ -1,6 +1,6 @@
 # overlay
 
-overlay renders layered dotfiles from git source repositories into a target directory. One configuration file lists the layers to apply and the sources that provide files; `overlay bootstrap` writes that file and clones the sources, `overlay config` prints the configuration in effect, and `overlay render` copies the files the layers select into the target directory. overlay never overwrites its configuration file, never touches an existing checkout, never deletes a rendered file, and never lets git prompt for credentials.
+overlay renders layered dotfiles from git source repositories into a target directory. One configuration file lists the layers to apply and the sources that provide files; `overlay bootstrap` writes that file and clones the sources, `overlay config` prints the configuration in effect, and `overlay render` copies the files the layers select into the target directory and renders its templates. overlay never overwrites its configuration file, never touches an existing checkout, never deletes a rendered file, and never lets git prompt for credentials.
 
 Command help is the canonical reference: `overlay --help` and each command's `--help` describe every user-facing contract, `overlay config --help` describes configuration precedence and the file schema, `overlay render --help` describes the source manifest and the rendering rules, and `overlay help exit-codes` describes exit statuses.
 
@@ -49,7 +49,7 @@ url = "git@github.com:jmcampanini/dotfiles-xyz.git"
 path = "~/code/github.com/jmcampanini/dotfiles-xyz"
 ```
 
-Each source keeps an `overlay.toml` at its root that says which of its top-level directories (packages) each layer renders. A file's target path is its path inside the package with every `dot-` segment prefix turned into `.`, so `bash/dot-bashrc` lands at `~/.bashrc`. Layers apply as `base`, the configured layers in order, then `local`, and a later layer's file replaces an earlier one at the same target. `overlay render --help` documents the manifest and every rule.
+Each source keeps an `overlay.toml` at its root that says which of its top-level directories (packages) each layer renders. A file's target path is its path inside the package with every `dot-` segment prefix turned into `.`, so `bash/dot-bashrc` lands at `~/.bashrc`. A file ending in `.tmpl` is a Go `text/template` that renders to the path without the suffix; templates see the layer order, the sources with their checkout paths, the home directory, the operating system, and the hostname, and can call `env`, `fileExists`, `readFile`, `shellQuote`, and `join`. Layers apply as `base`, the configured layers in order, then `local`, and a later layer's file replaces an earlier one at the same target. `overlay render --help` documents the manifest, the template data and functions, and every rule.
 
 ```toml
 [layers.base]

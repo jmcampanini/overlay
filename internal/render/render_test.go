@@ -400,3 +400,198 @@ func TestApplyStopsAtFirstFailure(t *testing.T) {
 		t.Errorf("file after the failure exists (stat error %v), want absent", err)
 	}
 }
+
+// shellenvTemplate is the loader template from issue 3: one source line per
+// env.<layer> file that exists, in layer order then source order. The env
+// files live outside any package so only the loader renders.
+const shellenvTemplate = `test -n "$DOTFILES_LAYERS" || export DOTFILES_LAYERS='{{ join "," .Layers }}'
+{{ range $layer := .Layers }}{{ range $.Sources }}
+{{- $f := printf "%s/envs/env.%s" .Path $layer }}{{ if fileExists $f }}
+test -f {{ shellQuote $f }} && source {{ shellQuote $f }} || test ! -f {{ shellQuote $f }} || return 1
+{{ end }}{{ end }}{{ end }}
+`
+
+func templateRequest(t *testing.T, sources ...fixture) Request {
+	t.Helper()
+	resolved := make([]config.ResolvedSource, len(sources))
+	for i, source := range sources {
+		resolved[i] = source.resolved()
+	}
+	return Request{
+		Home:     "/home/me",
+		Hostname: "wintermute",
+		Layers:   []string{"base", "personal", "local"},
+		OS:       "linux",
+		Sources:  resolved,
+		Target:   t.TempDir(),
+	}
+}
+
+func TestBuildRendersTheShellenvLoader(t *testing.T) {
+	base := newSource(t, "dotfiles-base", "[layers.base]\npackages = [\"shellenv\"]\n")
+	base.file("shellenv/dot-shellenv.tmpl", shellenvTemplate, 0o600)
+	base.file("envs/env.base", "export BASE=1\n", 0o644)
+	base.file("envs/env.macos", "unused layer\n", 0o644)
+	personal := newSource(t, "dotfiles-personal", "[layers.personal]\npackages = []\n")
+	personal.file("envs/env.personal", "export PERSONAL=1\n", 0o644)
+	personal.file("envs/env.local", "export LOCAL=1\n", 0o644)
+	req := templateRequest(t, base, personal)
+
+	plan, err := Build(req)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	if err := Apply(plan); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+
+	if len(plan.Entries) != 1 {
+		t.Fatalf("Build() returned %d entries, want 1: %+v", len(plan.Entries), plan.Entries)
+	}
+	entry := plan.Entries[0]
+	if entry.Kind != KindTemplate || entry.Path != "shellenv/dot-shellenv.tmpl" || entry.Mode != 0o600 || entry.Status != StatusNew {
+		t.Errorf("entry = %+v, want a new template from shellenv/dot-shellenv.tmpl with mode 600", entry)
+	}
+	want := "test -n \"$DOTFILES_LAYERS\" || export DOTFILES_LAYERS='base,personal,local'\n\n" +
+		"test -f '" + base.path + "/envs/env.base' && source '" + base.path + "/envs/env.base' || test ! -f '" + base.path + "/envs/env.base' || return 1\n\n" +
+		"test -f '" + personal.path + "/envs/env.personal' && source '" + personal.path + "/envs/env.personal' || test ! -f '" + personal.path + "/envs/env.personal' || return 1\n\n" +
+		"test -f '" + personal.path + "/envs/env.local' && source '" + personal.path + "/envs/env.local' || test ! -f '" + personal.path + "/envs/env.local' || return 1\n\n"
+	if diff := cmp.Diff(want, string(entry.Content)); diff != "" {
+		t.Errorf("rendered loader mismatch (-want +got):\n%s", diff)
+	}
+	written, err := os.ReadFile(filepath.Join(req.Target, ".shellenv"))
+	if err != nil {
+		t.Fatalf("read rendered .shellenv: %v", err)
+	}
+	if string(written) != want {
+		t.Errorf(".shellenv content = %q, want the rendered loader", written)
+	}
+	info, err := os.Stat(filepath.Join(req.Target, ".shellenv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf(".shellenv mode = %o, want 600", info.Mode().Perm())
+	}
+}
+
+func TestBuildTemplateContextAndTargetMapping(t *testing.T) {
+	base := newSource(t, "dotfiles-base", "[layers.base]\npackages = [\"facts\"]\n")
+	base.file("facts/dot-config/dot-facts.tmpl", "{{ .Home }} {{ .Hostname }} {{ .OS }} {{ len .Sources }} {{ (index .Sources 0).Name }}\n", 0o644)
+	base.file("facts/plain.tmpl.txt", "not a template {{ .Nope }}\n", 0o644)
+	req := templateRequest(t, base)
+
+	plan, err := Build(req)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	got := map[string]Entry{}
+	for _, entry := range plan.Entries {
+		got[strings.TrimPrefix(entry.Target, req.Target+"/")] = entry
+	}
+	facts, ok := got[".config/.facts"]
+	if !ok {
+		t.Fatalf("Build() targets = %v, want .config/.facts", got)
+	}
+	if string(facts.Content) != "/home/me wintermute linux 1 dotfiles-base\n" {
+		t.Errorf(".facts content = %q, want every context field", facts.Content)
+	}
+	plain, ok := got["plain.tmpl.txt"]
+	if !ok || plain.Kind != KindFile || plain.Content != nil {
+		t.Errorf("plain.tmpl.txt entry = %+v, want a file entry with no content", plain)
+	}
+}
+
+func TestBuildTemplateStatusUsesRenderedBytes(t *testing.T) {
+	src := newSource(t, "src", "[layers.base]\npackages = [\"pkg\"]\n")
+	src.file("pkg/same.tmpl", "host {{ .Hostname }}\n", 0o644)
+	src.file("pkg/changed.tmpl", "host {{ .Hostname }}\n", 0o644)
+	req := templateRequest(t, src)
+	writeFile(t, filepath.Join(req.Target, "same"), "host wintermute\n", 0o644)
+	writeFile(t, filepath.Join(req.Target, "changed"), "host {{ .Hostname }}\n", 0o644)
+
+	plan, err := Build(req)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	got := map[string]Status{}
+	for _, entry := range plan.Entries {
+		got[filepath.Base(entry.Target)] = entry.Status
+	}
+	want := map[string]Status{"same": StatusUnchanged, "changed": StatusChanged}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("statuses mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestBuildTemplateReplacesAndCollidesLikeFiles(t *testing.T) {
+	base := newSource(t, "base", "[layers.base]\npackages = [\"pkg\"]\n")
+	base.file("pkg/dot-rc", "plain\n", 0o644)
+	personal := newSource(t, "personal", "[layers.personal]\npackages = [\"pkg\"]\n")
+	personal.file("pkg/dot-rc.tmpl", "templated {{ .OS }}\n", 0o644)
+
+	plan, err := Build(templateRequest(t, base, personal))
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+	if len(plan.Entries) != 1 || plan.Entries[0].Kind != KindTemplate || string(plan.Entries[0].Content) != "templated linux\n" {
+		t.Fatalf("Build() entries = %+v, want one template entry replacing the base file", plan.Entries)
+	}
+	if diff := cmp.Diff([]Origin{{Layer: "base", Path: "pkg/dot-rc", Source: "base"}}, plan.Entries[0].Replaces); diff != "" {
+		t.Errorf("Replaces mismatch (-want +got):\n%s", diff)
+	}
+
+	base.file("pkg/dot-rc.tmpl", "also base\n", 0o644)
+	_, err = Build(templateRequest(t, base))
+
+	var collision *CollisionError
+	if !errors.As(err, &collision) {
+		t.Fatalf("Build() with pkg/dot-rc and pkg/dot-rc.tmpl error = %v, want *CollisionError", err)
+	}
+}
+
+func TestBuildTemplateFailuresWriteNothing(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want string
+	}{
+		{name: "parse error", text: "{{ if .Home }}open\n", want: "unexpected EOF"},
+		{name: "unknown field", text: "{{ .Target }}\n", want: "can't evaluate field Target"},
+		{name: "unknown function", text: "{{ now }}\n", want: "not defined"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src := newSource(t, "src", "[layers.base]\npackages = [\"pkg\"]\n")
+			src.file("pkg/a-good", "fine\n", 0o644)
+			src.file("pkg/b-bad.tmpl", tt.text, 0o644)
+			req := templateRequest(t, src)
+
+			_, err := Build(req)
+
+			if err == nil || !strings.Contains(err.Error(), tt.want) || !strings.Contains(err.Error(), "src:pkg/b-bad.tmpl") {
+				t.Errorf("Build() error = %v, want containing %q and the template name", err, tt.want)
+			}
+			if _, err := os.Stat(filepath.Join(req.Target, "a-good")); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("a-good exists after a failed build (stat error %v), want absent", err)
+			}
+		})
+	}
+}
+
+func TestBuildRejectsATemplateWithoutAName(t *testing.T) {
+	for _, name := range []string{"pkg/.tmpl", "pkg/dot-.tmpl", "pkg/sub/.tmpl"} {
+		t.Run(name, func(t *testing.T) {
+			src := newSource(t, "src", "[layers.base]\npackages = [\"pkg\"]\n")
+			src.file(name, "x", 0o644)
+
+			_, err := Build(templateRequest(t, src))
+
+			if err == nil || !strings.Contains(err.Error(), "needs a name") {
+				t.Errorf("Build() with %s error = %v, want needs a name", name, err)
+			}
+		})
+	}
+}

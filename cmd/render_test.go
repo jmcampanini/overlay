@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -166,6 +167,42 @@ func TestRenderColorFollowsThePolicyOnRedirectedOutput(t *testing.T) {
 	}
 }
 
+func TestRenderTemplatesShowTheirKindAndRenderedContent(t *testing.T) {
+	f := newRenderFixture(t)
+	base := baseSourcePath(t, f)
+	writeFixtureFile(t, filepath.Join(base, "overlay.toml"), "[layers.base]\npackages = [\"bash\", \"ssh\", \"facts\"]\n", 0o644)
+	writeFixtureFile(t, filepath.Join(base, "facts", "dot-facts.tmpl"), "{{ .OS }} {{ join \"+\" .Layers }} {{ (index .Sources 1).Name }}\n", 0o600)
+	hostname, err := os.Hostname()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFixtureFile(t, filepath.Join(base, "facts", "host.tmpl"), "{{ .Hostname }} {{ .Home }}\n", 0o644)
+
+	out, errOut, err := executeForTest(t, "render", "--config", f.configPath)
+	if err != nil {
+		t.Fatalf("render error = %v, stderr = %s", err, errOut)
+	}
+
+	for _, line := range []string{
+		"~/.facts       dotfiles-base:facts/dot-facts.tmpl    template  new",
+		"~/host         dotfiles-base:facts/host.tmpl         template  new",
+		"4 files: 3 new, 0 changed, 1 unchanged",
+	} {
+		if !strings.Contains(out, line) {
+			t.Errorf("output lacks %q:\n%s", line, out)
+		}
+	}
+	if raw, err := os.ReadFile(filepath.Join(f.home, ".facts")); err != nil || string(raw) != runtime.GOOS+" base+personal+local dotfiles-personal\n" {
+		t.Errorf(".facts = %q (%v), want the rendered facts", raw, err)
+	}
+	if raw, err := os.ReadFile(filepath.Join(f.home, "host")); err != nil || string(raw) != hostname+" "+f.home+"\n" {
+		t.Errorf("host = %q (%v), want hostname and home", raw, err)
+	}
+	if info, err := os.Stat(filepath.Join(f.home, ".facts")); err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf(".facts mode = %v (%v), want 600 from the template", info, err)
+	}
+}
+
 func TestRenderTargetFlag(t *testing.T) {
 	f := newRenderFixture(t)
 	target := filepath.Join(f.home, "staging")
@@ -243,6 +280,11 @@ func TestRenderFailures(t *testing.T) {
 			writeConfig(t, f.configPath, "[[source]]\nurl = \"git@x:bare.git\"\npath = \""+t.TempDir()+"\"\n")
 			return nil
 		}, want: "overlay.toml"},
+		{name: "template that fails to execute", setup: func(t *testing.T, f renderFixture) []string {
+			t.Helper()
+			writeFixtureFile(t, filepath.Join(baseSourcePath(t, f), "bash", "dot-profile.tmpl"), "{{ .Missing }}\n", 0o644)
+			return []string{"--dry-run"}
+		}, want: "dotfiles-base:bash/dot-profile.tmpl"},
 		{name: "invalid color mode", setup: func(_ *testing.T, _ renderFixture) []string {
 			return []string{"--color", "sometimes"}
 		}, want: "invalid color mode"},
