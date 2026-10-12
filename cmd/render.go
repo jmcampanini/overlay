@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/jmcampanini/go-config-loader/configloader"
@@ -53,6 +54,40 @@ earlier layer's file at the same target. Two files in one layer with the
 same target, even from one source, fail the whole render before anything
 is written. Files ending in .olay.* are copied verbatim.
 
+A file whose name ends in .tmpl is a Go text/template and renders to the
+target path without that suffix, so envs/dot-shellenv.tmpl becomes
+~/.shellenv with the template's permission bits. A name that is only the
+suffix is an error. Templates execute while planning, so a template that
+fails to parse or execute fails the whole render, with --dry-run too,
+before anything is written. A missing field or map key is an error rather
+than empty output. Every template sees the same data:
+
+  .Layers    the layer order as a list, including base and local
+  .Sources   the configured sources in order; each has .Name and .Path,
+             the absolute checkout directory
+  .Home      the home directory, whatever --target is
+  .OS        the operating system as Go names it: darwin or linux
+  .Hostname  the hostname exactly as the system reports it
+
+Beyond the text/template builtins, templates may call:
+
+  fileExists PATH  true when anything exists at PATH (a file, directory,
+                   or other entry, following symbolic links); PATH is used
+                   as given, ~ is not expanded, and an error other than
+                   absence fails the render
+  shellQuote S     S single-quoted so bash, zsh, and fish read one literal
+                   word; quotes and backslashes inside S are escaped
+                   outside the quotes
+  join SEP LIST    LIST's items concatenated with SEP between them
+
+For example, this loader sources every envs/env.LAYER that exists, in
+layer order and then source order:
+
+  {{ range $layer := .Layers }}{{ range $.Sources }}
+  {{- $f := printf "%s/envs/env.%s" .Path $layer }}{{ if fileExists $f }}
+  test -f {{ shellQuote $f }} && source {{ shellQuote $f }}
+  {{ end }}{{ end }}{{ end }}
+
 Writing creates missing directories with mode 755, writes each file to a
 temporary name in its final directory with the source's permission bits,
 and renames it over the target, so a symbolic link at the target is
@@ -62,15 +97,16 @@ bits. A directory at a target path is an error. A failure while writing
 stops at that file, and files already written stay in place.
 
 Both modes print the plan on stdout: a table with columns TARGET, SOURCE
-(name:path within the source), KIND (always file in this release), STATUS
-(new, changed, or unchanged), and REPLACES (the files earlier layers
-contributed), then a count summary. Targets under the home directory are
-shortened to ~. The table colors STATUS only when stdout is a terminal
-whose TERM is not dumb; a nonempty NO_COLOR disables color and --color
-MODE (auto, always, or never) overrides both. --json instead emits one
-JSON document {"target", "layers", "entries": [{"target", "source",
-"path", "layer", "kind", "status", "replaces": [{"source", "path",
-"layer"}]}]} with absolute paths and no escapes, even with --color always.
+(name:path within the source), KIND (file or template), STATUS (new,
+changed, or unchanged; a template compares its rendered output), and
+REPLACES (the files earlier layers contributed), then a count summary.
+Targets under the home directory are shortened to ~. The table colors
+STATUS only when stdout is a terminal whose TERM is not dumb; a nonempty
+NO_COLOR disables color and --color MODE (auto, always, or never)
+overrides both. --json instead emits one JSON document {"target",
+"layers", "entries": [{"target", "source", "path", "layer", "kind",
+"status", "replaces": [{"source", "path", "layer"}]}]} with absolute
+paths and no escapes, even with --color always.
 
 ` + configFileHelp + `
 --config PATH reads PATH instead and fails when PATH does not exist.
@@ -116,11 +152,18 @@ func runRender(cmd *cobra.Command, opts renderOptions) error {
 	if err != nil {
 		return err
 	}
+	hostname, err := os.Hostname()
+	if err != nil {
+		return fmt.Errorf("determine hostname: %w", err)
+	}
 
 	plan, err := render.Build(render.Request{
-		Layers:  config.LayerOrder(effective.Layers),
-		Sources: effective.Sources,
-		Target:  target,
+		Home:     home,
+		Hostname: hostname,
+		Layers:   config.LayerOrder(effective.Layers),
+		OS:       runtime.GOOS,
+		Sources:  effective.Sources,
+		Target:   target,
 	})
 	if err != nil {
 		return err

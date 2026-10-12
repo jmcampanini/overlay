@@ -14,10 +14,16 @@ import (
 	"strings"
 
 	"github.com/jmcampanini/overlay/internal/config"
+	"github.com/jmcampanini/overlay/internal/tmpl"
 )
 
-// dotPrefix marks a path segment that renders with a leading dot instead.
-const dotPrefix = "dot-"
+const (
+	// dotPrefix marks a path segment that renders with a leading dot instead.
+	dotPrefix = "dot-"
+	// templateSuffix marks a file that renders as a template to the path
+	// without the suffix.
+	templateSuffix = ".tmpl"
+)
 
 // Status says what applying an entry does to its target.
 type Status string
@@ -36,13 +42,25 @@ const (
 // Kind says how an entry's source content becomes its target.
 type Kind string
 
-// KindFile copies the source bytes verbatim.
-const KindFile Kind = "file"
+const (
+	// KindFile copies the source bytes verbatim.
+	KindFile Kind = "file"
+	// KindTemplate executes the source as a text/template and writes the
+	// output to the target path without the .tmpl suffix.
+	KindTemplate Kind = "template"
+)
 
 // Request selects what Build plans.
 type Request struct {
+	// Home is the user's home directory, exposed to templates as .Home
+	// whatever the target is.
+	Home string
+	// Hostname is exposed to templates as .Hostname.
+	Hostname string
 	// Layers is the complete layer order, usually config.LayerOrder.
 	Layers []string
+	// OS is exposed to templates as .OS, usually runtime.GOOS.
+	OS string
 	// Sources are consulted in order within each layer.
 	Sources []config.ResolvedSource
 	// Target is the absolute directory that receives the files.
@@ -63,7 +81,10 @@ type Origin struct {
 // Entry is one target file and the source file that produces it.
 type Entry struct {
 	Origin
-	Kind Kind
+	// Content holds the rendered bytes of a template entry; a file entry
+	// leaves it nil and streams from SourceFile instead.
+	Content []byte
+	Kind    Kind
 	// Mode holds the permission bits copied to the target.
 	Mode fs.FileMode
 	// Replaces lists the origins earlier layers contributed for the same
@@ -96,9 +117,10 @@ func (e *CollisionError) Error() string {
 }
 
 // Build reads every source manifest, walks the packages the requested layers
-// list, and returns the resulting plan without touching the target. Later
-// layers replace earlier ones at the same target; two contributors within one
-// layer fail with a *CollisionError.
+// list, renders every winning template, and returns the resulting plan
+// without touching the target. Later layers replace earlier ones at the same
+// target; two contributors within one layer fail with a *CollisionError, and
+// a template that fails to parse or execute fails the whole build.
 func Build(req Request) (Plan, error) {
 	if err := requireDirectory(req.Target); err != nil {
 		return Plan{}, fmt.Errorf("target directory: %w", err)
@@ -120,13 +142,17 @@ func Build(req Request) (Plan, error) {
 			for _, pkg := range manifests[i].Packages(layer) {
 				err := walkPackage(source, pkg, func(path, sourceFile string, mode fs.FileMode) error {
 					origin := Origin{Layer: layer, Path: path, Source: source.Name}
-					target := filepath.Join(req.Target, targetPath(pkg, path))
+					kind, rel, err := classify(pkg, path)
+					if err != nil {
+						return fmt.Errorf("source %s: %w", source.Name, err)
+					}
+					target := filepath.Join(req.Target, rel)
 					if first, ok := owners[target]; ok {
 						return &CollisionError{First: first, Second: origin, Target: target}
 					}
 					owners[target] = origin
 
-					entry := Entry{Kind: KindFile, Mode: mode, Origin: origin, SourceFile: sourceFile, Target: target}
+					entry := Entry{Kind: kind, Mode: mode, Origin: origin, SourceFile: sourceFile, Target: target}
 					if previous, ok := entries[target]; ok {
 						entry.Replaces = append(previous.Replaces, previous.Origin)
 					}
@@ -145,7 +171,15 @@ func Build(req Request) (Plan, error) {
 		plan.Entries = append(plan.Entries, entry)
 	}
 	sort.Slice(plan.Entries, func(i, j int) bool { return plan.Entries[i].Target < plan.Entries[j].Target })
+	ctx := templateContext(req)
 	for i := range plan.Entries {
+		if plan.Entries[i].Kind == KindTemplate {
+			content, err := renderTemplate(plan.Entries[i], ctx)
+			if err != nil {
+				return Plan{}, err
+			}
+			plan.Entries[i].Content = content
+		}
 		status, err := statusOf(plan.Entries[i])
 		if err != nil {
 			return Plan{}, err
@@ -199,6 +233,22 @@ func walkPackage(source config.ResolvedSource, pkg string, visit func(path, sour
 	})
 }
 
+// classify decides how a source file renders and where: a name ending in
+// .tmpl is a template whose target drops the suffix, and anything else is a
+// file. A name that is nothing but the suffix has no target name and is an
+// error.
+func classify(pkg, sourcePath string) (Kind, string, error) {
+	stem, isTemplate := strings.CutSuffix(sourcePath, templateSuffix)
+	if !isTemplate {
+		return KindFile, targetPath(pkg, sourcePath), nil
+	}
+	name := stem[strings.LastIndex(stem, "/")+1:]
+	if name == "" || name == dotPrefix {
+		return "", "", fmt.Errorf("%s: a template needs a name before %s", sourcePath, templateSuffix)
+	}
+	return KindTemplate, targetPath(pkg, stem), nil
+}
+
 // targetPath maps a source-relative path inside pkg to its target-relative
 // path: the package segment is dropped and every remaining segment that
 // starts with "dot-" gets a leading dot instead. A segment that is exactly
@@ -211,6 +261,29 @@ func targetPath(pkg, sourcePath string) string {
 		}
 	}
 	return filepath.FromSlash(strings.Join(segments, "/"))
+}
+
+// templateContext builds the data every template in the plan sees.
+func templateContext(req Request) tmpl.Context {
+	sources := make([]tmpl.Source, len(req.Sources))
+	for i, source := range req.Sources {
+		sources[i] = tmpl.Source{Name: source.Name, Path: source.Path}
+	}
+	return tmpl.Context{Home: req.Home, Hostname: req.Hostname, Layers: req.Layers, OS: req.OS, Sources: sources}
+}
+
+// renderTemplate executes a template entry's source, naming the template
+// source:path so errors point at the file in the checkout.
+func renderTemplate(entry Entry, ctx tmpl.Context) ([]byte, error) {
+	text, err := os.ReadFile(entry.SourceFile)
+	if err != nil {
+		return nil, fmt.Errorf("source %s: %w", entry.Source, err)
+	}
+	content, err := tmpl.Render(entry.Source+":"+entry.Path, text, ctx)
+	if err != nil {
+		return nil, fmt.Errorf("render %w", err)
+	}
+	return content, nil
 }
 
 func statusOf(entry Entry) (Status, error) {
@@ -226,26 +299,21 @@ func statusOf(entry Entry) (Status, error) {
 		return StatusChanged, nil
 	}
 
-	same, err := sameContent(entry.SourceFile, entry.Target)
-	if err != nil {
-		return "", err
+	want := entry.Content
+	if entry.Kind == KindFile {
+		want, err = os.ReadFile(entry.SourceFile)
+		if err != nil {
+			return "", fmt.Errorf("read %s: %w", entry.SourceFile, err)
+		}
 	}
-	if same {
+	have, err := os.ReadFile(entry.Target)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", entry.Target, err)
+	}
+	if bytes.Equal(want, have) {
 		return StatusUnchanged, nil
 	}
 	return StatusChanged, nil
-}
-
-func sameContent(a, b string) (bool, error) {
-	left, err := os.ReadFile(a)
-	if err != nil {
-		return false, fmt.Errorf("read %s: %w", a, err)
-	}
-	right, err := os.ReadFile(b)
-	if err != nil {
-		return false, fmt.Errorf("read %s: %w", b, err)
-	}
-	return bytes.Equal(left, right), nil
 }
 
 func writeEntry(entry Entry) error {
@@ -253,11 +321,15 @@ func writeEntry(entry Entry) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	source, err := os.Open(entry.SourceFile)
-	if err != nil {
-		return err
+	var source io.Reader = bytes.NewReader(entry.Content)
+	if entry.Kind == KindFile {
+		file, err := os.Open(entry.SourceFile)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = file.Close() }()
+		source = file
 	}
-	defer func() { _ = source.Close() }()
 
 	temp, err := os.CreateTemp(dir, "."+filepath.Base(entry.Target)+".overlay-*")
 	if err != nil {
