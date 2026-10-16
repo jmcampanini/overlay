@@ -1,8 +1,11 @@
-- Use the Makefile targets for routine validation.
-- `make help` - list all available Makefile targets.
-- `make build` - build the `overlay` binary to `build/overlay`. Override with `BUILD_DIR=...` or `BIN=...`.
-- `make check` - run `fmt-check`, `tidy-check`, `lint`, `test`, `build`, `version-check`, and `vuln`; use before pushing.
-- `make clean` - remove build artifacts and the Go test cache.
+- This repository uses mise for tool versions and task execution. Run tasks with `mise run <task>`; do not call `go`, `golangci-lint`, `goreleaser`, or similar tools directly.
+- `mise tasks` lists all tasks. Common ones:
+  - `mise run check` runs `fmt-check`, `tidy-check`, `lint`, `test`, `version-check`, and `vuln`; run it before declaring work done.
+  - `mise run build` builds the `overlay` binary to `build/overlay` with version ldflags; `VERSION=x mise run build` overrides the git-derived version.
+  - `mise run fmt` and `mise run lint-fix` apply formatting and lint fixes.
+  - `mise run release-snapshot` builds the release archives into `dist/` without publishing; `mise run release` publishes and only runs in the Release workflow on a `v*` tag.
+  - `mise run clean` removes build artifacts and the Go test cache.
+- `mise.toml` pins Go, golangci-lint, govulncheck, and GoReleaser; `mise.lock` records their checksums. Bump a tool with `mise upgrade --bump <tool>`, run `mise lock` and `mise run check`, and commit both files.
 - Tests under `cmd` and `internal/gitrepo` run the real `git` binary against fixture repositories and fail when it is absent.
 - Keep command help the canonical user-facing documentation and the README a landing page; keep both consistent with observable behavior.
 - Keep every configuration struct tag in `internal/config`; other packages receive validated values from it.
