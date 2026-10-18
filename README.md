@@ -9,11 +9,13 @@ Command help is the canonical reference: `overlay --help` and each command's `--
 Releases ship binaries for Linux and macOS on amd64 and arm64.
 
 ```sh
-mise use -g github:jmcampanini/overlay   # mise
-brew install jmcampanini/tap/overlay     # Homebrew
+mise use -g github:jmcampanini/overlay   # Install with mise
+mise upgrade github:jmcampanini/overlay  # Upgrade with mise
+brew install jmcampanini/tap/overlay     # Install with Homebrew
+brew upgrade jmcampanini/tap/overlay     # Upgrade with Homebrew
 ```
 
-Or download an archive from the [releases page](https://github.com/jmcampanini/overlay/releases) and put `overlay` on your `PATH`. Each release includes a SHA-256 checksums file and GitHub build provenance attestations. On macOS, a browser download needs `xattr -d com.apple.quarantine overlay` before it runs; mise, Homebrew, `curl`, and `gh` downloads do not.
+Or download an archive from the [releases page](https://github.com/jmcampanini/overlay/releases) and put `overlay` on your `PATH`; to upgrade, download the new release and replace the binary. Each release includes a SHA-256 checksums file and GitHub build provenance attestations. On macOS, a browser download needs `xattr -d com.apple.quarantine overlay` before it runs; mise, Homebrew, `curl`, and `gh` downloads do not.
 
 To build from source, install [mise](https://mise.jdx.dev) (`brew install mise` on macOS) and run `mise trust`, `mise install`, then `mise run build`; copy `./build/overlay` onto your `PATH`.
 
@@ -49,7 +51,7 @@ url = "git@github.com:jmcampanini/dotfiles-xyz.git"
 path = "~/code/github.com/jmcampanini/dotfiles-xyz"
 ```
 
-Each source keeps an `overlay.toml` at its root that says which of its top-level directories (packages) each layer renders. A file's target path is its path inside the package with every `dot-` segment prefix turned into `.`, so `bash/dot-bashrc` lands at `~/.bashrc`. Layers apply as `base`, the configured layers in order, then `local`, and a later layer's file replaces an earlier one at the same target. `overlay render --help` documents the manifest and every rule.
+See `overlay render --help` for the source manifest and rendering rules.
 
 ```toml
 [layers.base]
