@@ -57,6 +57,20 @@ homebrew_casks:
     description: Render layered dotfiles from source repositories into a target directory
     binaries:
       - overlay
+    # Runs 'overlay completion <shell>' at install time, mirroring NaMo's
+    # cask. Same shells as the Homebrew default for a formula. Homebrew
+    # generates completions before any postflight hook runs, so the
+    # quarantine hook below is a preflight. shell_parameter_format: cobra
+    # would be wrong here: Homebrew then adds its own 'completion' argument
+    # and runs 'overlay completion completion <shell>', which prints help.
+    generate_completions_from_executable:
+      executable: overlay
+      args:
+        - completion
+      shells:
+        - bash
+        - zsh
+        - fish
     directory: Casks
     commit_msg_template: "Update overlay to {{ .Tag }}"
     commit_author:
@@ -74,9 +88,11 @@ homebrew_casks:
         url: ssh://git@github.com/jmcampanini/homebrew-tap.git
         private_key: "{{ envOrDefault \"HOMEBREW_TAP_DEPLOY_KEY\" \"\" }}"
     hooks:
-      post:
+      pre:
         # The binary is not notarized. Homebrew quarantines cask downloads,
         # so remove the attribute or Gatekeeper refuses to run the binary.
+        # Preflight, not postflight as in NaMo: Homebrew runs the binary to
+        # generate completions before any postflight hook.
         install: |
           if OS.mac?
             system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/overlay"]
