@@ -1,4 +1,4 @@
-# GoReleaser configuration. Run `make release-snapshot` to build release
+# GoReleaser configuration. Run `mise run release-snapshot` to build release
 # artifacts locally without publishing; the Release workflow publishes on
 # every v* tag.
 version: 2
@@ -17,15 +17,12 @@ builds:
     goarch:
       - amd64
       - arm64
-    ignore:
-      - goos: darwin
-        goarch: amd64
     flags:
       - -trimpath
       - -buildvcs=false
     ldflags:
       # Keep the v prefix so a release binary reports the same string as
-      # `make build` on the tagged commit.
+      # `mise run build` on the tagged commit.
       - -s -w -X github.com/jmcampanini/overlay/cmd.Version=v{{ .Version }}
     mod_timestamp: "{{ .CommitTimestamp }}"
 
