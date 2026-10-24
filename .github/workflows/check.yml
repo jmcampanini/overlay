@@ -35,9 +35,6 @@ jobs:
       - name: Check
         run: mise run check
 
-      - name: Build release artifacts without publishing
-        run: mise run release-snapshot
-
       - name: Verify check left the working tree unchanged
         if: always()
         run: |

@@ -80,7 +80,7 @@ run = "govulncheck ./..."
 # Add report-only tasks here; fixers (fmt, lint-fix, tidy) stay out.
 [tasks.check]
 description = "Run the complete local verification contract."
-depends = ["fmt-check", "tidy-check", "lint", "test", "version-check", "vuln"]
+depends = ["fmt-check", "tidy-check", "lint", "test", "version-check", "vuln", "release-snapshot"]
 
 [tasks.release-snapshot]
 description = "Build release archives into dist/ with GoReleaser without publishing."
