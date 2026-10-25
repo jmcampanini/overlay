@@ -1,7 +1,7 @@
 - Run tasks with `mise run <task>`; do not call `go`, `golangci-lint`, `goreleaser`, `markdownlint-cli2`, or similar tools directly.
 - Run `mise run check` before declaring work done.
 - Run `mise run release` only in the Release workflow on a `v*` tag.
-- Bump a tool with `mise upgrade --bump <tool>`, run `mise lock` and `mise run check`, and commit both files.
+- Bump a tool with `mise upgrade --bump <tool>`, run `mise lock` and `mise run check`, and commit `mise.toml`, `mise.lock`, and the `.mise/locks/` changes.
 - Keep tests under `internal/cli` and `internal/gitrepo` using the real `git` binary on `PATH` against fixture repositories.
 - Keep command help the canonical user-facing documentation and the README a landing page; keep both consistent with observable behavior.
 - Keep every configuration struct tag in `internal/config`; other packages receive validated values from it.
