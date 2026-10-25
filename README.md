@@ -4,6 +4,7 @@ overlay renders layered dotfiles from git source repositories into a target dire
 
 Command help is the canonical reference: `overlay --help` and each command's `--help` describe every user-facing contract, `overlay config --help` describes configuration precedence and the file schema, `overlay render --help` describes the source manifest and the rendering rules, and `overlay help exit-codes` describes exit statuses.
 
+
 ## Install
 
 Releases ship binaries for Linux and macOS on amd64 and arm64.
@@ -19,6 +20,7 @@ Or download an archive from the [releases page](https://github.com/jmcampanini/o
 
 To build from source, install [mise](https://mise.jdx.dev) (`brew install mise` on macOS) and run `mise trust`, `mise install`, then `mise run build`; copy `./build/overlay` onto your `PATH`.
 
+
 ## Representative commands
 
 | Command | Result |
@@ -31,9 +33,11 @@ To build from source, install [mise](https://mise.jdx.dev) (`brew install mise` 
 | `overlay render` | Write those files, skipping ones already identical, and print the same plan. |
 | `overlay render --target ~/staging --json` | Render into another directory and print the plan as one JSON document. |
 
+
 ## Required external programs
 
 `overlay bootstrap` runs `git` from `PATH` to clone sources and to read the origin of an existing checkout. It sets `GIT_TERMINAL_PROMPT=0`, so git never prompts; set up SSH or token authentication first. `overlay config` and `overlay render` run no external program.
+
 
 ## Configuration
 

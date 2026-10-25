@@ -1,4 +1,4 @@
-- Run tasks with `mise run <task>`; do not call `go`, `golangci-lint`, `goreleaser`, or similar tools directly.
+- Run tasks with `mise run <task>`; do not call `go`, `golangci-lint`, `goreleaser`, `markdownlint-cli2`, or similar tools directly.
 - Run `mise run check` before declaring work done.
 - Run `mise run release` only in the Release workflow on a `v*` tag.
 - Bump a tool with `mise upgrade --bump <tool>`, run `mise lock` and `mise run check`, and commit both files.
