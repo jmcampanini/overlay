@@ -13,7 +13,7 @@ var Version = "n/a"
 
 // Execute runs the command tree and returns the process exit status.
 func Execute(args []string, out, errOut io.Writer) int {
-	root := NewRootCommand(out, errOut)
+	root := newRootCommand(out, errOut)
 	root.SetArgs(args)
 	if err := root.Execute(); err != nil {
 		_, _ = fmt.Fprintf(errOut, "overlay: error: %v\n", err)
@@ -22,8 +22,8 @@ func Execute(args []string, out, errOut io.Writer) int {
 	return 0
 }
 
-// NewRootCommand builds the overlay command tree.
-func NewRootCommand(out, errOut io.Writer) *cobra.Command {
+// newRootCommand builds the overlay command tree.
+func newRootCommand(out, errOut io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "overlay",
 		Short: "Render layered dotfiles from source repositories",
