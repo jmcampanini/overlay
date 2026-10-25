@@ -1,11 +1,26 @@
-// Package cmd defines overlay's CLI commands and output contracts.
-package cmd
+// Package cli defines overlay's CLI commands and output contracts.
+package cli
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/spf13/cobra"
 )
+
+// Version is injected at build time by the mise build task or package manager.
+var Version = "n/a"
+
+// Execute runs the command tree and returns the process exit status.
+func Execute(args []string, out, errOut io.Writer) int {
+	root := NewRootCommand(out, errOut)
+	root.SetArgs(args)
+	if err := root.Execute(); err != nil {
+		_, _ = fmt.Fprintf(errOut, "overlay: error: %v\n", err)
+		return 1
+	}
+	return 0
+}
 
 // NewRootCommand builds the overlay command tree.
 func NewRootCommand(out, errOut io.Writer) *cobra.Command {

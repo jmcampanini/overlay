@@ -23,7 +23,7 @@ builds:
     ldflags:
       # Keep the v prefix so a release binary reports the same string as
       # `mise run build` on the tagged commit.
-      - -s -w -X github.com/jmcampanini/overlay/cmd.Version=v{{ .Version }}
+      - -s -w -X github.com/jmcampanini/overlay/internal/cli.Version=v{{ .Version }}
     mod_timestamp: "{{ .CommitTimestamp }}"
 
 archives:
