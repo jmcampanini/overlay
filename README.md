@@ -26,7 +26,7 @@ mise install
 mise run build
 ```
 
-Copy `./build/overlay` onto your `PATH`.
+Copy `./build/overlay` onto your `PATH`. To upgrade, run `git pull`, `mise install`, and `mise run build` in the clone, then copy the binary again.
 
 
 ## Representative commands
@@ -44,12 +44,12 @@ Copy `./build/overlay` onto your `PATH`.
 
 ## Required external programs
 
-- `git`: `overlay bootstrap` runs it from `PATH` to clone sources and to read the origin of an existing checkout. git never prompts for credentials, so set up SSH or token authentication first.
+- `git`: `overlay bootstrap` runs it from `PATH` to clone sources and to read the origin of an existing checkout.
 
 
 ## Configuration
 
-overlay reads `$XDG_CONFIG_HOME/overlay/config.toml`, or `~/.config/overlay/config.toml` when `XDG_CONFIG_HOME` is empty, and searches nowhere else. `overlay config --help` documents the precedence and every field.
+overlay reads `$XDG_CONFIG_HOME/overlay/config.toml`, or `~/.config/overlay/config.toml` when `XDG_CONFIG_HOME` is empty, and searches nowhere else. `overlay config --help` documents configuration precedence and the file schema.
 
 ```toml
 layers = ["abc", "xyz"]
