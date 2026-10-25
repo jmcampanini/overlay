@@ -1,12 +1,45 @@
-package cmd
+package cli
 
 import (
 	"bytes"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 )
+
+func TestExecuteReturnsStatusAndReportsErrors(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing.toml")
+	tests := []struct {
+		name       string
+		args       []string
+		wantStatus int
+	}{
+		{name: "success", args: []string{"exit-codes"}},
+		{name: "failure", args: []string{"config", "--config", missing}, wantStatus: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out, errOut bytes.Buffer
+
+			status := Execute(tt.args, &out, &errOut)
+
+			if status != tt.wantStatus {
+				t.Errorf("Execute status = %d, want %d", status, tt.wantStatus)
+			}
+			if tt.wantStatus == 0 {
+				if out.Len() == 0 || errOut.Len() != 0 {
+					t.Errorf("successful Execute stdout = %q, stderr = %q", out.String(), errOut.String())
+				}
+				return
+			}
+			if out.Len() != 0 || !strings.HasPrefix(errOut.String(), "overlay: error: ") || !strings.Contains(errOut.String(), missing) || strings.Count(errOut.String(), "\n") != 1 {
+				t.Errorf("failed Execute stdout = %q, stderr = %q, want one prefixed error naming %q", out.String(), errOut.String(), missing)
+			}
+		})
+	}
+}
 
 func TestExitCodesTopicPrintsSameHelpFromBothEntryPoints(t *testing.T) {
 	direct, errOut, err := executeForTest(t, "exit-codes")
@@ -29,7 +62,7 @@ func TestExitCodesTopicPrintsSameHelpFromBothEntryPoints(t *testing.T) {
 }
 
 func TestEveryApplicationCommandHasWrappedLongHelp(t *testing.T) {
-	root := NewRootCommand(&bytes.Buffer{}, &bytes.Buffer{})
+	root := newRootCommand(&bytes.Buffer{}, &bytes.Buffer{})
 
 	var visit func(*cobra.Command)
 	visit = func(command *cobra.Command) {
@@ -54,7 +87,7 @@ func TestEveryApplicationCommandHasWrappedLongHelp(t *testing.T) {
 }
 
 func TestEveryApplicationCommandDeclaresItsGrammar(t *testing.T) {
-	root := NewRootCommand(&bytes.Buffer{}, &bytes.Buffer{})
+	root := newRootCommand(&bytes.Buffer{}, &bytes.Buffer{})
 
 	var visit func(*cobra.Command)
 	visit = func(command *cobra.Command) {
@@ -79,7 +112,7 @@ func executeForTest(t *testing.T, args ...string) (stdout string, stderr string,
 
 	var out bytes.Buffer
 	var errOut bytes.Buffer
-	cmd := NewRootCommand(&out, &errOut)
+	cmd := newRootCommand(&out, &errOut)
 	cmd.SetArgs(args)
 	err = cmd.Execute()
 	return out.String(), errOut.String(), err

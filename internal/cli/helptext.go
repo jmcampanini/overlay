@@ -1,4 +1,4 @@
-package cmd
+package cli
 
 // Shared help fragments compose command long descriptions so repeated
 // contract text cannot drift between commands. Fragments carry no leading or
