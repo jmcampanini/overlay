@@ -25,7 +25,9 @@ func TestWritePatchDescribesNewAndChangedFilesRelativeToTheTarget(t *testing.T) 
 	src.file("pkg/greeting.tmpl", "hello {{ .OS }}\n", 0o644)
 	src.file(`pkg/odd "name"`, "quoted\n", 0o644)
 	src.file("pkg/with space", "spaced\n", 0o644)
-	target := t.TempDir()
+	req := templateRequest(t, src)
+	req.OS = "plan9"
+	target := req.Target
 	writeFile(t, filepath.Join(target, "same"), "same\n", 0o644)
 	writeFile(t, filepath.Join(target, "content"), "one\n2\nthree\n", 0o644)
 	writeFile(t, filepath.Join(target, "noeol"), "x\n", 0o644)
@@ -35,9 +37,6 @@ func TestWritePatchDescribesNewAndChangedFilesRelativeToTheTarget(t *testing.T) 
 	if err := os.Symlink("link.target", filepath.Join(target, "link")); err != nil {
 		t.Fatal(err)
 	}
-	req := templateRequest(t, src)
-	req.OS = "plan9"
-	req.Target = target
 	plan, err := Build(req)
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)

@@ -120,8 +120,6 @@ func gitApply(t *testing.T, dir, patch string) {
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 
 	path := filepath.Join(t.TempDir(), "overlay.patch")
-	if err := os.WriteFile(path, []byte(patch), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeFixtureFile(t, path, patch, 0o644)
 	gittest.Run(t, dir, "apply", path)
 }

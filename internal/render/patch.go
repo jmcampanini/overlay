@@ -43,9 +43,12 @@ func WritePatch(out io.Writer, plan Plan) ([]Omission, error) {
 			return nil, fmt.Errorf("relate %s to %s: %w", entry.Target, plan.Target, err)
 		}
 		path := filepath.ToSlash(rel)
-		rendered, err := renderedBytes(entry)
-		if err != nil {
-			return nil, err
+		rendered := entry.Content
+		if entry.Kind != KindTemplate {
+			rendered, err = os.ReadFile(entry.SourceFile)
+			if err != nil {
+				return nil, fmt.Errorf("read %s: %w", entry.SourceFile, err)
+			}
 		}
 
 		if entry.Status == StatusNew {
@@ -70,21 +73,22 @@ func WritePatch(out io.Writer, plan Plan) ([]Omission, error) {
 			if err := writeNewFilePatch(out, path, entry.Mode, rendered); err != nil {
 				return nil, err
 			}
+			continue
 		case !info.Mode().IsRegular():
 			return nil, fmt.Errorf("target %s is not a regular file (%s); a patch cannot describe it", entry.Target, info.Mode().Type())
-		default:
-			current, err := os.ReadFile(entry.Target)
-			if err != nil {
-				return nil, fmt.Errorf("read %s: %w", entry.Target, err)
-			}
-			if bytes.Equal(current, rendered) {
-				reason := fmt.Sprintf("set permission bits %o -> %o", info.Mode().Perm(), entry.Mode)
-				omissions = append(omissions, Omission{Entry: entry, Reason: reason})
-				continue
-			}
-			if err := writeChangedFilePatch(out, path, current, rendered); err != nil {
-				return nil, err
-			}
+		}
+
+		current, err := os.ReadFile(entry.Target)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", entry.Target, err)
+		}
+		if bytes.Equal(current, rendered) {
+			reason := fmt.Sprintf("set permission bits %o -> %o", info.Mode().Perm(), entry.Mode)
+			omissions = append(omissions, Omission{Entry: entry, Reason: reason})
+			continue
+		}
+		if err := writeChangedFilePatch(out, path, current, rendered); err != nil {
+			return nil, err
 		}
 	}
 	return omissions, nil
@@ -115,19 +119,6 @@ func writeDeletedLinkPatch(out io.Writer, path, destination string) error {
 	_, err := fmt.Fprintf(out, "diff --git %s %s\ndeleted file mode 120000\n%s",
 		a, b, udiff.Unified(a, "/dev/null", destination, ""))
 	return err
-}
-
-// renderedBytes returns the bytes Apply would write: a template's rendered
-// content or a file's source bytes.
-func renderedBytes(entry Entry) ([]byte, error) {
-	if entry.Kind == KindTemplate {
-		return entry.Content, nil
-	}
-	content, err := os.ReadFile(entry.SourceFile)
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", entry.SourceFile, err)
-	}
-	return content, nil
 }
 
 // quotePath returns path as git writes it in patch headers: unchanged when
