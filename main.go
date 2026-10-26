@@ -2,16 +2,11 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
-	"github.com/jmcampanini/overlay/cmd"
+	"github.com/jmcampanini/overlay/internal/cli"
 )
 
 func main() {
-	root := cmd.NewRootCommand(os.Stdout, os.Stderr)
-	if err := root.Execute(); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "overlay: error: %v\n", err)
-		os.Exit(1)
-	}
+	os.Exit(cli.Execute(os.Args[1:], os.Stdout, os.Stderr))
 }

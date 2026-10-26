@@ -1,8 +1,10 @@
 # Security Policy
 
+
 ## Supported versions
 
 overlay is supported only at the latest release. Older releases and commits on `main` between releases receive no fixes; upgrade to the latest release before reporting.
+
 
 ## Reporting a vulnerability
 
