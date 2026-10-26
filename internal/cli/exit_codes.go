@@ -22,12 +22,14 @@ func exitCodesTopic() *cobra.Command {
      stderr. 'render' also fails, writing nothing, on a missing or invalid
      source manifest, a package entry that is not a regular file or a link
      to one, two files in one layer rendering to the same target, a
-     template that fails to parse or execute, a missing target directory,
-     or a directory at a target path; a failure
-     while writing stops there and prints no plan, and files already
-     written stay. 'diff' fails on the same conditions and on a target
-     path holding anything other than a regular file or a symbolic link;
-     the patch printed before the failure stays on stdout.`,
+     template that fails to parse or execute, a malformed fragment name,
+     a fragment that fails to parse, substitute, or merge, a fragment in
+     a later layer than a plain file at its target, a missing target
+     directory, or a directory at a target path; a failure while writing
+     stops there and prints no plan, and files already written stay.
+     'diff' fails on the same conditions and on a target path holding
+     anything other than a regular file or a symbolic link; the patch
+     printed before the failure stays on stdout.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()

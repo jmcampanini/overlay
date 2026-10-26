@@ -186,3 +186,28 @@ func TestQuotePath(t *testing.T) {
 		})
 	}
 }
+
+func TestWritePatchPrintsMergedContent(t *testing.T) {
+	src := newSource(t, "src", "[layers.base]\npackages = [\"pkg\"]\n")
+	src.file("pkg/settings.olay.base.json", `{"a": 1}`, 0o644)
+	src.file("pkg/settings.olay.local.json", `{"b": "${OVERLAY_TEST_PATCH}"}`, 0o644)
+	t.Setenv("OVERLAY_TEST_PATCH", "two")
+	target := t.TempDir()
+	plan, err := Build(Request{Layers: []string{"base", "local"}, Sources: []config.ResolvedSource{src.resolved()}, Target: target})
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	var out bytes.Buffer
+	if _, err := WritePatch(&out, plan); err != nil {
+		t.Fatalf("WritePatch() error = %v", err)
+	}
+
+	want := "+++ b/settings.json\n@@ -0,0 +1,4 @@\n+{\n+  \"a\": 1,\n+  \"b\": \"two\"\n+}\n"
+	if !strings.Contains(out.String(), want) {
+		t.Errorf("patch lacks the merged document %q:\n%s", want, out.String())
+	}
+	if strings.Contains(out.String(), `{"a": 1}`) {
+		t.Errorf("patch shows raw fragment bytes:\n%s", out.String())
+	}
+}

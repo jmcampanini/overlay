@@ -1,6 +1,6 @@
 # overlay
 
-overlay renders layered dotfiles from git source repositories into a target directory. One configuration file lists the layers to apply and the sources that provide files; `overlay bootstrap` writes that file and clones the sources, `overlay config` prints the configuration in effect, `overlay render` writes the files the layers select into the target directory, and `overlay diff` prints a patch from the target's current files to what render would write. overlay never overwrites its configuration file, never touches an existing checkout, never deletes a rendered file, and never lets git prompt for credentials.
+overlay renders layered dotfiles from git source repositories into a target directory. One configuration file lists the layers to apply and the sources that provide files; `overlay bootstrap` writes that file and clones the sources, `overlay config` prints the configuration in effect, `overlay render` writes the files the layers select into the target directory, and `overlay diff` prints a patch from the target's current files to what render would write. A later layer replaces an earlier layer's file at the same path, except that JSON and TOML fragments named `NAME.olay.LAYER.EXT` merge across layers and sources into one `NAME.EXT`, so a base repository and a personal repository can each hold part of `~/.claude/settings.json` or `~/.codex/config.toml`. overlay never overwrites its configuration file, never touches an existing checkout, never deletes a rendered file, and never lets git prompt for credentials.
 
 
 ## Install
