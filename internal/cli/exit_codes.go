@@ -14,9 +14,10 @@ func exitCodesTopic() *cobra.Command {
      whether or not anything differs, --help, --version, and 'overlay
      help <topic>' naming an unknown topic, which prints 'Unknown help
      topic' and the root usage on stdout.
-  1  Any failure. Usage errors (an unknown command, operand, or flag), a
-     missing --config file, an invalid configuration, an existing file
-     during bootstrap, a path that is not a checkout of its source url,
+  1  Any failure. Usage errors (an unknown command, operand, or flag, or
+     an empty --config path), a missing --config file, an invalid
+     configuration, an existing file during bootstrap, a path that is not
+     a checkout of its source url,
      git missing from PATH, and a failed git command print
      'overlay: error: <message>' on stderr. git's own output also goes to
      stderr. 'render' also fails, writing nothing, on a missing or invalid

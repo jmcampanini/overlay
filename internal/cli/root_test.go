@@ -41,6 +41,37 @@ func TestExecuteReturnsStatusAndReportsErrors(t *testing.T) {
 	}
 }
 
+func TestEveryCommandRejectsAnEmptyConfigPath(t *testing.T) {
+	commands := [][]string{
+		{"bootstrap", "--source-url", "git@x:a/b.git", "--source-path", "/p"},
+		{"config"},
+		{"diff"},
+		{"render", "--dry-run"},
+	}
+	for _, command := range commands {
+		for _, flag := range [][]string{{"--config", ""}, {"--config="}} {
+			t.Run(command[0]+" "+strings.Join(flag, " "), func(t *testing.T) {
+				configDir := t.TempDir()
+				t.Setenv("XDG_CONFIG_HOME", configDir)
+				writeConfig(t, filepath.Join(configDir, "overlay", "config.toml"), "layers = []\n")
+				var out, errOut bytes.Buffer
+
+				status := Execute(append(append([]string{}, command...), flag...), &out, &errOut)
+
+				if status != 1 {
+					t.Errorf("Execute() status = %d, want 1", status)
+				}
+				if want := "overlay: error: --config requires a nonempty file path\n"; errOut.String() != want {
+					t.Errorf("Execute() stderr = %q, want %q", errOut.String(), want)
+				}
+				if out.Len() != 0 {
+					t.Errorf("Execute() stdout = %q, want empty", out.String())
+				}
+			})
+		}
+	}
+}
+
 func TestExitCodesTopicPrintsSameHelpFromBothEntryPoints(t *testing.T) {
 	direct, errOut, err := executeForTest(t, "exit-codes")
 	if err != nil {

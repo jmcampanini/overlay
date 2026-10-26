@@ -64,6 +64,37 @@ func TestRenderDryRunPrintsThePlanWithoutWriting(t *testing.T) {
 	requireNoFile(t, filepath.Join(f.home, ".ssh", "config"))
 }
 
+func TestRenderAndDiffApplyEnvLayersAfterFlagsClearTheList(t *testing.T) {
+	tests := []struct {
+		args []string
+		want string
+	}{
+		{args: []string{"render", "--dry-run"}, want: fixtureTable},
+		{args: []string{"diff"}, want: fixturePatch},
+	}
+	for _, tt := range tests {
+		t.Run(tt.args[0], func(t *testing.T) {
+			f := newRenderFixture(t)
+			original, err := os.ReadFile(f.configPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeConfig(t, f.configPath, "env_layers = [\"HOST_LAYERS\"]\n"+string(original))
+			t.Setenv("HOST_LAYERS", "personal")
+
+			out, errOut, err := executeForTest(t, append(append([]string{}, tt.args...), "--config", f.configPath, "--layers", "")...)
+			if err != nil {
+				t.Fatalf("%v error = %v, stderr = %s", tt.args, err, errOut)
+			}
+
+			if out != tt.want {
+				t.Errorf("%v output = %q, want %q", tt.args, out, tt.want)
+			}
+			requireNoFile(t, filepath.Join(f.home, ".ssh", "config"))
+		})
+	}
+}
+
 func TestRenderWritesFilesAndPrintsTheSamePlan(t *testing.T) {
 	f := newRenderFixture(t)
 

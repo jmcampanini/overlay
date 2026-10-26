@@ -120,7 +120,8 @@ overrides both. --json instead emits one JSON document {"target",
 paths and no escapes, even with --color always.
 
 ` + configFileHelp + `
---config PATH reads PATH instead and fails when PATH does not exist.
+--config PATH reads PATH instead and fails when PATH does not exist or
+is empty.
 
 ` + layerSelectionHelp,
 		Example: `  overlay render --dry-run
@@ -166,15 +167,16 @@ func runRender(cmd *cobra.Command, opts renderOptions) error {
 // and plans a render into the resolved target. It returns the plan and the
 // home directory the target was resolved against.
 func loadPlan(cmd *cobra.Command, configPath, target string) (render.Plan, string, error) {
+	env := configloader.OSEnv()
 	cfg, _, err := config.Load(config.LoadOptions{
-		Env:   configloader.OSEnv(),
+		Env:   env,
 		Flags: cmd.Flags(),
 		Path:  configPath,
 	})
 	if err != nil {
 		return render.Plan{}, "", err
 	}
-	effective, err := config.Resolve(cfg)
+	effective, err := config.Resolve(cfg, env)
 	if err != nil {
 		return render.Plan{}, "", err
 	}

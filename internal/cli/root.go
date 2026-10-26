@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
@@ -53,6 +54,14 @@ exit-codes' for exit-status meanings.`,
 		DisableSuggestions: true,
 		SilenceUsage:       true,
 		SilenceErrors:      true,
+		// Every command's --config names a file the person supplied, so an
+		// empty value is an error rather than a fall-through to discovery.
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			if flag := cmd.Flags().Lookup("config"); flag != nil && flag.Changed && flag.Value.String() == "" {
+				return errors.New("--config requires a nonempty file path")
+			}
+			return nil
+		},
 	}
 	cmd.SetOut(out)
 	cmd.SetErr(errOut)

@@ -23,7 +23,7 @@ func TestResolveKeepsLastOccurrenceOfEachLayer(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Resolve(Config{Layers: tt.layers})
+			got, err := Resolve(Config{Layers: tt.layers}, nil)
 			if err != nil {
 				t.Fatalf("Resolve(%v) error = %v", tt.layers, err)
 			}
@@ -51,9 +51,103 @@ func TestResolveRejectsInvalidLayerNames(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.layer, func(t *testing.T) {
-			_, err := Resolve(Config{Layers: []string{"ok", tt.layer}})
+			_, err := Resolve(Config{Layers: []string{"ok", tt.layer}}, nil)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Errorf("Resolve with layer %q error = %v, want containing %q", tt.layer, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveAppendsEnvLayers(t *testing.T) {
+	tests := []struct {
+		name      string
+		layers    []string
+		envLayers []string
+		env       map[string]string
+		want      []string
+	}{
+		{
+			name:      "variables read in list order",
+			layers:    []string{"work"},
+			envLayers: []string{"HOST_LAYERS", "SESSION_LAYERS"},
+			env:       map[string]string{"SESSION_LAYERS": "session", "HOST_LAYERS": "host"},
+			want:      []string{"work", "host", "session"},
+		},
+		{
+			name:      "values split on commas, trimmed, blanks dropped",
+			envLayers: []string{"HOST_LAYERS"},
+			env:       map[string]string{"HOST_LAYERS": " laptop , ,, work ,"},
+			want:      []string{"laptop", "work"},
+		},
+		{
+			name:      "unset variable adds nothing",
+			layers:    []string{"work"},
+			envLayers: []string{"HOST_LAYERS"},
+			want:      []string{"work"},
+		},
+		{
+			name:      "empty variable adds nothing",
+			layers:    []string{"work"},
+			envLayers: []string{"HOST_LAYERS"},
+			env:       map[string]string{"HOST_LAYERS": ""},
+			want:      []string{"work"},
+		},
+		{
+			name:      "additions apply to cleared raw layers",
+			layers:    []string{},
+			envLayers: []string{"HOST_LAYERS"},
+			env:       map[string]string{"HOST_LAYERS": "host"},
+			want:      []string{"host"},
+		},
+		{
+			name:      "last occurrence wins across raw and env layers",
+			layers:    []string{"work", "laptop"},
+			envLayers: []string{"HOST_LAYERS", "SESSION_LAYERS"},
+			env:       map[string]string{"HOST_LAYERS": "work,host", "SESSION_LAYERS": "host"},
+			want:      []string{"laptop", "work", "host"},
+		},
+		{
+			name:      "variable names match exactly",
+			envLayers: []string{"HOST_LAYERS"},
+			env:       map[string]string{"host_layers": "lower", "OVERLAY_HOST_LAYERS": "prefixed", "HOST_LAYERS ": "padded"},
+			want:      []string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Resolve(Config{EnvLayers: tt.envLayers, Layers: tt.layers}, tt.env)
+			if err != nil {
+				t.Fatalf("Resolve() error = %v", err)
+			}
+
+			if diff := cmp.Diff(tt.want, got.Layers); diff != "" {
+				t.Errorf("Resolve().Layers mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestResolveRejectsInvalidEnvLayers(t *testing.T) {
+	tests := []struct {
+		name      string
+		envLayers []string
+		env       map[string]string
+		want      string
+	}{
+		{name: "blank variable name", envLayers: []string{"HOST_LAYERS", ""}, want: "env_layers item 2 is blank"},
+		{name: "whitespace variable name", envLayers: []string{" "}, want: "env_layers item 1 is blank"},
+		{name: "padded variable name", envLayers: []string{" HOST_LAYERS"}, env: map[string]string{" HOST_LAYERS": "work"}, want: "surrounding whitespace"},
+		{name: "base through env", envLayers: []string{"HOST_LAYERS"}, env: map[string]string{"HOST_LAYERS": "base"}, want: "automatic"},
+		{name: "local through env", envLayers: []string{"HOST_LAYERS"}, env: map[string]string{"HOST_LAYERS": "work,local"}, want: "automatic"},
+		{name: "invalid grammar through env", envLayers: []string{"HOST_LAYERS"}, env: map[string]string{"HOST_LAYERS": "Work"}, want: "lowercase"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Resolve(Config{EnvLayers: tt.envLayers, Layers: []string{"ok"}}, tt.env)
+
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("Resolve() error = %v, want containing %q", err, tt.want)
 			}
 		})
 	}
@@ -108,7 +202,7 @@ func TestResolveSources(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Resolve(Config{Layers: []string{}, Sources: []Source{tt.source}})
+			got, err := Resolve(Config{Layers: []string{}, Sources: []Source{tt.source}}, nil)
 
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
@@ -131,13 +225,13 @@ func TestResolveRejectsCollidingSources(t *testing.T) {
 		{URL: "git@a.example.com:x/dotfiles.git", Path: "/srv/a"},
 		{URL: "git@b.example.com:y/dotfiles.git", Path: "/srv/b"},
 	}
-	_, err := Resolve(Config{Sources: sameName})
+	_, err := Resolve(Config{Sources: sameName}, nil)
 	if err == nil || !strings.Contains(err.Error(), `name "dotfiles"`) {
 		t.Errorf("Resolve with duplicate names error = %v, want name collision", err)
 	}
 
 	renamed := []Source{sameName[0], {Name: "dotfiles-b", URL: sameName[1].URL, Path: sameName[1].Path}}
-	if _, err := Resolve(Config{Sources: renamed}); err != nil {
+	if _, err := Resolve(Config{Sources: renamed}, nil); err != nil {
 		t.Errorf("Resolve with explicit name error = %v, want nil", err)
 	}
 
@@ -145,7 +239,7 @@ func TestResolveRejectsCollidingSources(t *testing.T) {
 		{URL: "git@a.example.com:x/one.git", Path: "/srv/shared"},
 		{URL: "git@b.example.com:y/two.git", Path: "/srv/shared/"},
 	}
-	_, err = Resolve(Config{Sources: samePath})
+	_, err = Resolve(Config{Sources: samePath}, nil)
 	if err == nil || !strings.Contains(err.Error(), `path "/srv/shared"`) {
 		t.Errorf("Resolve with duplicate paths error = %v, want path collision", err)
 	}
@@ -179,6 +273,25 @@ func TestLoadPrecedence(t *testing.T) {
 		{name: "singular repeats last", args: []string{"--layers", "a,b", "--layer", "a"}, want: []string{"b", "a"}, wantSource: "<pflag>"},
 		{name: "file repeats reduce", file: `layers = ["a", "b", "a"]` + "\n", want: []string{"b", "a"}},
 		{name: "no file uses defaults", want: []string{}, wantSource: "<default>"},
+		{
+			name: "env_layers append after flags clear",
+			file: fileLayers + `env_layers = ["HOST_LAYERS"]` + "\n",
+			env:  map[string]string{"HOST_LAYERS": "host"},
+			args: []string{"--layers", ""},
+			want: []string{"host"}, wantSource: "<pflag>",
+		},
+		{
+			name: "env_layers append after env replaces file",
+			file: fileLayers + `env_layers = ["HOST_LAYERS"]` + "\n",
+			env:  map[string]string{"OVERLAY_LAYERS": "env,host", "HOST_LAYERS": "host"},
+			want: []string{"env", "host"}, wantSource: "<env>",
+		},
+		{
+			name: "OVERLAY_ENV_LAYERS is not read",
+			file: fileLayers,
+			env:  map[string]string{"OVERLAY_ENV_LAYERS": "HOST_LAYERS", "HOST_LAYERS": "host"},
+			want: []string{"file", "shared"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -200,7 +313,7 @@ func TestLoadPrecedence(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Load() error = %v", err)
 			}
-			effective, err := Resolve(cfg)
+			effective, err := Resolve(cfg, tt.env)
 			if err != nil {
 				t.Fatalf("Resolve() error = %v", err)
 			}
@@ -244,12 +357,28 @@ func TestLoadRejectsBlankLayerItems(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Load() error = %v", err)
 			}
-			_, err = Resolve(cfg)
+			_, err = Resolve(cfg, tt.env)
 
 			if err == nil || !strings.Contains(err.Error(), "blank") {
 				t.Errorf("Resolve() error = %v, want blank layer name", err)
 			}
 		})
+	}
+}
+
+func TestRegisterFlagsAddsNoEnvLayersFlag(t *testing.T) {
+	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+	if err := RegisterFlags(flags); err != nil {
+		t.Fatalf("RegisterFlags() error = %v", err)
+	}
+
+	if flags.Lookup("env-layers") != nil {
+		t.Error("RegisterFlags() added --env-layers; env_layers is file-only")
+	}
+	for _, name := range []string{"layers", "layer"} {
+		if flags.Lookup(name) == nil {
+			t.Errorf("RegisterFlags() did not add --%s", name)
+		}
 	}
 }
 
@@ -282,6 +411,7 @@ func TestLoadReadsSourcesFromFile(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	writeFile(t, filepath.Join(dir, "overlay", "config.toml"), `
 layers = ["personal"]
+env_layers = ["HOST_LAYERS", "SESSION_LAYERS"]
 
 [[source]]
 url = "git@github.com:jmcampanini/dotfiles-base.git"
@@ -299,7 +429,8 @@ path = "/srv/personal"
 	}
 
 	want := Config{
-		Layers: []string{"personal"},
+		EnvLayers: []string{"HOST_LAYERS", "SESSION_LAYERS"},
+		Layers:    []string{"personal"},
 		Sources: []Source{
 			{URL: "git@github.com:jmcampanini/dotfiles-base.git", Path: "/srv/base"},
 			{Name: "extra", URL: "git@github.com:jmcampanini/dotfiles-personal.git", Path: "/srv/personal"},

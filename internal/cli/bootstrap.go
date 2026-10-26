@@ -40,8 +40,9 @@ list. Names follow the grammar in 'overlay config --help'. bootstrap does
 not read OVERLAY_LAYERS.
 
 ` + configFileHelp + `
---config PATH writes PATH instead. bootstrap never overwrites: when the
-file already exists, nothing happens and the command fails.
+--config PATH writes PATH instead and fails when PATH is empty. bootstrap
+never overwrites: when the file already exists, nothing happens and the
+command fails.
 
 Each source whose path is absent is cloned by running 'git clone' from
 PATH, with git's own output on stderr. An existing path is left alone when
@@ -82,7 +83,7 @@ func runBootstrap(ctx context.Context, req bootstrapRequest, out, progress io.Wr
 	for i, url := range req.sourceURLs {
 		cfg.Sources = append(cfg.Sources, config.Source{Path: req.sourcePaths[i], URL: url})
 	}
-	effective, err := config.Resolve(cfg)
+	effective, err := config.Resolve(cfg, nil)
 	if err != nil {
 		return err
 	}

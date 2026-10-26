@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/jmcampanini/go-config-loader/configloader"
@@ -32,10 +33,14 @@ const (
 // layerNameRE is the shared identifier grammar for user-selectable layers.
 var layerNameRE = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
-// Config is the config.toml schema as loaded, before validation.
+// Config is the config.toml schema as loaded, before validation. Fields keep
+// the order the TOML encoder writes them in reports and bootstrapped files.
+// EnvLayers carries only a toml tag: the environment and flag loaders skip
+// fields without a config tag, which keeps env_layers file-only.
 type Config struct {
-	Layers  []string `toml:"layers" config:"layers" pflag_singular:"layer" help:"layers to apply; --layers accepts comma-separated lists"`
-	Sources []Source `toml:"source"`
+	Layers    []string `toml:"layers" config:"layers" pflag_singular:"layer" help:"layers to apply; --layers accepts comma-separated lists"`
+	EnvLayers []string `toml:"env_layers"`
+	Sources   []Source `toml:"source"`
 }
 
 // Source is one [[source]] entry.
@@ -88,7 +93,8 @@ func DefaultPath() (string, error) {
 
 // LoadOptions selects the sources Load applies on top of the defaults.
 type LoadOptions struct {
-	// Env is the process environment; OVERLAY_LAYERS is read from it.
+	// Env is the process environment; OVERLAY_LAYERS is read from it. Pass the
+	// same map to Resolve so the env_layers variables are read from it too.
 	Env map[string]string
 	// Flags holds the flags RegisterFlags added, or nil when the command has none.
 	Flags *pflag.FlagSet
@@ -137,11 +143,17 @@ func newFileLoader(explicitPath string) (configloader.ConfigLoader[Config], erro
 	return configloader.NewMergeAllFilesLoader[Config](configloader.File(discovered))
 }
 
-// Resolve validates cfg and derives the effective configuration: layers are
-// reduced to their last occurrence and validated, source names are derived
-// from URLs unless set, and source paths are expanded to absolute paths.
-func Resolve(cfg Config) (Effective, error) {
-	layers := keepLastOccurrences(cfg.Layers)
+// Resolve validates cfg and derives the effective configuration: the layers
+// the env_layers variables add are appended to cfg.Layers, the combined list
+// is reduced to its last occurrences and validated, source names are derived
+// from URLs unless set, and source paths are expanded to absolute paths. env
+// is the process environment; a nil env has no variables set.
+func Resolve(cfg Config, env map[string]string) (Effective, error) {
+	additions, err := envLayers(cfg.EnvLayers, env)
+	if err != nil {
+		return Effective{}, err
+	}
+	layers := keepLastOccurrences(slices.Concat(cfg.Layers, additions))
 	for _, layer := range layers {
 		if err := ValidateLayerName(layer); err != nil {
 			return Effective{}, err
@@ -206,6 +218,28 @@ func SourceName(url string) (string, error) {
 		return "", fmt.Errorf("derive name from url %q: %w", url, err)
 	}
 	return name, nil
+}
+
+// envLayers reads the variables names lists, in order, from env and returns
+// the layers their comma-separated values add: items are trimmed and blank
+// items dropped, so an unset or empty variable adds nothing. Each name is
+// looked up exactly as written and must not be blank or padded with whitespace.
+func envLayers(names []string, env map[string]string) ([]string, error) {
+	var layers []string
+	for i, name := range names {
+		switch {
+		case strings.TrimSpace(name) == "":
+			return nil, fmt.Errorf("env_layers item %d is blank", i+1)
+		case strings.TrimSpace(name) != name:
+			return nil, fmt.Errorf("env_layers item %d %q has surrounding whitespace", i+1, name)
+		}
+		for item := range strings.SplitSeq(env[name], ",") {
+			if item = strings.TrimSpace(item); item != "" {
+				layers = append(layers, item)
+			}
+		}
+	}
+	return layers, nil
 }
 
 func keepLastOccurrences(items []string) []string {

@@ -12,6 +12,7 @@ import (
 )
 
 const fixtureConfig = `layers = ["personal", "server", "personal"]
+env_layers = ["HOST_LAYERS", "SESSION_LAYERS"]
 
 [[source]]
 url = "git@github.com:jmcampanini/dotfiles-base.git"
@@ -30,6 +31,8 @@ func TestConfigReportRoundTripsAndListsEffectiveValues(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", configDir)
 	configPath := filepath.Join(configDir, "overlay", "config.toml")
 	writeConfig(t, configPath, fixtureConfig)
+	t.Setenv("HOST_LAYERS", "server, laptop")
+	t.Setenv("SESSION_LAYERS", "")
 
 	out, errOut, err := executeForTest(t, "config")
 	if err != nil {
@@ -51,15 +54,40 @@ func TestConfigReportRoundTripsAndListsEffectiveValues(t *testing.T) {
 	if diff := cmp.Diff(original, reloaded); diff != "" {
 		t.Errorf("report body does not reload as the file (-want +got):\n%s", diff)
 	}
+	if !strings.Contains(body, `env_layers = ["HOST_LAYERS", "SESSION_LAYERS"]`+"\n") {
+		t.Errorf("report body does not show env_layers as loaded:\n%s", body)
+	}
 	wantEffective := strings.Join([]string{
 		`# loaded_files = ["` + configPath + `"]`,
-		`# effective_layers = ["server", "personal"]`,
-		`# layer_order = ["base", "server", "personal", "local"]`,
+		`# effective_layers = ["personal", "server", "laptop"]`,
+		`# layer_order = ["base", "personal", "server", "laptop", "local"]`,
 		`# source dotfiles-base = "` + filepath.Join(home, "dotfiles", "base") + `"`,
 		`# source extra = "/srv/personal"`,
 	}, "\n") + "\n"
 	if effective != wantEffective {
 		t.Errorf("effective block mismatch:\n got %q\nwant %q", effective, wantEffective)
+	}
+}
+
+func TestConfigReportAppendsEnvLayersAfterFlagsClearTheList(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	writeConfig(t, configPath, "layers = [\"work\"]\nenv_layers = [\"HOST_LAYERS\"]\n")
+	t.Setenv("HOST_LAYERS", " laptop, ,session ")
+
+	out, errOut, err := executeForTest(t, "config", "--config", configPath, "--layers", "")
+	if err != nil {
+		t.Fatalf("config error = %v, stderr = %s", err, errOut)
+	}
+
+	for _, want := range []string{
+		"layers = []\n",
+		`env_layers = ["HOST_LAYERS"]` + "\n",
+		`# effective_layers = ["laptop", "session"]` + "\n",
+		`# layer_order = ["base", "laptop", "session", "local"]` + "\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("config output missing %q:\n%s", want, out)
+		}
 	}
 }
 

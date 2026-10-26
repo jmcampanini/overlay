@@ -49,7 +49,8 @@ OLD -> NEW' instead. A target path holding anything other than a regular
 file, a symbolic link, or nothing is an error.
 
 ` + configFileHelp + `
---config PATH reads PATH instead and fails when PATH does not exist.
+--config PATH reads PATH instead and fails when PATH does not exist or
+is empty.
 
 ` + layerSelectionHelp,
 		Example: `  overlay diff

@@ -50,10 +50,11 @@ Copy `./build/overlay` onto your `PATH`.
 
 ## Configuration
 
-overlay reads `$XDG_CONFIG_HOME/overlay/config.toml`, or `~/.config/overlay/config.toml` when `XDG_CONFIG_HOME` is empty, and searches nowhere else. `overlay config --help` documents configuration precedence and the file schema.
+overlay reads `$XDG_CONFIG_HOME/overlay/config.toml`, or `~/.config/overlay/config.toml` when `XDG_CONFIG_HOME` is empty, and searches nowhere else. `layers` selects the layers to apply, and `env_layers` names environment variables whose comma-separated values add layers for one host or shell without replacing that list. `overlay config --help` documents configuration precedence and the file schema.
 
 ```toml
 layers = ["abc", "xyz"]
+env_layers = ["HOST_LAYERS", "SESSION_LAYERS"]
 
 [[source]]
 url = "git@github.com:jmcampanini/dotfiles-base.git"
