@@ -135,28 +135,32 @@ layer order and then source order:
   {{ end }}{{ end }}{{ end }}
 
 Writing creates missing directories with mode 755, writes each file to a
-temporary name in its final directory with the source's permission bits,
-and renames it over the target, so a symbolic link at the target is
-replaced rather than followed. Nothing is ever deleted. A file is skipped
-when the target is a regular file with identical bytes and permission
-bits. A directory at a target path is an error. A failure while writing
-stops at that file, and files already written stay in place.
+temporary .NAME.overlay-* in its final directory with the source's
+permission bits, and renames it over the target, which discards the
+target's previous content; a symbolic link at the target is replaced
+rather than followed, and a failed write removes its temporary file. No
+other file is ever deleted. A file is skipped when the target is a regular
+file with identical bytes and permission bits. A directory at a target
+path is an error. A failure while writing stops at that file, and files
+already written stay in place.
 
 Both modes print the plan on stdout: a table with columns TARGET, SOURCE
 (name:path within the source; a merge lists every fragment in layer
 order), KIND (file, template, or merge), STATUS (new, changed, or
 unchanged; a template or merge compares its rendered output), and
 REPLACES (the files earlier layers contributed), then a count summary.
-Targets under the home directory are shortened to ~. The table colors
-STATUS only when stdout is a terminal whose TERM is not dumb; a nonempty
-NO_COLOR disables color and --color MODE (auto, always, or never)
-overrides both. --json instead emits one JSON document {"target",
+Targets under the home directory are shortened to ~. --color MODE is auto
+by default: the table colors STATUS only when stdout is a terminal whose
+TERM is not dumb, and a nonempty NO_COLOR disables color. always and never
+override both. --json instead emits one JSON document {"target",
 "layers", "entries": [{"target", "source", "path", "layer", "kind",
 "status", "replaces": [{"source", "path", "layer"}], "merges": [{"source",
 "path", "layer"}]}]} with absolute paths and no escapes, even with --color
 always. For a merge, merges lists its fragments in layer order and
 source, path, and layer name the last of them; for other kinds merges is
 empty.
+
+` + contractHelp + `
 
 ` + configFileHelp + `
 --config PATH reads PATH instead and fails when PATH does not exist.
@@ -176,7 +180,7 @@ empty.
 	cmd.Flags().StringVar(&opts.target, "target", "", "directory to render into (default the home directory)")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "print the plan without writing")
 	cmd.Flags().BoolVar(&opts.jsonOutput, "json", false, "print the plan as JSON")
-	cmd.Flags().Var(colorValue{mode: &opts.color}, "color", "color the table: auto, always, or never")
+	cmd.Flags().Var(colorValue{mode: &opts.color}, "color", "auto (honors NO_COLOR), always, or never")
 	cmd.Flags().StringVar(&opts.configPath, "config", "", "configuration file to read instead of the default")
 	return cmd
 }
@@ -196,8 +200,7 @@ func runRender(cmd *cobra.Command, opts renderOptions) error {
 	if opts.jsonOutput {
 		return writePlanJSON(out, plan)
 	}
-	profile := resolveColor(opts.color, cmd.Flags().Changed("color"),
-		os.Getenv("NO_COLOR") != "", detectColor(out, os.Environ()))
+	profile := resolveColor(opts.color, os.Getenv("NO_COLOR") != "", detectColor(out, os.Environ()))
 	return writePlanTable(out, plan, home, colorEnabled(profile))
 }
 

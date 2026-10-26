@@ -66,9 +66,15 @@ type ResolvedSource struct {
 	URL  string
 }
 
-// RegisterFlags adds --layers and --layer to flags.
+// RegisterFlags adds --layers and --layer to flags. The usage pflagloader
+// gives the singular flag ends in a fixed suffix that pushes the rendered
+// help line past 80 columns, so RegisterFlags replaces it.
 func RegisterFlags(flags *pflag.FlagSet) error {
-	return pflagloader.Register[Config](flags)
+	if err := pflagloader.Register[Config](flags); err != nil {
+		return err
+	}
+	flags.Lookup("layer").Usage = "one layer to apply; repeat for more"
+	return nil
 }
 
 // DefaultPath returns the discovered configuration file path under
