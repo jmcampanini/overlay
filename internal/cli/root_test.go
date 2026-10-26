@@ -2,9 +2,11 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 )
@@ -15,9 +17,14 @@ func TestExecuteReturnsStatusAndReportsErrors(t *testing.T) {
 		name       string
 		args       []string
 		wantStatus int
+		wantText   string
 	}{
 		{name: "success", args: []string{"exit-codes"}},
-		{name: "failure", args: []string{"config", "--config", missing}, wantStatus: 1},
+		{name: "runner failure", args: []string{"config", "--config", missing}, wantStatus: 1, wantText: missing},
+		{name: "unknown command", args: []string{"bogus"}, wantStatus: 2, wantText: `"bogus"`},
+		{name: "unknown operand", args: []string{"render", "extra"}, wantStatus: 2, wantText: `"extra"`},
+		{name: "unknown flag", args: []string{"render", "--bogus"}, wantStatus: 2, wantText: "--bogus"},
+		{name: "flag value that does not parse", args: []string{"render", "--color", "sometimes"}, wantStatus: 2, wantText: `"sometimes"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -34,51 +41,70 @@ func TestExecuteReturnsStatusAndReportsErrors(t *testing.T) {
 				}
 				return
 			}
-			if out.Len() != 0 || !strings.HasPrefix(errOut.String(), "overlay: error: ") || !strings.Contains(errOut.String(), missing) || strings.Count(errOut.String(), "\n") != 1 {
-				t.Errorf("failed Execute stdout = %q, stderr = %q, want one prefixed error naming %q", out.String(), errOut.String(), missing)
+			stderr := errOut.String()
+			if out.Len() != 0 || !strings.HasPrefix(stderr, "overlay: ") || strings.Contains(stderr, "rror:") ||
+				strings.Contains(stderr, "Usage:") || !strings.Contains(stderr, tt.wantText) || strings.Count(stderr, "\n") != 1 {
+				t.Errorf("failed Execute stdout = %q, stderr = %q, want one 'overlay: ' line naming %q and no usage", out.String(), stderr, tt.wantText)
 			}
 		})
 	}
 }
 
-func TestExitCodesTopicPrintsSameHelpFromBothEntryPoints(t *testing.T) {
-	direct, errOut, err := executeForTest(t, "exit-codes")
-	if err != nil {
-		t.Fatalf("exit-codes error = %v, stderr = %s", err, errOut)
-	}
-	viaHelp, errOut, err := executeForTest(t, "help", "exit-codes")
+func TestExitCodesTopicListsEveryStatus(t *testing.T) {
+	help, errOut, err := executeForTest(t, "help", "exit-codes")
 	if err != nil {
 		t.Fatalf("help exit-codes error = %v, stderr = %s", err, errOut)
 	}
 
-	if direct != viaHelp {
-		t.Fatalf("exit-codes output differs between entry points:\n%s\n---\n%s", direct, viaHelp)
-	}
-	for _, want := range []string{"\n  0  ", "\n  1  ", "overlay: error:"} {
-		if !strings.Contains(direct, want) {
-			t.Errorf("exit-codes help missing %q:\n%s", want, direct)
+	for _, want := range []string{"\n  0  ", "\n  1  ", "\n  2  ", "'overlay: <message>'"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("exit-codes help missing %q:\n%s", want, help)
 		}
 	}
 }
 
+// TestEveryApplicationCommandHasWrappedLongHelp renders each command's help
+// as --help does, so the Usage line and flag usage count toward the limit.
 func TestEveryApplicationCommandHasWrappedLongHelp(t *testing.T) {
 	root := newRootCommand(&bytes.Buffer{}, &bytes.Buffer{})
 
 	var visit func(*cobra.Command)
 	visit = func(command *cobra.Command) {
-		if command.Name() == "help" || command.Name() == "completion" {
+		if isLibraryCommand(command) {
 			return
+		}
+		path := strings.Fields(command.CommandPath())[1:]
+		if strings.TrimSpace(command.Short) == "" {
+			t.Errorf("%q has no short help", command.CommandPath())
 		}
 		if strings.TrimSpace(command.Long) == "" {
 			t.Errorf("%q has no long help", command.CommandPath())
 		}
-		for field, text := range map[string]string{"Long": command.Long, "Example": command.Example} {
-			for i, line := range strings.Split(text, "\n") {
-				if len(line) > 80 {
-					t.Errorf("%q %s line %d is %d columns, want at most 80: %q", command.CommandPath(), field, i+1, len(line), line)
-				}
+
+		help, errOut, err := executeForTest(t, append(path, "--help")...)
+		if err != nil {
+			t.Fatalf("%q --help error = %v, stderr = %s", command.CommandPath(), err, errOut)
+		}
+		for i, line := range strings.Split(help, "\n") {
+			if width := utf8.RuneCountInString(line); width > 80 {
+				t.Errorf("%q help line %d is %d columns, want at most 80: %q", command.CommandPath(), i+1, width, line)
 			}
 		}
+
+		if isHelpTopic(command) {
+			direct, errOut, err := executeForTest(t, path...)
+			if err != nil {
+				t.Fatalf("%q error = %v, stderr = %s", command.CommandPath(), err, errOut)
+			}
+			viaHelp, errOut, err := executeForTest(t, append([]string{"help"}, path...)...)
+			if err != nil {
+				t.Fatalf("help %q error = %v, stderr = %s", command.CommandPath(), err, errOut)
+			}
+			if direct != viaHelp {
+				t.Errorf("%q prints different text directly and through help:\n%s\n---\n%s", command.CommandPath(), direct, viaHelp)
+			}
+		}
+
 		for _, child := range command.Commands() {
 			visit(child)
 		}
@@ -91,20 +117,51 @@ func TestEveryApplicationCommandDeclaresItsGrammar(t *testing.T) {
 
 	var visit func(*cobra.Command)
 	visit = func(command *cobra.Command) {
-		if command.Name() == "help" || command.Name() == "completion" {
+		if isLibraryCommand(command) {
 			return
 		}
 		if command != root && command.Args == nil {
 			t.Errorf("%q has no Args validator", command.CommandPath())
 		}
-		if command != root && command.HasSubCommands() && command.RunE == nil {
-			t.Errorf("%q is a command group without a runner", command.CommandPath())
+		if command != root && (command.HasSubCommands() || isHelpTopic(command)) && !command.Runnable() {
+			t.Errorf("%q is a command group or help topic without a runner", command.CommandPath())
+		}
+		if command != root && (command.PersistentPreRun != nil || command.PersistentPreRunE != nil) {
+			t.Errorf("%q sets PersistentPreRun, which replaces the root hook Execute uses to classify usage errors", command.CommandPath())
 		}
 		for _, child := range command.Commands() {
 			visit(child)
 		}
 	}
 	visit(root)
+}
+
+// isLibraryCommand reports whether cobra, not overlay, added command.
+func isLibraryCommand(command *cobra.Command) bool {
+	return command.Name() == "help" || command.Name() == "completion"
+}
+
+func TestExecutePrintsAMultiLineFailureAsOneLine(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	writeConfig(t, configPath, "layers = []\n")
+	t.Setenv("OVERLAY_LAYERS", "")
+	var errOut bytes.Buffer
+
+	status := Execute([]string{"config", "--config", configPath}, failingWriter{}, &errOut)
+
+	if status != exitFailure {
+		t.Errorf("Execute status = %d, want %d", status, exitFailure)
+	}
+	if got, want := errOut.String(), "overlay: output unavailable: disk full\n"; got != want {
+		t.Errorf("Execute stderr = %q, want %q", got, want)
+	}
+}
+
+// failingWriter fails every write with a two-line message.
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) {
+	return 0, errors.New("output unavailable:\ndisk full")
 }
 
 func executeForTest(t *testing.T, args ...string) (stdout string, stderr string, err error) {

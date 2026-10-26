@@ -4,6 +4,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -11,19 +12,45 @@ import (
 // Version is injected at build time by the mise build task or package manager.
 var Version = "n/a"
 
-// Execute runs the command tree and returns the process exit status.
+// Exit statuses; the exit-codes help topic documents them.
+const (
+	exitSuccess = 0
+	exitFailure = 1
+	exitUsage   = 2
+)
+
+// Execute runs the command tree and returns the process exit status. A
+// failure is one stderr line, so line breaks inside the message become
+// spaces.
+//
+// Cobra validates command lookup, flags, and Args before it runs any hook and
+// returns those usage errors untyped. Rather than match their text or wrap
+// every validator, Execute notes whether a runner was reached: an error with
+// no runner started is a usage error. Required-flag and flag-group checks run
+// after the hook, so a command that used them would need its own handling; a
+// child that set its own PersistentPreRun would replace the hook, so the
+// grammar test rejects one.
 func Execute(args []string, out, errOut io.Writer) int {
 	root := newRootCommand(out, errOut)
 	root.SetArgs(args)
-	if err := root.Execute(); err != nil {
-		_, _ = fmt.Fprintf(errOut, "overlay: error: %v\n", err)
-		return 1
+	runnerStarted := false
+	root.PersistentPreRun = func(*cobra.Command, []string) { runnerStarted = true }
+
+	err := root.Execute()
+	if err == nil {
+		return exitSuccess
 	}
-	return 0
+	_, _ = fmt.Fprintf(errOut, "overlay: %s\n", strings.ReplaceAll(err.Error(), "\n", " "))
+	if !runnerStarted {
+		return exitUsage
+	}
+	return exitFailure
 }
 
 // newRootCommand builds the overlay command tree.
 func newRootCommand(out, errOut io.Writer) *cobra.Command {
+	// A 'Command groups:' block follows the task list when a first-level
+	// command group is added.
 	cmd := &cobra.Command{
 		Use:   "overlay",
 		Short: "Render layered dotfiles from source repositories",
@@ -31,24 +58,24 @@ func newRootCommand(out, errOut io.Writer) *cobra.Command {
 directory.
 
 overlay reads one configuration file that lists the layers to apply and the
-git repositories that provide files. 'overlay bootstrap' writes that file
-and clones the sources; 'overlay config' prints the configuration in
-effect; 'overlay render' writes the files the layers select into the
-target directory, or with --dry-run only prints what it would write;
-'overlay diff' prints a patch from the target's current files to what
-render would write.
+git repositories that provide files, and writes the files those layers
+select into the target directory.
 
 ` + configFileHelp + `
 
 Only 'overlay bootstrap' runs an external program: it runs git from PATH to
 clone sources and to read the origin of an existing checkout, and never
-lets git prompt for credentials. No command prompts and no command reads
-the network on its own.
+lets git prompt for credentials. No command reads the network on its own.
 
-Run 'overlay config --help' for configuration precedence and the file
-schema, 'overlay render --help' for the source manifest and the rendering
-rules, 'overlay diff --help' for the patch format, and 'overlay help
-exit-codes' for exit-status meanings.`,
+` + contractHelp + `
+
+Common tasks:
+  Set up a machine:     overlay bootstrap --source-url URL --source-path PATH
+  Preview a render:     overlay render --dry-run
+  Render into home:     overlay render
+  Diff home vs render:  overlay diff
+  Show configuration:   overlay config
+  Read the exit codes:  overlay help exit-codes`,
 		Version:            Version,
 		DisableSuggestions: true,
 		SilenceUsage:       true,

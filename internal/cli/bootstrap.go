@@ -43,15 +43,18 @@ not read OVERLAY_LAYERS.
 --config PATH writes PATH instead. bootstrap never overwrites: when the
 file already exists, nothing happens and the command fails.
 
-Each source whose path is absent is cloned by running 'git clone' from
+Each source whose path is absent is created by running 'git clone' from
 PATH, with git's own output on stderr. An existing path is left alone when
 'git remote get-url origin' there equals the source url exactly; any other
 existing path is an error. Sources are cloned before the file is written,
 so a failed clone leaves no file and bootstrap can simply be run again.
+Writing the file creates its missing parent directories with mode 755.
 
 git never prompts: set up SSH or token authentication before running
 bootstrap. On success stdout gets one line per source, 'cloned NAME into
-PATH' or 'exists NAME at PATH', then 'wrote FILE'.`,
+PATH' or 'exists NAME at PATH', then 'wrote FILE'.
+
+` + contractHelp,
 		Example: `  overlay bootstrap \
     --source-url git@github.com:jmcampanini/dotfiles-base.git \
     --source-path ~/code/github.com/jmcampanini/dotfiles-base \

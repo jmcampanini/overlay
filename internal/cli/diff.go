@@ -22,7 +22,8 @@ func diffCommand() *cobra.Command {
 		Long: `Print on stdout a unified patch that turns the files in the target
 directory into what 'overlay render' would write. The configuration,
 layers, --target rules, and rendering rules are those of render; see
-'overlay render --help'. Nothing is written.
+'overlay render --help'. diff reads the file or symbolic link at each
+target path to compare and writes nothing.
 
 Each new or changed file is a 'diff --git a/PATH b/PATH' block with PATH
 relative to the target, so from the target directory the output feeds
@@ -38,7 +39,7 @@ change, and the header-only empty file need a patch program that reads
 git's extensions, which the patch shipped with macOS does not. A file
 render would skip prints nothing, and when nothing would change stdout is
 empty. The exit status is 0 whether or not anything differs; failures
-exit 1 as they do for render. Output is never colored.
+exit as they do for render. Output is never colored.
 
 Every file is treated as text, and a template or merge contributes its
 rendered output, so anything a template or fragment reads, including a
@@ -47,6 +48,8 @@ but whose permission bits differ cannot be expressed as a patch; it is
 reported on stderr as 'overlay: PATH: no content change, but render would
 set permission bits OLD -> NEW' instead. A target path holding anything
 other than a regular file, a symbolic link, or nothing is an error.
+
+` + contractHelp + `
 
 ` + configFileHelp + `
 --config PATH reads PATH instead and fails when PATH does not exist.
@@ -64,7 +67,7 @@ other than a regular file, a symbolic link, or nothing is an error.
 	if err := config.RegisterFlags(cmd.Flags()); err != nil {
 		panic(err)
 	}
-	cmd.Flags().StringVar(&opts.target, "target", "", "directory to compare against (default the home directory)")
+	cmd.Flags().StringVar(&opts.target, "target", "", "directory to compare with (default the home directory)")
 	cmd.Flags().StringVar(&opts.configPath, "config", "", "configuration file to read instead of the default")
 	return cmd
 }
