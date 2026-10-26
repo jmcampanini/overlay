@@ -1,4 +1,4 @@
-# GoReleaser configuration. Run `mise run release-snapshot` to build release artifacts locally without publishing; the Release workflow publishes on every v* tag.
+# GoReleaser configuration. Run `mise run release-snapshot` to build release artifacts locally without publishing; the Release workflow publishes on every version tag.
 version: 2
 
 project_name: overlay
