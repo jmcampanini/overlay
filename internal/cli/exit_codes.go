@@ -30,7 +30,10 @@ also goes to stderr.
      link; the patch printed before the failure stays on stdout.
   2  A usage error: an unknown command, operand, or flag, or a flag value
      that does not parse, such as '--color sometimes'. overlay rejects the
-     invocation before any command work.`)
+     invocation before any command work.
+
+'overlay help exit-codes' prints this text on stdout, prompts for nothing,
+and needs no terminal.`)
 }
 
 // helpTopicAnnotation marks a command built by newHelpTopic so the help and

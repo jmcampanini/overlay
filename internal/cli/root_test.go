@@ -127,9 +127,6 @@ func TestEveryApplicationCommandDeclaresItsGrammar(t *testing.T) {
 		if command != root && (command.HasSubCommands() || isHelpTopic(command)) && !command.Runnable() {
 			t.Errorf("%q is a command group or help topic without a runner", command.CommandPath())
 		}
-		if command != root && (command.PersistentPreRun != nil || command.PersistentPreRunE != nil) {
-			t.Errorf("%q sets PersistentPreRun, which replaces the root hook Execute uses to classify usage errors", command.CommandPath())
-		}
 		for _, child := range command.Commands() {
 			visit(child)
 		}

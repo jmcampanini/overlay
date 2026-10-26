@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -22,29 +23,59 @@ const (
 // Execute runs the command tree and returns the process exit status. A
 // failure is one stderr line, so line breaks inside the message become
 // spaces.
-//
-// Cobra validates command lookup, flags, and Args before it runs any hook and
-// returns those usage errors untyped. Rather than match their text or wrap
-// every validator, Execute notes whether a runner was reached: an error with
-// no runner started is a usage error. Required-flag and flag-group checks run
-// after the hook, so a command that used them would need its own handling; a
-// child that set its own PersistentPreRun would replace the hook, so the
-// grammar test rejects one.
 func Execute(args []string, out, errOut io.Writer) int {
 	root := newRootCommand(out, errOut)
 	root.SetArgs(args)
-	runnerStarted := false
-	root.PersistentPreRun = func(*cobra.Command, []string) { runnerStarted = true }
 
 	err := root.Execute()
 	if err == nil {
 		return exitSuccess
 	}
 	_, _ = fmt.Fprintf(errOut, "overlay: %s\n", strings.ReplaceAll(err.Error(), "\n", " "))
-	if !runnerStarted {
+	if isUsageError(root, args, err) {
 		return exitUsage
 	}
 	return exitFailure
+}
+
+// usageError marks an invocation the command library rejected before any
+// command work: an unknown flag or flag value, or operands that fail a
+// command's positional grammar.
+type usageError struct {
+	err error
+}
+
+func (e usageError) Error() string { return e.err.Error() }
+
+func (e usageError) Unwrap() error { return e.err }
+
+// isUsageError reports whether err is a usage error. Cobra returns them
+// untyped: the root's flag error func wraps flag errors and newRootCommand
+// wraps every Args validator, which leaves an unknown command, found by
+// repeating the command lookup, which has no side effects.
+func isUsageError(root *cobra.Command, args []string, err error) bool {
+	var usage usageError
+	if errors.As(err, &usage) {
+		return true
+	}
+	_, _, findErr := root.Find(args)
+	return findErr != nil
+}
+
+// markUsageErrors wraps the Args validator of cmd and its descendants so a
+// positional grammar failure carries usageError.
+func markUsageErrors(cmd *cobra.Command) {
+	if validate := cmd.Args; validate != nil {
+		cmd.Args = func(cmd *cobra.Command, args []string) error {
+			if err := validate(cmd, args); err != nil {
+				return usageError{err: err}
+			}
+			return nil
+		}
+	}
+	for _, child := range cmd.Commands() {
+		markUsageErrors(child)
+	}
 }
 
 // newRootCommand builds the overlay command tree.
@@ -83,6 +114,9 @@ Common tasks:
 	}
 	cmd.SetOut(out)
 	cmd.SetErr(errOut)
+	cmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return usageError{err: err}
+	})
 	// Register --help and --version before Find strips flags from the
 	// arguments. Cobra otherwise adds them during execute, after Find has
 	// already treated an unregistered --help or --version as taking the next
@@ -97,6 +131,7 @@ Common tasks:
 		exitCodesTopic(),
 		renderCommand(),
 	)
+	markUsageErrors(cmd)
 
 	return cmd
 }
