@@ -33,7 +33,7 @@ directory.
 overlay reads one configuration file that lists the layers to apply and the
 git repositories that provide files. 'overlay bootstrap' writes that file
 and clones the sources; 'overlay config' prints the configuration in
-effect; 'overlay render' copies the files the layers select into the
+effect; 'overlay render' writes the files the layers select into the
 target directory, or with --dry-run only prints what it would write.
 
 ` + configFileHelp + `

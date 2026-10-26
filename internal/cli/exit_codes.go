@@ -21,7 +21,8 @@ func exitCodesTopic() *cobra.Command {
      stderr. 'render' also fails, writing nothing, on a missing or invalid
      source manifest, a package entry that is not a regular file or a link
      to one, two files in one layer rendering to the same target, a
-     missing target directory, or a directory at a target path; a failure
+     template that fails to parse or execute, a missing target directory,
+     or a directory at a target path; a failure
      while writing stops there and prints no plan, and files already
      written stay.`,
 		Args: cobra.NoArgs,
