@@ -55,7 +55,7 @@ func LoadManifest(sourceDir string) (Manifest, error) {
 	}
 	sort.Strings(layers)
 	for _, name := range layers {
-		if err := validateManifestLayerName(name); err != nil {
+		if err := ValidateAnyLayerName(name); err != nil {
 			return Manifest{}, fmt.Errorf("manifest %q: %w", path, err)
 		}
 		for _, pkg := range manifest.Layers[name].Packages {
@@ -65,13 +65,6 @@ func LoadManifest(sourceDir string) (Manifest, error) {
 		}
 	}
 	return manifest, nil
-}
-
-func validateManifestLayerName(name string) error {
-	if name == BaseLayer || name == LocalLayer {
-		return nil
-	}
-	return ValidateLayerName(name)
 }
 
 func validatePackage(sourceDir, pkg string) error {

@@ -26,6 +26,7 @@ type planEntry struct {
 	Kind     string       `json:"kind"`
 	Status   string       `json:"status"`
 	Replaces []planOrigin `json:"replaces"`
+	Merges   []planOrigin `json:"merges"`
 }
 
 type planOrigin struct {
@@ -37,9 +38,13 @@ type planOrigin struct {
 func writePlanJSON(out io.Writer, plan render.Plan) error {
 	doc := planDocument{Target: plan.Target, Layers: plan.Layers, Entries: make([]planEntry, 0, len(plan.Entries))}
 	for _, entry := range plan.Entries {
+		merges := make([]planOrigin, 0, len(entry.Merges))
+		for _, fragment := range entry.Merges {
+			merges = append(merges, planOriginOf(fragment.Origin))
+		}
 		replaces := make([]planOrigin, 0, len(entry.Replaces))
 		for _, origin := range entry.Replaces {
-			replaces = append(replaces, planOrigin{Source: origin.Source, Path: origin.Path, Layer: origin.Layer})
+			replaces = append(replaces, planOriginOf(origin))
 		}
 		doc.Entries = append(doc.Entries, planEntry{
 			Target:   entry.Target,
@@ -49,12 +54,17 @@ func writePlanJSON(out io.Writer, plan render.Plan) error {
 			Kind:     string(entry.Kind),
 			Status:   string(entry.Status),
 			Replaces: replaces,
+			Merges:   merges,
 		})
 	}
 
 	encoder := json.NewEncoder(out)
 	encoder.SetEscapeHTML(false)
 	return encoder.Encode(doc)
+}
+
+func planOriginOf(origin render.Origin) planOrigin {
+	return planOrigin{Source: origin.Source, Path: origin.Path, Layer: origin.Layer}
 }
 
 // writePlanTable prints one row per entry and a count summary. home, when
@@ -80,7 +90,7 @@ func writePlanTable(out io.Writer, plan render.Plan, home string, color bool) er
 		}
 		rows = append(rows, []string{
 			collapseHome(entry.Target, home),
-			entry.Source + ":" + entry.Path,
+			sourceCell(entry),
 			string(entry.Kind),
 			status,
 			replacesCell(entry.Replaces),
@@ -118,6 +128,19 @@ func writePlanTable(out io.Writer, plan render.Plan, home string, color bool) er
 
 	_, err := io.WriteString(out, lines.String())
 	return err
+}
+
+// sourceCell names the file an entry renders from, or for a merge every
+// fragment in layer order.
+func sourceCell(entry render.Entry) string {
+	if entry.Kind != render.KindMerge {
+		return entry.Source + ":" + entry.Path
+	}
+	parts := make([]string, len(entry.Merges))
+	for i, fragment := range entry.Merges {
+		parts[i] = fragment.Source + ":" + fragment.Path
+	}
+	return strings.Join(parts, ", ")
 }
 
 func replacesCell(origins []render.Origin) string {

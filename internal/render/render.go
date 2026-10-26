@@ -9,18 +9,23 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 
 	"github.com/jmcampanini/overlay/internal/config"
+	"github.com/jmcampanini/overlay/internal/merge"
 	"github.com/jmcampanini/overlay/internal/tmpl"
 )
 
 const (
 	// dotPrefix marks a path segment that renders with a leading dot instead.
 	dotPrefix = "dot-"
+	// fragmentMarker splits a fragment name NAME.olay.LAYER.EXT into the
+	// target name NAME.EXT and the layer the fragment belongs to.
+	fragmentMarker = ".olay."
 	// templateSuffix marks a file that renders as a template to the path
 	// without the suffix.
 	templateSuffix = ".tmpl"
@@ -46,6 +51,9 @@ type Kind string
 const (
 	// KindFile copies the source bytes verbatim.
 	KindFile Kind = "file"
+	// KindMerge composes every active NAME.olay.LAYER.EXT fragment for one
+	// target into a single JSON or TOML document.
+	KindMerge Kind = "merge"
 	// KindTemplate executes the source as a text/template and writes the
 	// output to the target path without the .tmpl suffix.
 	KindTemplate Kind = "template"
@@ -72,7 +80,8 @@ type Request struct {
 
 // Origin names one file a source contributes.
 type Origin struct {
-	// Layer is the layer the package was listed under.
+	// Layer is the layer the file applies in: the layer its package was
+	// listed under, or for a fragment the layer its name carries.
 	Layer string
 	// Path is the file's path relative to the source root, including the
 	// package directory, using forward slashes.
@@ -81,14 +90,25 @@ type Origin struct {
 	Source string
 }
 
+// Fragment is one NAME.olay.LAYER.EXT file a merge entry composes.
+type Fragment struct {
+	Origin
+	// SourceFile is the absolute path of the fragment.
+	SourceFile string
+}
+
 // Entry is one target file and the source file that produces it.
 type Entry struct {
 	Origin
-	// Content holds the rendered bytes of a template entry; a file entry
-	// leaves it nil and streams from SourceFile instead.
+	// Content holds the rendered bytes of a template or merge entry; a file
+	// entry leaves it nil and streams from SourceFile instead.
 	Content []byte
 	Kind    Kind
-	// Mode holds the permission bits copied to the target.
+	// Merges lists every fragment a merge entry composes, in layer order;
+	// Origin is the last of them. Other kinds leave it nil.
+	Merges []Fragment
+	// Mode holds the permission bits copied to the target; a merge entry
+	// takes them from its last fragment.
 	Mode fs.FileMode
 	// Replaces lists the origins earlier layers contributed for the same
 	// target, in layer order.
@@ -120,10 +140,15 @@ func (e *CollisionError) Error() string {
 }
 
 // Build reads every source manifest, walks the packages the requested layers
-// list, renders every winning template, and returns the resulting plan
-// without touching the target. Later layers replace earlier ones at the same
-// target; two contributors within one layer fail with a *CollisionError, and
-// a template that fails to parse or execute fails the whole build.
+// list, renders every winning template and merge, and returns the resulting
+// plan without touching the target. A plain file or template applies in its
+// package's layer; a fragment named NAME.olay.LAYER.EXT applies in LAYER
+// however many layers list its package, and is skipped when LAYER is not in
+// req.Layers. Later layers replace earlier ones at the same target, except
+// that consecutive fragments merge into one document; a fragment above a
+// plain file fails, two contributors within one layer fail with a
+// *CollisionError, and a template or fragment that fails to render fails the
+// whole build.
 func Build(req Request) (Plan, error) {
 	if err := requireDirectory(req.Target); err != nil {
 		return Plan{}, fmt.Errorf("target directory: %w", err)
@@ -138,28 +163,38 @@ func Build(req Request) (Plan, error) {
 		manifests[i] = manifest
 	}
 
-	entries := make(map[string]Entry)
-	for _, layer := range req.Layers {
-		owners := make(map[string]Origin)
+	contributions := make(map[string][]contribution)
+	seenFragments := make(map[string]bool)
+	for rank, layer := range req.Layers {
 		for i, source := range req.Sources {
 			for _, pkg := range manifests[i].Packages(layer) {
-				err := walkPackage(source, pkg, func(path, sourceFile string, mode fs.FileMode) error {
-					origin := Origin{Layer: layer, Path: path, Source: source.Name}
-					kind, rel, err := classify(pkg, path)
+				err := walkPackage(source, pkg, func(filePath, sourceFile string, mode fs.FileMode) error {
+					class, err := classify(pkg, filePath)
 					if err != nil {
 						return fmt.Errorf("source %s: %w", source.Name, err)
 					}
-					target := filepath.Join(req.Target, rel)
-					if first, ok := owners[target]; ok {
-						return &CollisionError{First: first, Second: origin, Target: target}
-					}
-					owners[target] = origin
 
-					entry := Entry{Kind: kind, Mode: mode, Origin: origin, SourceFile: sourceFile, Target: target}
-					if previous, ok := entries[target]; ok {
-						entry.Replaces = append(previous.Replaces, previous.Origin)
+					appliesIn, appliesAt := layer, rank
+					if class.kind == KindMerge {
+						fragmentID := source.Name + ":" + filePath
+						if seenFragments[fragmentID] {
+							return nil
+						}
+						seenFragments[fragmentID] = true
+						appliesIn, appliesAt = class.layer, slices.Index(req.Layers, class.layer)
 					}
-					entries[target] = entry
+					if appliesAt < 0 {
+						return nil
+					}
+
+					target := filepath.Join(req.Target, class.target)
+					contributions[target] = append(contributions[target], contribution{rank: appliesAt, Entry: Entry{
+						Kind:       class.kind,
+						Mode:       mode,
+						Origin:     Origin{Layer: appliesIn, Path: filePath, Source: source.Name},
+						SourceFile: sourceFile,
+						Target:     target,
+					}})
 					return nil
 				})
 				if err != nil {
@@ -169,23 +204,27 @@ func Build(req Request) (Plan, error) {
 		}
 	}
 
-	plan := Plan{Entries: make([]Entry, 0, len(entries)), Layers: req.Layers, Target: req.Target}
-	for _, entry := range entries {
+	plan := Plan{Entries: make([]Entry, 0, len(contributions)), Layers: req.Layers, Target: req.Target}
+	for _, candidates := range contributions {
+		entry, err := resolveTarget(candidates)
+		if err != nil {
+			return Plan{}, err
+		}
 		plan.Entries = append(plan.Entries, entry)
 	}
 	sort.Slice(plan.Entries, func(i, j int) bool { return plan.Entries[i].Target < plan.Entries[j].Target })
+
 	ctx, err := templateContext(req, plan.Entries)
 	if err != nil {
 		return Plan{}, err
 	}
 	for i := range plan.Entries {
-		if plan.Entries[i].Kind == KindTemplate {
-			content, err := renderTemplate(plan.Entries[i], ctx)
-			if err != nil {
-				return Plan{}, err
-			}
-			plan.Entries[i].Content = content
+		content, err := renderContent(plan.Entries[i], ctx)
+		if err != nil {
+			return Plan{}, err
 		}
+		plan.Entries[i].Content = content
+
 		status, err := statusOf(plan.Entries[i])
 		if err != nil {
 			return Plan{}, err
@@ -193,6 +232,57 @@ func Build(req Request) (Plan, error) {
 		plan.Entries[i].Status = status
 	}
 	return plan, nil
+}
+
+// contribution is one source file before the files sharing its target are
+// resolved into an entry.
+type contribution struct {
+	Entry
+	// rank is the index in the layer order of the layer the file applies in.
+	rank int
+}
+
+// resolveTarget folds the contributions for one target, in layer order and
+// then discovery order, into the entry a render writes. Consecutive
+// fragments accumulate into one merge entry; a plain file or template
+// replaces whatever came before it and records it under Replaces; a
+// fragment arriving above a plain file or template is an error, as are two
+// contributions in one layer.
+func resolveTarget(candidates []contribution) (Entry, error) {
+	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].rank < candidates[j].rank })
+
+	entry := candidates[0].Entry
+	if entry.Kind == KindMerge {
+		entry.Merges = []Fragment{{Origin: entry.Origin, SourceFile: entry.SourceFile}}
+	}
+	for i, c := range candidates[1:] {
+		previous := candidates[i]
+		if c.rank == previous.rank {
+			return Entry{}, &CollisionError{First: previous.Origin, Second: c.Origin, Target: c.Target}
+		}
+		switch {
+		case c.Kind == KindMerge && entry.Kind == KindMerge:
+			entry.Merges = append(entry.Merges, Fragment{Origin: c.Origin, SourceFile: c.SourceFile})
+			entry.Mode = c.Mode
+			entry.Origin = c.Origin
+			entry.SourceFile = c.SourceFile
+		case c.Kind == KindMerge:
+			return Entry{}, fmt.Errorf("%s:%s is a fragment of %s, but %s:%s (%s) renders that file whole in an earlier layer; rename it to a fragment or move it above",
+				c.Source, c.Path, c.Target, entry.Source, entry.Path, entry.Layer)
+		default:
+			replaces := entry.Replaces
+			if entry.Kind == KindMerge {
+				for _, fragment := range entry.Merges {
+					replaces = append(replaces, fragment.Origin)
+				}
+			} else {
+				replaces = append(replaces, entry.Origin)
+			}
+			entry = c.Entry
+			entry.Replaces = replaces
+		}
+	}
+	return entry, nil
 }
 
 // Apply writes every entry whose status is not unchanged, in plan order. Each
@@ -239,20 +329,58 @@ func walkPackage(source config.ResolvedSource, pkg string, visit func(path, sour
 	})
 }
 
-// classify decides how a source file renders and where: a name ending in
-// .tmpl is a template whose target drops the suffix, and anything else is a
-// file. A name that is nothing but the suffix has no target name and is an
-// error.
-func classify(pkg, sourcePath string) (Kind, string, error) {
+// classification says how one source file renders and where.
+type classification struct {
+	kind Kind
+	// layer is the layer a fragment's name carries; other kinds leave it
+	// empty.
+	layer string
+	// target is the target-relative path the file renders to.
+	target string
+}
+
+// classify decides how a source file renders and where. A name holding
+// .olay. is a fragment NAME.olay.LAYER.EXT that merges into NAME.EXT, where
+// LAYER follows the layer grammar and EXT is json or toml; a name ending in
+// .tmpl is a template whose target drops the suffix; anything else is a
+// file. A malformed fragment name or a template name that is nothing but the
+// suffix is an error.
+func classify(pkg, sourcePath string) (classification, error) {
+	dir, name := path.Split(sourcePath)
+	if stem, rest, isFragment := strings.Cut(name, fragmentMarker); isFragment {
+		return classifyFragment(pkg, sourcePath, dir, stem, rest)
+	}
+
 	stem, isTemplate := strings.CutSuffix(sourcePath, templateSuffix)
 	if !isTemplate {
-		return KindFile, targetPath(pkg, sourcePath), nil
+		return classification{kind: KindFile, target: targetPath(pkg, sourcePath)}, nil
 	}
-	name := stem[strings.LastIndex(stem, "/")+1:]
-	if name == "" || name == dotPrefix {
-		return "", "", fmt.Errorf("%s: a template needs a name before %s", sourcePath, templateSuffix)
+	if name == templateSuffix || name == dotPrefix+templateSuffix {
+		return classification{}, fmt.Errorf("%s: a template needs a name before %s", sourcePath, templateSuffix)
 	}
-	return KindTemplate, targetPath(pkg, stem), nil
+	return classification{kind: KindTemplate, target: targetPath(pkg, stem)}, nil
+}
+
+// classifyFragment validates the LAYER.EXT part of a fragment name and maps
+// the fragment to its merged target.
+func classifyFragment(pkg, sourcePath, dir, stem, rest string) (classification, error) {
+	if stem == "" {
+		return classification{}, fmt.Errorf("%s: a fragment needs a name before %s", sourcePath, fragmentMarker)
+	}
+	if strings.Contains(rest, fragmentMarker) {
+		return classification{}, fmt.Errorf("%s: a fragment name holds %s once", sourcePath, fragmentMarker)
+	}
+	layer, ext, hasExt := strings.Cut(rest, ".")
+	if !hasExt {
+		return classification{}, fmt.Errorf("%s: a fragment needs LAYER.EXT after %s", sourcePath, fragmentMarker)
+	}
+	if err := config.ValidateAnyLayerName(layer); err != nil {
+		return classification{}, fmt.Errorf("%s: fragment layer: %w", sourcePath, err)
+	}
+	if _, ok := merge.FormatOf(ext); !ok {
+		return classification{}, fmt.Errorf("%s: fragment extension %q must be json or toml", sourcePath, ext)
+	}
+	return classification{kind: KindMerge, layer: layer, target: targetPath(pkg, dir+stem+"."+ext)}, nil
 }
 
 // targetPath maps a source-relative path inside pkg to its target-relative
@@ -291,6 +419,18 @@ func templateContext(req Request, entries []Entry) (tmpl.Context, error) {
 	return tmpl.Context{Home: req.Home, Hostname: hostname, Layers: req.Layers, OS: req.OS, Sources: sources}, nil
 }
 
+// renderContent returns the bytes a template or merge entry writes, and nil
+// for a file entry, which streams from its SourceFile instead.
+func renderContent(entry Entry, ctx tmpl.Context) ([]byte, error) {
+	switch entry.Kind {
+	case KindTemplate:
+		return renderTemplate(entry, ctx)
+	case KindMerge:
+		return renderMerge(entry)
+	}
+	return nil, nil
+}
+
 // renderTemplate executes a template entry's source, naming the template
 // source:path so errors point at the file in the checkout.
 func renderTemplate(entry Entry, ctx tmpl.Context) ([]byte, error) {
@@ -301,6 +441,30 @@ func renderTemplate(entry Entry, ctx tmpl.Context) ([]byte, error) {
 	content, err := tmpl.Render(entry.Source+":"+entry.Path, text, ctx)
 	if err != nil {
 		return nil, fmt.Errorf("render %w", err)
+	}
+	return content, nil
+}
+
+// renderMerge reads every fragment of a merge entry and composes them with
+// the process environment, naming each fragment source:path so errors point
+// at the file in the checkout.
+func renderMerge(entry Entry) ([]byte, error) {
+	format, ok := merge.FormatOf(strings.TrimPrefix(filepath.Ext(entry.Target), "."))
+	if !ok {
+		return nil, fmt.Errorf("merge %s: no format for its extension", entry.Target)
+	}
+
+	fragments := make([]merge.Fragment, len(entry.Merges))
+	for i, fragment := range entry.Merges {
+		data, err := os.ReadFile(fragment.SourceFile)
+		if err != nil {
+			return nil, fmt.Errorf("source %s: %w", fragment.Source, err)
+		}
+		fragments[i] = merge.Fragment{Data: data, Name: fragment.Source + ":" + fragment.Path}
+	}
+	content, err := merge.Render(format, fragments, os.LookupEnv)
+	if err != nil {
+		return nil, fmt.Errorf("merge %s: %w", entry.Target, err)
 	}
 	return content, nil
 }

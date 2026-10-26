@@ -120,9 +120,9 @@ func TestRenderJSONDocument(t *testing.T) {
 		Target: f.home,
 		Layers: []string{"base", "personal", "local"},
 		Entries: []planEntry{
-			{Target: filepath.Join(f.home, ".bashrc"), Source: "dotfiles-base", Path: "bash/dot-bashrc", Layer: "base", Kind: "file", Status: "unchanged", Replaces: []planOrigin{}},
+			{Target: filepath.Join(f.home, ".bashrc"), Source: "dotfiles-base", Path: "bash/dot-bashrc", Layer: "base", Kind: "file", Status: "unchanged", Replaces: []planOrigin{}, Merges: []planOrigin{}},
 			{Target: filepath.Join(f.home, ".ssh", "config"), Source: "dotfiles-personal", Path: "ssh/dot-ssh/config", Layer: "personal", Kind: "file", Status: "new",
-				Replaces: []planOrigin{{Source: "dotfiles-base", Path: "ssh/dot-ssh/config", Layer: "base"}}},
+				Replaces: []planOrigin{{Source: "dotfiles-base", Path: "ssh/dot-ssh/config", Layer: "base"}}, Merges: []planOrigin{}},
 		},
 	}
 	if diff := cmp.Diff(want, doc); diff != "" {
@@ -285,6 +285,17 @@ func TestRenderFailures(t *testing.T) {
 			writeFixtureFile(t, filepath.Join(baseSourcePath(t, f), "bash", "dot-profile.tmpl"), "{{ .Missing }}\n", 0o644)
 			return []string{"--dry-run"}
 		}, want: "dotfiles-base:bash/dot-profile.tmpl"},
+		{name: "fragment that fails to parse", setup: func(t *testing.T, f renderFixture) []string {
+			t.Helper()
+			writeFixtureFile(t, filepath.Join(baseSourcePath(t, f), "bash", "dot-claude", "settings.olay.base.json"), "{\n", 0o644)
+			return []string{"--dry-run"}
+		}, want: "fragment dotfiles-base:bash/dot-claude/settings.olay.base.json: parse JSON"},
+		{name: "fragment above a whole file", setup: func(t *testing.T, f renderFixture) []string {
+			t.Helper()
+			writeFixtureFile(t, filepath.Join(baseSourcePath(t, f), "bash", "dot-claude", "settings.json"), "{}\n", 0o644)
+			writeFixtureFile(t, filepath.Join(baseSourcePath(t, f), "bash", "dot-claude", "settings.olay.personal.json"), "{}\n", 0o644)
+			return []string{"--dry-run"}
+		}, want: "renders that file whole in an earlier layer"},
 		{name: "invalid color mode", setup: func(_ *testing.T, _ renderFixture) []string {
 			return []string{"--color", "sometimes"}
 		}, want: "invalid color mode"},
@@ -326,5 +337,54 @@ func writeFixtureFile(t *testing.T, path, content string, mode fs.FileMode) {
 	}
 	if err := os.Chmod(path, mode); err != nil {
 		t.Fatalf("chmod %s: %v", path, err)
+	}
+}
+
+func TestRenderMergesFragmentsAndShowsEveryFragment(t *testing.T) {
+	f := newRenderFixture(t)
+	base := baseSourcePath(t, f)
+	personal := readConfig(t, f.configPath).Sources[1].Path
+	writeFixtureFile(t, filepath.Join(base, "overlay.toml"), "[layers.base]\npackages = [\"bash\", \"ssh\", \"claude\"]\n", 0o644)
+	writeFixtureFile(t, filepath.Join(base, "claude", "dot-claude", "settings.olay.base.json"), "{\"permissions\": {\"deny\": [\"Read(a)\"]}, \"model\": \"opus\"}\n", 0o644)
+	writeFixtureFile(t, filepath.Join(base, "claude", "dot-claude", "settings.olay.work.json"), "{\"model\": \"inactive\"}\n", 0o644)
+	writeFixtureFile(t, filepath.Join(personal, "overlay.toml"), "[layers.personal]\npackages = [\"ssh\", \"claude\"]\n", 0o644)
+	writeFixtureFile(t, filepath.Join(personal, "claude", "dot-claude", "settings.olay.personal.json"), "{\"permissions\": {\"deny\": [\"Read(b)\"]}, \"env\": {\"URL\": \"${OVERLAY_TEST_URL}\"}}\n", 0o600)
+	t.Setenv("OVERLAY_TEST_URL", "http://proxy")
+
+	out, errOut, err := executeForTest(t, "render", "--config", f.configPath)
+	if err != nil {
+		t.Fatalf("render error = %v, stderr = %s", err, errOut)
+	}
+
+	wantRow := "~/.claude/settings.json  dotfiles-base:claude/dot-claude/settings.olay.base.json, dotfiles-personal:claude/dot-claude/settings.olay.personal.json  merge  new"
+	if !strings.Contains(out, wantRow) {
+		t.Errorf("output lacks %q:\n%s", wantRow, out)
+	}
+	want := "{\n  \"env\": {\n    \"URL\": \"http://proxy\"\n  },\n  \"model\": \"opus\",\n  \"permissions\": {\n    \"deny\": [\n      \"Read(a)\",\n      \"Read(b)\"\n    ]\n  }\n}\n"
+	if raw, err := os.ReadFile(filepath.Join(f.home, ".claude", "settings.json")); err != nil || string(raw) != want {
+		t.Errorf("settings.json = %q (%v), want %q", raw, err, want)
+	}
+	if info, err := os.Stat(filepath.Join(f.home, ".claude", "settings.json")); err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("settings.json mode = %v (%v), want 600 from the last fragment", info, err)
+	}
+
+	out, errOut, err = executeForTest(t, "render", "--config", f.configPath, "--dry-run", "--json")
+	if err != nil {
+		t.Fatalf("render --json error = %v, stderr = %s", err, errOut)
+	}
+	var doc planDocument
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatalf("decode JSON: %v\n%s", err, out)
+	}
+	wantEntry := planEntry{
+		Target: filepath.Join(f.home, ".claude", "settings.json"), Source: "dotfiles-personal", Path: "claude/dot-claude/settings.olay.personal.json", Layer: "personal",
+		Kind: "merge", Status: "unchanged", Replaces: []planOrigin{},
+		Merges: []planOrigin{
+			{Source: "dotfiles-base", Path: "claude/dot-claude/settings.olay.base.json", Layer: "base"},
+			{Source: "dotfiles-personal", Path: "claude/dot-claude/settings.olay.personal.json", Layer: "personal"},
+		},
+	}
+	if diff := cmp.Diff(wantEntry, doc.Entries[1]); diff != "" {
+		t.Errorf("JSON merge entry mismatch (-want +got):\n%s", diff)
 	}
 }

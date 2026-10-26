@@ -44,7 +44,7 @@ func WritePatch(out io.Writer, plan Plan) ([]Omission, error) {
 		}
 		path := filepath.ToSlash(rel)
 		rendered := entry.Content
-		if entry.Kind != KindTemplate {
+		if entry.Kind == KindFile {
 			rendered, err = os.ReadFile(entry.SourceFile)
 			if err != nil {
 				return nil, fmt.Errorf("read %s: %w", entry.SourceFile, err)

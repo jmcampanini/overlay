@@ -623,3 +623,174 @@ func TestBuildLooksUpTheHostnameOnlyForTemplates(t *testing.T) {
 		t.Errorf("Build() with a template and no hostname lookup error = %v, want one naming the hostname", err)
 	}
 }
+
+func TestBuildMergesFragmentsAcrossSourcesInLayerOrder(t *testing.T) {
+	base := newSource(t, "dotfiles-base", "[layers.base]\npackages = [\"codex\"]\n")
+	base.file("codex/dot-codex/config.olay.base.toml", "model = \"gpt\"\ntags = [\"base\"]\n\n[features]\napps = false\n", 0o644)
+	personal := newSource(t, "dotfiles-personal", "[layers.personal]\npackages = [\"codex\"]\n")
+	personal.file("codex/dot-codex/config.olay.personal.toml", "model = \"gpt-pro\"\ntags = [\"personal\"]\n\n[features]\ngoals = true\n", 0o644)
+	personal.file("codex/dot-codex/config.olay.local.toml", "model = \"local\"\ntags = [\"local\"]\n\n[projects.\"${OVERLAY_TEST_HOME}/code\"]\ntrust_level = \"trusted\"\n", 0o600)
+	personal.file("codex/dot-codex/config.olay.work.toml", "model = \"never\"\n", 0o644)
+	t.Setenv("OVERLAY_TEST_HOME", "/home/me")
+	target := t.TempDir()
+	req := Request{
+		Layers:  []string{"base", "personal", "local"},
+		Sources: []config.ResolvedSource{base.resolved(), personal.resolved()},
+		Target:  target,
+	}
+
+	plan, err := Build(req)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	if len(plan.Entries) != 1 {
+		t.Fatalf("Build() returned %d entries, want 1: %+v", len(plan.Entries), plan.Entries)
+	}
+	want := Entry{
+		Origin:  Origin{Layer: "local", Path: "codex/dot-codex/config.olay.local.toml", Source: "dotfiles-personal"},
+		Content: []byte("model = \"local\"\ntags = [\"base\", \"personal\", \"local\"]\n\n[features]\napps = false\ngoals = true\n\n[projects]\n[projects.\"/home/me/code\"]\ntrust_level = \"trusted\"\n"),
+		Kind:    KindMerge,
+		Merges: []Fragment{
+			{Origin: Origin{Layer: "base", Path: "codex/dot-codex/config.olay.base.toml", Source: "dotfiles-base"}, SourceFile: filepath.Join(base.path, "codex/dot-codex/config.olay.base.toml")},
+			{Origin: Origin{Layer: "personal", Path: "codex/dot-codex/config.olay.personal.toml", Source: "dotfiles-personal"}, SourceFile: filepath.Join(personal.path, "codex/dot-codex/config.olay.personal.toml")},
+			{Origin: Origin{Layer: "local", Path: "codex/dot-codex/config.olay.local.toml", Source: "dotfiles-personal"}, SourceFile: filepath.Join(personal.path, "codex/dot-codex/config.olay.local.toml")},
+		},
+		Mode:       0o600,
+		SourceFile: filepath.Join(personal.path, "codex/dot-codex/config.olay.local.toml"),
+		Status:     StatusNew,
+		Target:     filepath.Join(target, ".codex", "config.toml"),
+	}
+	if diff := cmp.Diff(want, plan.Entries[0]); diff != "" {
+		t.Errorf("Build() merge entry mismatch (-want +got):\n%s", diff)
+	}
+
+	if err := Apply(plan); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	written, err := os.ReadFile(want.Target)
+	if err != nil || string(written) != string(want.Content) {
+		t.Errorf("Apply() wrote %q (%v), want the merged document", written, err)
+	}
+	if info, err := os.Stat(want.Target); err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("Apply() mode = %v (%v), want 600 from the last fragment", info, err)
+	}
+	after, err := Build(req)
+	if err != nil {
+		t.Fatalf("second Build() error = %v", err)
+	}
+	if after.Entries[0].Status != StatusUnchanged {
+		t.Errorf("status after Apply = %q, want %q", after.Entries[0].Status, StatusUnchanged)
+	}
+}
+
+func TestBuildWholeFileAboveFragmentsReplacesThem(t *testing.T) {
+	base := newSource(t, "dotfiles-base", "[layers.base]\npackages = [\"claude\"]\n")
+	base.file("claude/dot-claude/settings.olay.base.json", `{"model": "opus"}`, 0o644)
+	personal := newSource(t, "dotfiles-personal", "[layers.personal]\npackages = [\"claude\"]\n")
+	personal.file("claude/dot-claude/settings.json", `{"model": "mine"}`, 0o644)
+	target := t.TempDir()
+
+	plan, err := Build(Request{
+		Layers:  []string{"base", "personal", "local"},
+		Sources: []config.ResolvedSource{base.resolved(), personal.resolved()},
+		Target:  target,
+	})
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	if len(plan.Entries) != 1 {
+		t.Fatalf("Build() returned %d entries, want 1: %+v", len(plan.Entries), plan.Entries)
+	}
+	got := plan.Entries[0]
+	if got.Kind != KindFile || got.Source != "dotfiles-personal" || got.Merges != nil {
+		t.Errorf("entry = %+v, want the personal file with no merges", got)
+	}
+	wantReplaces := []Origin{{Layer: "base", Path: "claude/dot-claude/settings.olay.base.json", Source: "dotfiles-base"}}
+	if diff := cmp.Diff(wantReplaces, got.Replaces); diff != "" {
+		t.Errorf("Replaces mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestBuildFragmentFailures(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string]string
+		want  []string
+	}{
+		{name: "fragment above a whole file", files: map[string]string{
+			"claude/dot-claude/settings.json":               `{"model": "base"}`,
+			"claude/dot-claude/settings.olay.personal.json": `{"model": "mine"}`,
+		}, want: []string{"src:claude/dot-claude/settings.olay.personal.json is a fragment"}},
+		{name: "fragment above a template", files: map[string]string{
+			"claude/dot-claude/settings.json.tmpl":       `{"model": "base"}`,
+			"claude/dot-claude/settings.olay.local.json": `{"model": "mine"}`,
+		}, want: []string{"src:claude/dot-claude/settings.json.tmpl (base) renders that file whole"}},
+		{name: "no name before the marker", files: map[string]string{"claude/.olay.base.json": `{}`}, want: []string{"a fragment needs a name before .olay."}},
+		{name: "no extension", files: map[string]string{"claude/settings.olay.base": `{}`}, want: []string{"a fragment needs LAYER.EXT after .olay."}},
+		{name: "invalid layer", files: map[string]string{"claude/settings.olay.Base.json": `{}`}, want: []string{"fragment layer: layer name \"Base\""}},
+		{name: "unsupported extension", files: map[string]string{"claude/settings.olay.base.yaml": `a: 1`}, want: []string{"fragment extension \"yaml\" must be json or toml"}},
+		{name: "template suffix on a fragment", files: map[string]string{"claude/settings.olay.base.json.tmpl": `{}`}, want: []string{"fragment extension \"json.tmpl\" must be json or toml"}},
+		{name: "marker twice", files: map[string]string{"claude/settings.olay.base.olay.local.json": `{}`}, want: []string{"holds .olay. once"}},
+		{name: "fragment that does not parse", files: map[string]string{"claude/dot-claude/settings.olay.base.json": `{"model": }`}, want: []string{"merge ", "fragment src:claude/dot-claude/settings.olay.base.json"}},
+		{name: "unset variable", files: map[string]string{"claude/dot-claude/settings.olay.base.json": `{"a": "${OVERLAY_TEST_UNSET_VARIABLE}"}`}, want: []string{"variable OVERLAY_TEST_UNSET_VARIABLE is not set"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src := newSource(t, "src", "[layers.base]\npackages = [\"claude\"]\n")
+			for name, content := range tt.files {
+				src.file(name, content, 0o644)
+			}
+			target := t.TempDir()
+
+			_, err := Build(Request{Layers: []string{"base", "personal", "local"}, Sources: []config.ResolvedSource{src.resolved()}, Target: target})
+
+			if err == nil {
+				t.Fatalf("Build() error = nil, want containing %q", tt.want)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("Build() error = %v, want containing %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+func TestBuildFragmentsInOneLayerCollide(t *testing.T) {
+	a := newSource(t, "a", "[layers.base]\npackages = [\"claude\"]\n")
+	a.file("claude/settings.olay.base.json", `{}`, 0o644)
+	b := newSource(t, "b", "[layers.personal]\npackages = [\"claude\"]\n")
+	b.file("claude/settings.olay.base.json", `{}`, 0o644)
+	target := t.TempDir()
+
+	_, err := Build(Request{Layers: []string{"base", "personal", "local"}, Sources: []config.ResolvedSource{a.resolved(), b.resolved()}, Target: target})
+
+	var collision *CollisionError
+	if !errors.As(err, &collision) {
+		t.Fatalf("Build() error = %v, want *CollisionError", err)
+	}
+	if collision.First.Source != "a" || collision.Second.Source != "b" || collision.First.Layer != "base" || collision.Second.Layer != "base" {
+		t.Errorf("collision = %+v, want both base fragments named", collision)
+	}
+}
+
+func TestBuildPackageListedUnderTwoLayersContributesEachFragmentOnce(t *testing.T) {
+	src := newSource(t, "src", "[layers.base]\npackages = [\"claude\"]\n[layers.personal]\npackages = [\"claude\"]\n")
+	src.file("claude/settings.olay.base.json", `{"a": 1}`, 0o644)
+	src.file("claude/settings.olay.personal.json", `{"b": 2}`, 0o644)
+	target := t.TempDir()
+
+	plan, err := Build(Request{Layers: []string{"base", "personal", "local"}, Sources: []config.ResolvedSource{src.resolved()}, Target: target})
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	if len(plan.Entries) != 1 || len(plan.Entries[0].Merges) != 2 {
+		t.Fatalf("Build() entries = %+v, want one merge of two fragments", plan.Entries)
+	}
+	if got := string(plan.Entries[0].Content); got != "{\n  \"a\": 1,\n  \"b\": 2\n}\n" {
+		t.Errorf("Content = %q, want both fragments merged once", got)
+	}
+}

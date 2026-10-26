@@ -196,6 +196,16 @@ func ValidateLayerName(name string) error {
 	return nil
 }
 
+// ValidateAnyLayerName reports why name cannot name a layer at all. Unlike
+// ValidateLayerName it accepts the automatic base and local layers, so it
+// suits places that refer to any layer in the order rather than select one.
+func ValidateAnyLayerName(name string) error {
+	if name == BaseLayer || name == LocalLayer {
+		return nil
+	}
+	return ValidateLayerName(name)
+}
+
 // SourceName derives a source's default name: the last segment of its URL
 // with any .git suffix removed.
 func SourceName(url string) (string, error) {
