@@ -1,6 +1,6 @@
 # overlay
 
-overlay renders layered dotfiles from git source repositories into a target directory. One configuration file lists the layers to apply and the sources that provide files; `overlay bootstrap` writes that file and clones the sources, `overlay config` prints the configuration in effect, and `overlay render` writes the files the layers select into the target directory. overlay never overwrites its configuration file, never touches an existing checkout, never deletes a rendered file, and never lets git prompt for credentials.
+overlay renders layered dotfiles from git source repositories into a target directory. One configuration file lists the layers to apply and the sources that provide files; `overlay bootstrap` writes that file and clones the sources, `overlay config` prints the configuration in effect, `overlay render` writes the files the layers select into the target directory, and `overlay diff` prints a patch from the target's current files to what render would write. overlay never overwrites its configuration file, never touches an existing checkout, never deletes a rendered file, and never lets git prompt for credentials.
 
 
 ## Install
@@ -38,6 +38,7 @@ Copy `./build/overlay` onto your `PATH`.
 | `overlay render --dry-run` | Print the files the effective layers would write to the home directory, with their status and what they replace. |
 | `overlay render` | Write those files, skipping ones already identical, and print the same plan. |
 | `overlay render --target ~/staging --json` | Render into another directory and print the plan as one JSON document. |
+| `overlay diff` | Print a unified patch from the home directory's current files to what `overlay render` would write; from `~`, it feeds `git apply` or `patch -p1`. |
 
 `overlay --help`, each command's `--help`, and the help topic `overlay help exit-codes` are the canonical reference for every user-facing contract.
 
