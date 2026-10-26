@@ -26,8 +26,8 @@ func exitCodesTopic() *cobra.Command {
      or a directory at a target path; a failure
      while writing stops there and prints no plan, and files already
      written stay. 'diff' fails on the same conditions and on a target
-     path holding anything other than a regular file or a symbolic link
-     to one; the patch printed before the failure stays on stdout.`,
+     path holding anything other than a regular file or a symbolic link;
+     the patch printed before the failure stays on stdout.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/aymanbagabas/go-udiff"
 )
@@ -21,13 +22,16 @@ type Omission struct {
 }
 
 // WritePatch writes to out a patch that turns every new or changed entry's
-// current target into its rendered content, in plan order. Each entry is one
-// 'diff --git a/PATH b/PATH' block with PATH relative to plan.Target, so the
-// output feeds 'git apply' or 'patch -p1' run from the target directory. A new
-// entry diffs against /dev/null. Every file is treated as text. Entries whose
-// rendered bytes already match the target are returned as omissions rather
-// than written, and a target that is neither absent, a regular file, nor a
-// symbolic link to one is an error.
+// current target into its rendered content, in plan order. Each entry is a
+// 'diff --git a/PATH b/PATH' block with PATH relative to plan.Target, quoted
+// as git quotes it when it holds a space, quote, backslash, or control
+// character, so the output feeds 'git apply' or 'patch -p1' run from the
+// target directory. A new entry diffs against /dev/null; a symbolic link at
+// the target is shown as git shows a type change, a deleted 120000 block
+// followed by the new file block. Every file is treated as text. A regular
+// file whose bytes already match is returned as an omission rather than
+// written, and a target that is neither absent, a regular file, nor a
+// symbolic link is an error.
 func WritePatch(out io.Writer, plan Plan) ([]Omission, error) {
 	var omissions []Omission
 	for _, entry := range plan.Entries {
@@ -50,20 +54,37 @@ func WritePatch(out io.Writer, plan Plan) ([]Omission, error) {
 			}
 			continue
 		}
-		current, err := currentBytes(entry)
+		info, err := os.Lstat(entry.Target)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("check target %s: %w", entry.Target, err)
 		}
-		if bytes.Equal(current, rendered) {
-			reason, err := omissionReason(entry)
+		switch {
+		case info.Mode()&os.ModeSymlink != 0:
+			destination, err := os.Readlink(entry.Target)
 			if err != nil {
+				return nil, fmt.Errorf("read link %s: %w", entry.Target, err)
+			}
+			if err := writeDeletedLinkPatch(out, path, destination); err != nil {
 				return nil, err
 			}
-			omissions = append(omissions, Omission{Entry: entry, Reason: reason})
-			continue
-		}
-		if err := writeChangedFilePatch(out, path, current, rendered); err != nil {
-			return nil, err
+			if err := writeNewFilePatch(out, path, entry.Mode, rendered); err != nil {
+				return nil, err
+			}
+		case !info.Mode().IsRegular():
+			return nil, fmt.Errorf("target %s is not a regular file (%s); a patch cannot describe it", entry.Target, info.Mode().Type())
+		default:
+			current, err := os.ReadFile(entry.Target)
+			if err != nil {
+				return nil, fmt.Errorf("read %s: %w", entry.Target, err)
+			}
+			if bytes.Equal(current, rendered) {
+				reason := fmt.Sprintf("set permission bits %o -> %o", info.Mode().Perm(), entry.Mode)
+				omissions = append(omissions, Omission{Entry: entry, Reason: reason})
+				continue
+			}
+			if err := writeChangedFilePatch(out, path, current, rendered); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return omissions, nil
@@ -74,14 +95,25 @@ func writeNewFilePatch(out io.Writer, path string, mode os.FileMode, rendered []
 	if mode&0o111 != 0 {
 		gitMode = "100755"
 	}
-	_, err := fmt.Fprintf(out, "diff --git a/%s b/%s\nnew file mode %s\n%s",
-		path, path, gitMode, udiff.Unified("/dev/null", "b/"+path, "", string(rendered)))
+	_, err := fmt.Fprintf(out, "diff --git %s %s\nnew file mode %s\n%s",
+		quotePath("a/"+path), quotePath("b/"+path), gitMode,
+		udiff.Unified("/dev/null", quotePath("b/"+path), "", string(rendered)))
 	return err
 }
 
 func writeChangedFilePatch(out io.Writer, path string, current, rendered []byte) error {
-	_, err := fmt.Fprintf(out, "diff --git a/%s b/%s\n%s",
-		path, path, udiff.Unified("a/"+path, "b/"+path, string(current), string(rendered)))
+	_, err := fmt.Fprintf(out, "diff --git %s %s\n%s",
+		quotePath("a/"+path), quotePath("b/"+path),
+		udiff.Unified(quotePath("a/"+path), quotePath("b/"+path), string(current), string(rendered)))
+	return err
+}
+
+// writeDeletedLinkPatch removes a symbolic link the way git records it: the
+// link's destination is its content, without a trailing newline.
+func writeDeletedLinkPatch(out io.Writer, path, destination string) error {
+	_, err := fmt.Fprintf(out, "diff --git %s %s\ndeleted file mode 120000\n%s",
+		quotePath("a/"+path), quotePath("b/"+path),
+		udiff.Unified(quotePath("a/"+path), "/dev/null", destination, ""))
 	return err
 }
 
@@ -98,32 +130,37 @@ func renderedBytes(entry Entry) ([]byte, error) {
 	return content, nil
 }
 
-// currentBytes reads the target through any symbolic link; Apply replaces the
-// link, so the patch shows the change to the content it resolves to.
-func currentBytes(entry Entry) ([]byte, error) {
-	info, err := os.Stat(entry.Target)
-	if err != nil {
-		return nil, fmt.Errorf("check target %s: %w", entry.Target, err)
+// quotePath returns path as git writes it in patch headers: unchanged when
+// every byte is printable and not a space, quote, or backslash, and otherwise
+// in double quotes with C escapes, which both 'git apply' and 'patch' read.
+func quotePath(path string) string {
+	if !strings.ContainsFunc(path, needsQuoting) {
+		return path
 	}
-	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("target %s is not a regular file (%s); a patch cannot describe it", entry.Target, info.Mode().Type())
+
+	var quoted strings.Builder
+	quoted.WriteByte('"')
+	for i := 0; i < len(path); i++ {
+		switch c := path[i]; {
+		case c == '"' || c == '\\':
+			quoted.WriteByte('\\')
+			quoted.WriteByte(c)
+		case c == '\t':
+			quoted.WriteString(`\t`)
+		case c == '\n':
+			quoted.WriteString(`\n`)
+		case c == '\r':
+			quoted.WriteString(`\r`)
+		case c < 0x20 || c == 0x7f:
+			fmt.Fprintf(&quoted, `\%03o`, c)
+		default:
+			quoted.WriteByte(c)
+		}
 	}
-	content, err := os.ReadFile(entry.Target)
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", entry.Target, err)
-	}
-	return content, nil
+	quoted.WriteByte('"')
+	return quoted.String()
 }
 
-// omissionReason explains why Apply would rewrite a target whose bytes
-// already match: it is a symbolic link, or its permission bits differ.
-func omissionReason(entry Entry) (string, error) {
-	info, err := os.Lstat(entry.Target)
-	if err != nil {
-		return "", fmt.Errorf("check target %s: %w", entry.Target, err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return "replace the symbolic link with a regular file", nil
-	}
-	return fmt.Sprintf("set permission bits %o -> %o", info.Mode().Perm(), entry.Mode), nil
+func needsQuoting(r rune) bool {
+	return r <= ' ' || r == 0x7f || r == '"' || r == '\\'
 }

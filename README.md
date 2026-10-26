@@ -38,7 +38,7 @@ Copy `./build/overlay` onto your `PATH`.
 | `overlay render --dry-run` | Print the files the effective layers would write to the home directory, with their status and what they replace. |
 | `overlay render` | Write those files, skipping ones already identical, and print the same plan. |
 | `overlay render --target ~/staging --json` | Render into another directory and print the plan as one JSON document. |
-| `overlay diff` | Print a unified patch from the home directory's current files to what `overlay render` would write; from `~`, it feeds `git apply` or `patch -p1`. |
+| `overlay diff` | Print a unified patch from the home directory's current files to what `overlay render` would write; from `~`, it feeds `git apply`. |
 
 `overlay --help`, each command's `--help`, and the help topic `overlay help exit-codes` are the canonical reference for every user-facing contract.
 

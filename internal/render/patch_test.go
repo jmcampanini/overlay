@@ -15,6 +15,7 @@ import (
 func TestWritePatchDescribesNewAndChangedFilesRelativeToTheTarget(t *testing.T) {
 	src := newSource(t, "src", "[layers.base]\npackages = [\"pkg\"]\n")
 	src.file("pkg/dot-config/new", "new\n", 0o600)
+	src.file("pkg/empty", "", 0o644)
 	src.file("pkg/exec", "#!/bin/sh\n", 0o755)
 	src.file("pkg/same", "same\n", 0o644)
 	src.file("pkg/content", "one\ntwo\nthree\n", 0o644)
@@ -22,13 +23,16 @@ func TestWritePatchDescribesNewAndChangedFilesRelativeToTheTarget(t *testing.T) 
 	src.file("pkg/mode", "mode\n", 0o600)
 	src.file("pkg/link", "linked\n", 0o644)
 	src.file("pkg/greeting.tmpl", "hello {{ .OS }}\n", 0o644)
+	src.file(`pkg/odd "name"`, "quoted\n", 0o644)
+	src.file("pkg/with space", "spaced\n", 0o644)
 	target := t.TempDir()
 	writeFile(t, filepath.Join(target, "same"), "same\n", 0o644)
 	writeFile(t, filepath.Join(target, "content"), "one\n2\nthree\n", 0o644)
 	writeFile(t, filepath.Join(target, "noeol"), "x\n", 0o644)
 	writeFile(t, filepath.Join(target, "mode"), "mode\n", 0o644)
 	writeFile(t, filepath.Join(target, "greeting"), "hello there\n", 0o644)
-	if err := os.Symlink(filepath.Join(src.path, "pkg", "link"), filepath.Join(target, "link")); err != nil {
+	writeFile(t, filepath.Join(target, "link.target"), "linked\n", 0o644)
+	if err := os.Symlink("link.target", filepath.Join(target, "link")); err != nil {
 		t.Fatal(err)
 	}
 	req := templateRequest(t, src)
@@ -59,6 +63,8 @@ diff --git a/content b/content
 -2
 +two
  three
+diff --git a/empty b/empty
+new file mode 100644
 diff --git a/exec b/exec
 new file mode 100755
 --- /dev/null
@@ -71,6 +77,19 @@ diff --git a/greeting b/greeting
 @@ -1 +1 @@
 -hello there
 +hello plan9
+diff --git a/link b/link
+deleted file mode 120000
+--- a/link
++++ /dev/null
+@@ -1 +0,0 @@
+-link.target
+\ No newline at end of file
+diff --git a/link b/link
+new file mode 100644
+--- /dev/null
++++ b/link
+@@ -0,0 +1 @@
++linked
 diff --git a/noeol b/noeol
 --- a/noeol
 +++ b/noeol
@@ -78,6 +97,18 @@ diff --git a/noeol b/noeol
 -x
 +y
 \ No newline at end of file
+diff --git "a/odd \"name\"" "b/odd \"name\""
+new file mode 100644
+--- /dev/null
++++ "b/odd \"name\""
+@@ -0,0 +1 @@
++quoted
+diff --git "a/with space" "b/with space"
+new file mode 100644
+--- /dev/null
++++ "b/with space"
+@@ -0,0 +1 @@
++spaced
 `
 	if diff := cmp.Diff(want, out.String()); diff != "" {
 		t.Errorf("patch mismatch (-want +got):\n%s", diff)
@@ -86,10 +117,7 @@ diff --git a/noeol b/noeol
 	for _, omission := range omissions {
 		gotOmissions[filepath.Base(omission.Entry.Target)] = omission.Reason
 	}
-	wantOmissions := map[string]string{
-		"link": "replace the symbolic link with a regular file",
-		"mode": "set permission bits 644 -> 600",
-	}
+	wantOmissions := map[string]string{"mode": "set permission bits 644 -> 600"}
 	if diff := cmp.Diff(wantOmissions, gotOmissions); diff != "" {
 		t.Errorf("omissions mismatch (-want +got):\n%s", diff)
 	}
@@ -134,5 +162,28 @@ func TestWritePatchRejectsATargetThatIsNotAFile(t *testing.T) {
 	}
 	if !strings.HasPrefix(out.String(), "diff --git a/first b/first\n") {
 		t.Errorf("the patch for entries before the failure is missing:\n%s", out.String())
+	}
+}
+
+func TestQuotePath(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+	}{
+		{path: "a/.bashrc", want: "a/.bashrc"},
+		{path: "a/café", want: "a/café"},
+		{path: "a/with space", want: `"a/with space"`},
+		{path: `a/say "hi"`, want: `"a/say \"hi\""`},
+		{path: `a/back\slash`, want: `"a/back\\slash"`},
+		{path: "a/tab\there", want: `"a/tab\there"`},
+		{path: "a/new\nline", want: `"a/new\nline"`},
+		{path: "a/bell\x07", want: `"a/bell\007"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			if got := quotePath(tt.path); got != tt.want {
+				t.Errorf("quotePath(%q) = %s, want %s", tt.path, got, tt.want)
+			}
+		})
 	}
 }
