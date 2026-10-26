@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"slices"
 	"strings"
 	"text/template"
 )
@@ -38,7 +39,7 @@ type Source struct {
 // ctx. A missing map key, a missing field, a parse error, or a function
 // error fails the whole render; nothing is partially returned.
 func Render(name string, text []byte, ctx Context) ([]byte, error) {
-	parsed, err := newTemplate(name).Parse(string(text))
+	parsed, err := newTemplate(name, ctx.Layers).Parse(string(text))
 	if err != nil {
 		return nil, err
 	}
@@ -51,12 +52,14 @@ func Render(name string, text []byte, ctx Context) ([]byte, error) {
 }
 
 // newTemplate returns an empty template with overlay's options and
-// functions: a missing map key is an error, and env, fileExists, join,
-// readFile, and shellQuote are available beyond text/template's builtins.
-func newTemplate(name string) *template.Template {
+// functions: a missing map key is an error, and env, fileExists, hasLayer,
+// join, readFile, and shellQuote are available beyond text/template's
+// builtins. hasLayer reports whether its argument is one of layers.
+func newTemplate(name string, layers []string) *template.Template {
 	return template.New(name).Option("missingkey=error").Funcs(template.FuncMap{
 		"env":        os.Getenv,
 		"fileExists": fileExists,
+		"hasLayer":   func(layer string) bool { return slices.Contains(layers, layer) },
 		"join":       join,
 		"readFile":   readFile,
 		"shellQuote": shellQuote,

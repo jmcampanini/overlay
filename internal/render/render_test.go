@@ -419,7 +419,7 @@ func templateRequest(t *testing.T, sources ...fixture) Request {
 	}
 	return Request{
 		Home:     "/home/me",
-		Hostname: "wintermute",
+		Hostname: func() (string, error) { return "wintermute", nil },
 		Layers:   []string{"base", "personal", "local"},
 		OS:       "linux",
 		Sources:  resolved,
@@ -593,5 +593,33 @@ func TestBuildRejectsATemplateWithoutAName(t *testing.T) {
 				t.Errorf("Build() with %s error = %v, want needs a name", name, err)
 			}
 		})
+	}
+}
+
+func TestBuildLooksUpTheHostnameOnlyForTemplates(t *testing.T) {
+	lookupErr := errors.New("no hostname")
+	failing := func() (string, error) { return "", lookupErr }
+	plain := newSource(t, "src", "[layers.base]\npackages = [\"pkg\"]\n")
+	plain.file("pkg/dot-rc", "plain\n", 0o644)
+	templated := newSource(t, "src", "[layers.base]\npackages = [\"pkg\"]\n")
+	templated.file("pkg/dot-rc.tmpl", "{{ .OS }}\n", 0o644)
+
+	plainReq := templateRequest(t, plain)
+	plainReq.Hostname = failing
+	if _, err := Build(plainReq); err != nil {
+		t.Errorf("Build() with plain files and a failing hostname lookup error = %v, want nil", err)
+	}
+
+	templatedReq := templateRequest(t, templated)
+	templatedReq.Hostname = failing
+	_, err := Build(templatedReq)
+	if !errors.Is(err, lookupErr) {
+		t.Errorf("Build() with a template and a failing hostname lookup error = %v, want %v", err, lookupErr)
+	}
+
+	templatedReq.Hostname = nil
+	_, err = Build(templatedReq)
+	if err == nil || !strings.Contains(err.Error(), "hostname") {
+		t.Errorf("Build() with a template and no hostname lookup error = %v, want one naming the hostname", err)
 	}
 }

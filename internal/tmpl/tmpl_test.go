@@ -79,7 +79,9 @@ func TestRenderFunctions(t *testing.T) {
 		{name: "readFile keeps inner newlines", text: `{{ readFile "` + multiline + `" }}`, want: "one\ntwo"},
 		{name: "readFile quoted", text: `{{ readFile "` + present + `" | printf "%q" }}`, want: `"x"`},
 		{name: "join layers", text: `{{ join "," .Layers }}`, want: "base,personal,local"},
-		{name: "join empty", text: `{{ join "," .Layers }}`, want: ""},
+		{name: "join empty", text: `{{ join "," (slice .Layers 0 0) }}`, want: ""},
+		{name: "hasLayer present", text: `{{ hasLayer "personal" }}`, want: "true"},
+		{name: "hasLayer absent", text: `{{ hasLayer "server" }}`, want: "false"},
 		{name: "shellQuote plain", text: `{{ shellQuote "/home/me/.config" }}`, want: `'/home/me/.config'`},
 		{name: "shellQuote empty", text: `{{ shellQuote "" }}`, want: `''`},
 		{name: "shellQuote single quote", text: `{{ shellQuote "it's" }}`, want: `'it'\''s'`},
@@ -88,12 +90,7 @@ func TestRenderFunctions(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := testContext(t)
-			if tt.name == "join empty" {
-				ctx.Layers = nil
-			}
-
-			got, err := Render(tt.name, []byte(tt.text), ctx)
+			got, err := Render(tt.name, []byte(tt.text), testContext(t))
 
 			if err != nil {
 				t.Fatalf("Render(%q) error = %v", tt.text, err)
@@ -153,7 +150,7 @@ func TestRenderFailures(t *testing.T) {
 func TestMissingMapKeyIsAnError(t *testing.T) {
 	// Context has no map fields today; this pins the option so a future map
 	// field fails on a typo instead of rendering "<no value>".
-	parsed, err := newTemplate("mapped").Parse(`{{ .shel }}`)
+	parsed, err := newTemplate("mapped", nil).Parse(`{{ .shel }}`)
 	if err != nil {
 		t.Fatal(err)
 	}

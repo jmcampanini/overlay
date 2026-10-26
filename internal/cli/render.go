@@ -27,7 +27,7 @@ func renderCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "render [--target DIR] [--dry-run] [--json] [--color MODE]",
 		Short: "Render the selected layers into the target directory",
-		Long: `Copy the files the effective layers select from every source into the
+		Long: `Write the files the effective layers select from every source into the
 target directory. --target DIR defaults to the home directory and accepts
 an absolute path, a path starting with ~/, or a path relative to the
 current directory; it must already exist. --dry-run plans and prints
@@ -76,6 +76,7 @@ Beyond the text/template builtins, templates may call:
                    or other entry, following symbolic links); PATH is used
                    as given, ~ is not expanded, and an error other than
                    absence fails the render
+  hasLayer NAME    true when NAME is one of the layers in .Layers
   readFile PATH    the file's content with trailing newlines removed, as
                    $(cat PATH) would give; PATH is used as given, and a
                    missing or unreadable file fails the render, so guard
@@ -162,14 +163,10 @@ func runRender(cmd *cobra.Command, opts renderOptions) error {
 	if err != nil {
 		return err
 	}
-	hostname, err := os.Hostname()
-	if err != nil {
-		return fmt.Errorf("determine hostname: %w", err)
-	}
 
 	plan, err := render.Build(render.Request{
 		Home:     home,
-		Hostname: hostname,
+		Hostname: os.Hostname,
 		Layers:   config.LayerOrder(effective.Layers),
 		OS:       runtime.GOOS,
 		Sources:  effective.Sources,

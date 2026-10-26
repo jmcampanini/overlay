@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -55,8 +56,10 @@ type Request struct {
 	// Home is the user's home directory, exposed to templates as .Home
 	// whatever the target is.
 	Home string
-	// Hostname is exposed to templates as .Hostname.
-	Hostname string
+	// Hostname looks up the machine's hostname for .Hostname. Build calls it
+	// once, and only when the plan holds a template, so a render of plain
+	// files never depends on the lookup.
+	Hostname func() (string, error)
 	// Layers is the complete layer order, usually config.LayerOrder.
 	Layers []string
 	// OS is exposed to templates as .OS, usually runtime.GOOS.
@@ -171,7 +174,10 @@ func Build(req Request) (Plan, error) {
 		plan.Entries = append(plan.Entries, entry)
 	}
 	sort.Slice(plan.Entries, func(i, j int) bool { return plan.Entries[i].Target < plan.Entries[j].Target })
-	ctx := templateContext(req)
+	ctx, err := templateContext(req, plan.Entries)
+	if err != nil {
+		return Plan{}, err
+	}
 	for i := range plan.Entries {
 		if plan.Entries[i].Kind == KindTemplate {
 			content, err := renderTemplate(plan.Entries[i], ctx)
@@ -263,13 +269,26 @@ func targetPath(pkg, sourcePath string) string {
 	return filepath.FromSlash(strings.Join(segments, "/"))
 }
 
-// templateContext builds the data every template in the plan sees.
-func templateContext(req Request) tmpl.Context {
+// templateContext builds the data every template among entries sees. It
+// returns an empty context without looking up the hostname when no entry is a
+// template.
+func templateContext(req Request, entries []Entry) (tmpl.Context, error) {
+	if !slices.ContainsFunc(entries, func(entry Entry) bool { return entry.Kind == KindTemplate }) {
+		return tmpl.Context{}, nil
+	}
+	if req.Hostname == nil {
+		return tmpl.Context{}, errors.New("determine hostname: no lookup configured")
+	}
+	hostname, err := req.Hostname()
+	if err != nil {
+		return tmpl.Context{}, fmt.Errorf("determine hostname: %w", err)
+	}
+
 	sources := make([]tmpl.Source, len(req.Sources))
 	for i, source := range req.Sources {
 		sources[i] = tmpl.Source{Name: source.Name, Path: source.Path}
 	}
-	return tmpl.Context{Home: req.Home, Hostname: req.Hostname, Layers: req.Layers, OS: req.OS, Sources: sources}
+	return tmpl.Context{Home: req.Home, Hostname: hostname, Layers: req.Layers, OS: req.OS, Sources: sources}, nil
 }
 
 // renderTemplate executes a template entry's source, naming the template
