@@ -19,8 +19,6 @@ new file mode 100644
 
 func TestDiffPrintsAPatchThatGitAppliesFromTheTarget(t *testing.T) {
 	f := newRenderFixture(t)
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 
 	out, errOut, err := executeForTest(t, "diff", "--config", f.configPath)
 	if err != nil {
@@ -32,11 +30,7 @@ func TestDiffPrintsAPatchThatGitAppliesFromTheTarget(t *testing.T) {
 	}
 	requireNoFile(t, filepath.Join(f.home, ".ssh", "config"))
 
-	patch := filepath.Join(t.TempDir(), "overlay.patch")
-	if err := os.WriteFile(patch, []byte(out), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	gittest.Run(t, f.home, "apply", patch)
+	gitApply(t, f.home, out)
 	if raw, err := os.ReadFile(filepath.Join(f.home, ".ssh", "config")); err != nil || string(raw) != "Host personal\n" {
 		t.Errorf("applied ssh config = %q (%v), want the personal layer's file", raw, err)
 	}
@@ -55,8 +49,6 @@ func TestDiffPrintsAPatchThatGitAppliesFromTheTarget(t *testing.T) {
 
 func TestDiffReplacesSymlinksAndQuotesPathsSoGitApplies(t *testing.T) {
 	f := newRenderFixture(t)
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	personal := readConfig(t, f.configPath).Sources[1].Path
 	writeFixtureFile(t, filepath.Join(personal, "ssh", "dot-ssh", "with space"), "spaced\n", 0o644)
 	sshDir := filepath.Join(f.home, ".ssh")
@@ -83,11 +75,7 @@ func TestDiffReplacesSymlinksAndQuotesPathsSoGitApplies(t *testing.T) {
 		t.Errorf("diff stderr = %q, want none", errOut)
 	}
 
-	patch := filepath.Join(t.TempDir(), "overlay.patch")
-	if err := os.WriteFile(patch, []byte(out), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	gittest.Run(t, f.home, "apply", patch)
+	gitApply(t, f.home, out)
 	info, err := os.Lstat(filepath.Join(sshDir, "config"))
 	if err != nil || !info.Mode().IsRegular() {
 		t.Errorf("applied ssh config mode = %v (%v), want a regular file in place of the symlink", info, err)
@@ -124,4 +112,16 @@ func TestDiffTargetFlagMakesPathsRelativeToTheTarget(t *testing.T) {
 		t.Errorf("diff output names the target directory:\n%s", out)
 	}
 	requireNoFile(t, filepath.Join(target, ".bashrc"))
+}
+
+func gitApply(t *testing.T, dir, patch string) {
+	t.Helper()
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+	path := filepath.Join(t.TempDir(), "overlay.patch")
+	if err := os.WriteFile(path, []byte(patch), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gittest.Run(t, dir, "apply", path)
 }

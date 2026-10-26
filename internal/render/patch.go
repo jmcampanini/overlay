@@ -95,25 +95,25 @@ func writeNewFilePatch(out io.Writer, path string, mode os.FileMode, rendered []
 	if mode&0o111 != 0 {
 		gitMode = "100755"
 	}
+	a, b := quotePath("a/"+path), quotePath("b/"+path)
 	_, err := fmt.Fprintf(out, "diff --git %s %s\nnew file mode %s\n%s",
-		quotePath("a/"+path), quotePath("b/"+path), gitMode,
-		udiff.Unified("/dev/null", quotePath("b/"+path), "", string(rendered)))
+		a, b, gitMode, udiff.Unified("/dev/null", b, "", string(rendered)))
 	return err
 }
 
 func writeChangedFilePatch(out io.Writer, path string, current, rendered []byte) error {
+	a, b := quotePath("a/"+path), quotePath("b/"+path)
 	_, err := fmt.Fprintf(out, "diff --git %s %s\n%s",
-		quotePath("a/"+path), quotePath("b/"+path),
-		udiff.Unified(quotePath("a/"+path), quotePath("b/"+path), string(current), string(rendered)))
+		a, b, udiff.Unified(a, b, string(current), string(rendered)))
 	return err
 }
 
 // writeDeletedLinkPatch removes a symbolic link the way git records it: the
 // link's destination is its content, without a trailing newline.
 func writeDeletedLinkPatch(out io.Writer, path, destination string) error {
+	a, b := quotePath("a/"+path), quotePath("b/"+path)
 	_, err := fmt.Fprintf(out, "diff --git %s %s\ndeleted file mode 120000\n%s",
-		quotePath("a/"+path), quotePath("b/"+path),
-		udiff.Unified(quotePath("a/"+path), "/dev/null", destination, ""))
+		a, b, udiff.Unified(a, "/dev/null", destination, ""))
 	return err
 }
 
@@ -140,8 +140,8 @@ func quotePath(path string) string {
 
 	var quoted strings.Builder
 	quoted.WriteByte('"')
-	for i := 0; i < len(path); i++ {
-		switch c := path[i]; {
+	for _, c := range []byte(path) {
+		switch {
 		case c == '"' || c == '\\':
 			quoted.WriteByte('\\')
 			quoted.WriteByte(c)
