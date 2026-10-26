@@ -38,10 +38,10 @@ flags --layers and --layer. Sources are read from the file only.
 File fields: layers (list) and [[source]] entries with url (required),
 path (required; absolute, ~, or starting with ~/), and name (optional). A
 source's name defaults to the last segment of its url with any .git suffix
-removed, and may not hold whitespace, '/', or ':'; two sources resolving
-to the same name is an error, fixed by setting name on one of them. Two
-sources sharing a path is also an error. Source order is the tie-break
-order for later commands.
+removed, and may not hold a space, tab, line break, '/', or ':'; two
+sources resolving to the same name is an error, fixed by setting name on
+one of them. Two sources sharing a path is also an error. Source order is
+the tie-break order for later commands.
 
 The TOML body reloads as config.toml and shows the layer list as loaded.
 The '# Effective' comment block lists loaded_files, effective_layers after

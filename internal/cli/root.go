@@ -49,8 +49,9 @@ func Execute(args []string, out, errOut io.Writer) int {
 
 // newRootCommand builds the overlay command tree.
 func newRootCommand(out, errOut io.Writer) *cobra.Command {
-	// A 'Command groups:' block follows the task list when a first-level
-	// command group is added.
+	// The long description ends with the task list: the command group block
+	// that would follow it is empty because overlay has no first-level
+	// command groups.
 	cmd := &cobra.Command{
 		Use:   "overlay",
 		Short: "Render layered dotfiles from source repositories",
@@ -74,8 +75,7 @@ Common tasks:
   Preview a render:     overlay render --dry-run
   Render into home:     overlay render
   Diff home vs render:  overlay diff
-  Show configuration:   overlay config
-  Read the exit codes:  overlay help exit-codes`,
+  Show configuration:   overlay config`,
 		Version:            Version,
 		DisableSuggestions: true,
 		SilenceUsage:       true,

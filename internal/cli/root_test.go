@@ -63,9 +63,10 @@ func TestExitCodesTopicListsEveryStatus(t *testing.T) {
 	}
 }
 
-// TestEveryApplicationCommandHasWrappedLongHelp renders each command's help
-// as --help does, so the Usage line and flag usage count toward the limit.
-func TestEveryApplicationCommandHasWrappedLongHelp(t *testing.T) {
+// TestEveryApplicationCommandMeetsTheHelpBaseline renders each command's
+// help as --help does, so the Usage line and flag usage count toward the
+// width limit.
+func TestEveryApplicationCommandMeetsTheHelpBaseline(t *testing.T) {
 	root := newRootCommand(&bytes.Buffer{}, &bytes.Buffer{})
 
 	var visit func(*cobra.Command)
@@ -139,6 +140,11 @@ func TestEveryApplicationCommandDeclaresItsGrammar(t *testing.T) {
 // isLibraryCommand reports whether cobra, not overlay, added command.
 func isLibraryCommand(command *cobra.Command) bool {
 	return command.Name() == "help" || command.Name() == "completion"
+}
+
+// isHelpTopic reports whether newHelpTopic built command.
+func isHelpTopic(command *cobra.Command) bool {
+	return command.Annotations[helpTopicAnnotation] == "true"
 }
 
 func TestExecutePrintsAMultiLineFailureAsOneLine(t *testing.T) {

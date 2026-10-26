@@ -20,5 +20,5 @@ base applies before the configured layers and local after, and neither may
 be listed.`
 
 const contractHelp = `Diagnostics go to stderr, and a failure is one line, 'overlay: <message>',
-with the exit status 'overlay help exit-codes' describes. Nothing prompts,
-and nothing works only interactively.`
+with the exit status 'overlay help exit-codes' describes. overlay itself
+never prompts, and nothing works only interactively.`

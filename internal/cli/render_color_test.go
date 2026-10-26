@@ -34,7 +34,7 @@ func TestResolveColor(t *testing.T) {
 }
 
 func TestDetectionEnvironDropsOverrides(t *testing.T) {
-	got := detectionEnviron([]string{"TERM=xterm-256color", "NO_COLOR=1", "CLICOLOR_FORCE=1", "CLICOLOR=0", "TMUX=/tmp/x", "COLORTERM=truecolor"})
+	got := detectionEnviron([]string{"TERM=xterm-256color", "NO_COLOR=1", "CLICOLOR_FORCE=1", "CLICOLOR=0", "TTY_FORCE=1", "TMUX=/tmp/x", "COLORTERM=truecolor"})
 
 	want := []string{"TERM=xterm-256color", "COLORTERM=truecolor"}
 	if diff := cmp.Diff(want, got); diff != "" {

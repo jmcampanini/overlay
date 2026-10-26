@@ -50,9 +50,11 @@ existing path is an error. Sources are cloned before the file is written,
 so a failed clone leaves no file and bootstrap can simply be run again.
 Writing the file creates its missing parent directories with mode 755.
 
-git never prompts: set up SSH or token authentication before running
-bootstrap. On success stdout gets one line per source, 'cloned NAME into
-PATH' or 'exists NAME at PATH', then 'wrote FILE'.
+git runs with its own prompts disabled, so a missing credential fails
+rather than asks; ssh may still ask to confirm a host key or unlock a
+key, so set up SSH or token authentication before running bootstrap. On
+success stdout gets one line per source, 'cloned NAME into PATH' or
+'exists NAME at PATH', then 'wrote FILE'.
 
 ` + contractHelp,
 		Example: `  overlay bootstrap \

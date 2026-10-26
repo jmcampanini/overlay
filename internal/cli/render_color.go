@@ -61,13 +61,14 @@ func detectColor(out io.Writer, environ []string) colorprofile.Profile {
 }
 
 // detectionEnviron drops the variables colorprofile would otherwise treat as
-// overrides: NO_COLOR is resolveColor's job, the CLICOLOR family is not part
-// of overlay's contract, and TMUX makes detection run tmux without a timeout.
+// overrides: NO_COLOR is resolveColor's job, the CLICOLOR family and
+// TTY_FORCE are not part of overlay's contract, and TMUX makes detection run
+// tmux without a timeout.
 func detectionEnviron(environ []string) []string {
 	kept := make([]string, 0, len(environ))
 	for _, entry := range environ {
 		switch key, _, _ := strings.Cut(entry, "="); key {
-		case "NO_COLOR", "CLICOLOR", "CLICOLOR_FORCE", "TMUX":
+		case "NO_COLOR", "CLICOLOR", "CLICOLOR_FORCE", "TTY_FORCE", "TMUX":
 			continue
 		default:
 			kept = append(kept, entry)
