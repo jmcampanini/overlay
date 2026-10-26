@@ -5,9 +5,9 @@ lockfile = true
 lockfile_platforms = ["linux-x64", "macos-arm64"]
 
 [tools]
-go = "1.27.2"
+go = "1.27.3"
 golangci-lint = "2.14.0"
-goreleaser = "2.18.3"
+goreleaser = "2.19.0"
 "go:golang.org/x/vuln/cmd/govulncheck" = "1.9.0"
 node = "24.21.0"
 "npm:markdownlint-cli2" = "0.24.0"
@@ -19,14 +19,10 @@ GOTOOLCHAIN = "local"
 [tasks.build]
 description = "Build build/overlay with git-derived version metadata."
 run = '''
-version="${VERSION:-$(git describe --tags --dirty --always 2>/dev/null || printf 'unknown')}"
+version="$(git describe --tags --dirty --always 2>/dev/null || printf 'unknown')"
 mkdir -p build
 go build -trimpath -buildvcs=false -ldflags "-X github.com/jmcampanini/overlay/internal/cli.Version=${version}" -o build/overlay .
 '''
-
-[tasks.install]
-description = "Install the CLI."
-run = "go install ."
 
 [tasks.test]
 description = "Run all tests uncached with the race detector."
@@ -64,7 +60,7 @@ run = "go mod tidy -diff"
 description = "Verify the built binary reports the injected version."
 depends = ["build"]
 run = '''
-version="${VERSION:-$(git describe --tags --dirty --always 2>/dev/null || printf 'unknown')}"
+version="$(git describe --tags --dirty --always 2>/dev/null || printf 'unknown')"
 case "$version" in
   unknown|n/a|"") echo "degenerate version identity: '$version'"; exit 1;;
 esac
@@ -91,12 +87,12 @@ run = [
   "goreleaser release --snapshot --clean",
 ]
 
-# release publishes: it creates the GitHub Release and pushes the Homebrew cask. Only the Release workflow runs it, on a v* tag.
+# release publishes: it creates the GitHub Release and pushes the Homebrew cask. Only the Release workflow runs it, on a version tag.
 [tasks.release]
 description = "Build and publish the release for the checked-out tag (Release workflow only)."
 run = """
-if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
-  echo "release publishes artifacts and must run from the Release workflow; use 'mise run release-snapshot' locally"
+if [ "${GITHUB_ACTIONS:-}" != "true" ] || [ "${GITHUB_WORKFLOW:-}" != "Release" ] || [ "${GITHUB_REF_TYPE:-}" != "tag" ]; then
+  echo "release publishes artifacts and runs only from the Release workflow on a tag; use 'mise run release-snapshot' locally"
   exit 1
 fi
 goreleaser release --clean

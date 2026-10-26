@@ -1,6 +1,4 @@
-# GoReleaser configuration. Run `mise run release-snapshot` to build release
-# artifacts locally without publishing; the Release workflow publishes on
-# every v* tag.
+# GoReleaser configuration. Run `mise run release-snapshot` to build release artifacts locally without publishing; the Release workflow publishes on every version tag.
 version: 2
 
 project_name: overlay
@@ -21,8 +19,7 @@ builds:
       - -trimpath
       - -buildvcs=false
     ldflags:
-      # Keep the v prefix so a release binary reports the same string as
-      # `mise run build` on the tagged commit.
+      # Keep the v prefix so a release binary reports the same string as `mise run build` on the tagged commit.
       - -s -w -X github.com/jmcampanini/overlay/internal/cli.Version=v{{ .Version }}
     mod_timestamp: "{{ .CommitTimestamp }}"
 
@@ -40,8 +37,7 @@ checksum:
   algorithm: sha256
 
 changelog:
-  # GitHub generates the notes from merged pull requests, shaped by
-  # .github/release.yml.
+  # GitHub generates the notes from merged pull requests, shaped by .github/release.yml.
   use: github-native
 
 release:
@@ -57,12 +53,7 @@ homebrew_casks:
     description: Render layered dotfiles from source repositories into a target directory
     binaries:
       - overlay
-    # Runs 'overlay completion <shell>' at install time, mirroring NaMo's
-    # cask. Same shells as the Homebrew default for a formula. Homebrew
-    # generates completions before any postflight hook runs, so the
-    # quarantine hook below is a preflight. shell_parameter_format: cobra
-    # would be wrong here: Homebrew then adds its own 'completion' argument
-    # and runs 'overlay completion completion <shell>', which prints help.
+    # Runs 'overlay completion <shell>' at install time, after the preflight hook below. Same shells as the Homebrew default for a formula. shell_parameter_format: cobra would be wrong here: Homebrew then adds its own 'completion' argument and runs 'overlay completion completion <shell>', which prints help.
     generate_completions_from_executable:
       executable: overlay
       args:
@@ -78,8 +69,7 @@ homebrew_casks:
       email: 41898282+github-actions[bot]@users.noreply.github.com
     # Prerelease tags publish a GitHub Release but do not update the tap.
     skip_upload: auto
-    # Pushed over SSH with a deploy key on homebrew-tap, since the workflow
-    # token cannot write to another repository.
+    # Pushed over SSH with a deploy key on homebrew-tap, since the workflow token cannot write to another repository.
     repository:
       owner: jmcampanini
       name: homebrew-tap
@@ -89,11 +79,8 @@ homebrew_casks:
         private_key: "{{ envOrDefault \"HOMEBREW_TAP_DEPLOY_KEY\" \"\" }}"
     hooks:
       pre:
-        # The binary is not notarized. Homebrew quarantines cask downloads,
-        # so remove the attribute or Gatekeeper refuses to run the binary.
-        # Preflight, not postflight as in NaMo: Homebrew runs the binary to
-        # generate completions before any postflight hook.
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/overlay"]
+        # The binary is not notarized. Homebrew quarantines cask downloads, so remove the attribute before Homebrew runs completion generation, which happens before any postflight hook.
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/overlay"]
           end

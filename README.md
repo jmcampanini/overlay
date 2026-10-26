@@ -26,7 +26,7 @@ mise install
 mise run build
 ```
 
-Copy `./build/overlay` onto your `PATH`. To upgrade, run `git pull`, `mise install`, and `mise run build` in the clone, then copy the binary again.
+Copy `./build/overlay` onto your `PATH`.
 
 
 ## Representative commands
