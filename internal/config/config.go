@@ -149,13 +149,16 @@ func newFileLoader(explicitPath string) (configloader.ConfigLoader[Config], erro
 // from URLs unless set, and source paths are expanded to absolute paths. env
 // is the process environment; a nil env has no variables set.
 func Resolve(cfg Config, env map[string]string) (Effective, error) {
-	additions, err := envLayers(cfg.EnvLayers, env)
+	additions, addedBy, err := envLayers(cfg.EnvLayers, env)
 	if err != nil {
 		return Effective{}, err
 	}
 	layers := keepLastOccurrences(slices.Concat(cfg.Layers, additions))
 	for _, layer := range layers {
 		if err := ValidateLayerName(layer); err != nil {
+			if variable, ok := addedBy[layer]; ok {
+				return Effective{}, fmt.Errorf("env_layers variable %s: %w", variable, err)
+			}
 			return Effective{}, err
 		}
 	}
@@ -220,26 +223,30 @@ func SourceName(url string) (string, error) {
 	return name, nil
 }
 
-// envLayers reads the variables names lists, in order, from env and returns
-// the layers their comma-separated values add: items are trimmed and blank
-// items dropped, so an unset or empty variable adds nothing. Each name is
-// looked up exactly as written and must not be blank or padded with whitespace.
-func envLayers(names []string, env map[string]string) ([]string, error) {
+// envLayers reads the variables that names lists, in order, from env and
+// returns the layers their comma-separated values add, with the variable each
+// layer came from so a validation error can name it. Items are trimmed and
+// blank items dropped, so an unset or empty variable adds nothing. Each name
+// is looked up exactly as written and must not be blank or padded with
+// whitespace.
+func envLayers(names []string, env map[string]string) ([]string, map[string]string, error) {
 	var layers []string
+	addedBy := make(map[string]string)
 	for i, name := range names {
-		switch {
-		case strings.TrimSpace(name) == "":
-			return nil, fmt.Errorf("env_layers item %d is blank", i+1)
-		case strings.TrimSpace(name) != name:
-			return nil, fmt.Errorf("env_layers item %d %q has surrounding whitespace", i+1, name)
+		switch trimmed := strings.TrimSpace(name); {
+		case trimmed == "":
+			return nil, nil, fmt.Errorf("env_layers item %d is blank", i+1)
+		case trimmed != name:
+			return nil, nil, fmt.Errorf("env_layers item %d %q has surrounding whitespace", i+1, name)
 		}
 		for item := range strings.SplitSeq(env[name], ",") {
 			if item = strings.TrimSpace(item); item != "" {
 				layers = append(layers, item)
+				addedBy[item] = name
 			}
 		}
 	}
-	return layers, nil
+	return layers, addedBy, nil
 }
 
 func keepLastOccurrences(items []string) []string {

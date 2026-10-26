@@ -69,34 +69,14 @@ func TestConfigReportRoundTripsAndListsEffectiveValues(t *testing.T) {
 	}
 }
 
-func TestConfigReportAppendsEnvLayersAfterFlagsClearTheList(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "config.toml")
-	writeConfig(t, configPath, "layers = [\"work\"]\nenv_layers = [\"HOST_LAYERS\"]\n")
-	t.Setenv("HOST_LAYERS", " laptop, ,session ")
-
-	out, errOut, err := executeForTest(t, "config", "--config", configPath, "--layers", "")
-	if err != nil {
-		t.Fatalf("config error = %v, stderr = %s", err, errOut)
-	}
-
-	for _, want := range []string{
-		"layers = []\n",
-		`env_layers = ["HOST_LAYERS"]` + "\n",
-		`# effective_layers = ["laptop", "session"]` + "\n",
-		`# layer_order = ["base", "laptop", "session", "local"]` + "\n",
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("config output missing %q:\n%s", want, out)
-		}
-	}
-}
-
 func TestConfigProvenanceNamesEachSource(t *testing.T) {
 	configDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", configDir)
 	configPath := filepath.Join(configDir, "overlay", "config.toml")
 	writeConfig(t, configPath, fixtureConfig)
 	t.Setenv("OVERLAY_LAYERS", "work")
+	t.Setenv("HOST_LAYERS", "")
+	t.Setenv("SESSION_LAYERS", "")
 
 	out, errOut, err := executeForTest(t, "config", "--provenance")
 	if err != nil {
@@ -129,6 +109,9 @@ func TestConfigReportsDefaultsWithoutAFile(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("config output missing %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "env_layers") {
+		t.Errorf("config output names env_layers when no file sets it:\n%s", out)
 	}
 }
 

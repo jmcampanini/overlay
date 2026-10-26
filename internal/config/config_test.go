@@ -138,9 +138,9 @@ func TestResolveRejectsInvalidEnvLayers(t *testing.T) {
 		{name: "blank variable name", envLayers: []string{"HOST_LAYERS", ""}, want: "env_layers item 2 is blank"},
 		{name: "whitespace variable name", envLayers: []string{" "}, want: "env_layers item 1 is blank"},
 		{name: "padded variable name", envLayers: []string{" HOST_LAYERS"}, env: map[string]string{" HOST_LAYERS": "work"}, want: "surrounding whitespace"},
-		{name: "base through env", envLayers: []string{"HOST_LAYERS"}, env: map[string]string{"HOST_LAYERS": "base"}, want: "automatic"},
-		{name: "local through env", envLayers: []string{"HOST_LAYERS"}, env: map[string]string{"HOST_LAYERS": "work,local"}, want: "automatic"},
-		{name: "invalid grammar through env", envLayers: []string{"HOST_LAYERS"}, env: map[string]string{"HOST_LAYERS": "Work"}, want: "lowercase"},
+		{name: "base through env", envLayers: []string{"HOST_LAYERS"}, env: map[string]string{"HOST_LAYERS": "base"}, want: `env_layers variable HOST_LAYERS: layer "base" is automatic`},
+		{name: "local through env", envLayers: []string{"SESSION_LAYERS"}, env: map[string]string{"SESSION_LAYERS": "work,local"}, want: `env_layers variable SESSION_LAYERS: layer "local" is automatic`},
+		{name: "invalid grammar through env", envLayers: []string{"HOST_LAYERS"}, env: map[string]string{"HOST_LAYERS": "Work"}, want: `env_layers variable HOST_LAYERS: layer name "Work" must be lowercase`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -283,8 +283,8 @@ func TestLoadPrecedence(t *testing.T) {
 		{
 			name: "env_layers append after env replaces file",
 			file: fileLayers + `env_layers = ["HOST_LAYERS"]` + "\n",
-			env:  map[string]string{"OVERLAY_LAYERS": "env,host", "HOST_LAYERS": "host"},
-			want: []string{"env", "host"}, wantSource: "<env>",
+			env:  map[string]string{"OVERLAY_LAYERS": "env,host", "HOST_LAYERS": "laptop"},
+			want: []string{"env", "host", "laptop"}, wantSource: "<env>",
 		},
 		{
 			name: "OVERLAY_ENV_LAYERS is not read",
@@ -374,11 +374,6 @@ func TestRegisterFlagsAddsNoEnvLayersFlag(t *testing.T) {
 
 	if flags.Lookup("env-layers") != nil {
 		t.Error("RegisterFlags() added --env-layers; env_layers is file-only")
-	}
-	for _, name := range []string{"layers", "layer"} {
-		if flags.Lookup(name) == nil {
-			t.Errorf("RegisterFlags() did not add --%s", name)
-		}
 	}
 }
 

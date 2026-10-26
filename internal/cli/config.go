@@ -30,9 +30,8 @@ is empty.
 Settings load from built-in defaults (an empty layer list and no sources),
 the configuration file, OVERLAY_* environment variables, then flags, each
 overriding the one before. Only layers has an environment variable,
-OVERLAY_LAYERS, and flags, --layers and --layer. env_layers and sources
-are read from the file only; there is no OVERLAY_ENV_LAYERS and no
---env-layers.
+OVERLAY_LAYERS, and flags, --layers and --layer; env_layers and sources
+are read from the file only.
 
 ` + layerSelectionHelp + `
 
