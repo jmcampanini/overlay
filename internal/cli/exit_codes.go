@@ -10,9 +10,10 @@ func exitCodesTopic() *cobra.Command {
 
   0  Success. Outcomes that are not failures also exit 0: 'config' with no
      configuration file (it reports the defaults), 'bootstrap' finding a
-     source already checked out, 'render' with nothing to write, --help,
-     --version, and 'overlay help <topic>' naming an unknown topic, which
-     prints 'Unknown help topic' and the root usage on stdout.
+     source already checked out, 'render' with nothing to write, 'diff'
+     whether or not anything differs, --help, --version, and 'overlay
+     help <topic>' naming an unknown topic, which prints 'Unknown help
+     topic' and the root usage on stdout.
   1  Any failure. Usage errors (an unknown command, operand, or flag), a
      missing --config file, an invalid configuration, an existing file
      during bootstrap, a path that is not a checkout of its source url,
@@ -24,7 +25,9 @@ func exitCodesTopic() *cobra.Command {
      template that fails to parse or execute, a missing target directory,
      or a directory at a target path; a failure
      while writing stops there and prints no plan, and files already
-     written stay.`,
+     written stay. 'diff' fails on the same conditions and on a target
+     path holding anything other than a regular file or a symbolic link;
+     the patch printed before the failure stays on stdout.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()

@@ -143,35 +143,7 @@ paths and no escapes, even with --color always.
 }
 
 func runRender(cmd *cobra.Command, opts renderOptions) error {
-	cfg, _, err := config.Load(config.LoadOptions{
-		Env:   configloader.OSEnv(),
-		Flags: cmd.Flags(),
-		Path:  opts.configPath,
-	})
-	if err != nil {
-		return err
-	}
-	effective, err := config.Resolve(cfg)
-	if err != nil {
-		return err
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("locate home directory: %w", err)
-	}
-	target, err := resolveTarget(opts.target, home)
-	if err != nil {
-		return err
-	}
-
-	plan, err := render.Build(render.Request{
-		Home:     home,
-		Hostname: os.Hostname,
-		Layers:   config.LayerOrder(effective.Layers),
-		OS:       runtime.GOOS,
-		Sources:  effective.Sources,
-		Target:   target,
-	})
+	plan, home, err := loadPlan(cmd, opts.configPath, opts.target)
 	if err != nil {
 		return err
 	}
@@ -188,6 +160,45 @@ func runRender(cmd *cobra.Command, opts renderOptions) error {
 	profile := resolveColor(opts.color, cmd.Flags().Changed("color"),
 		os.Getenv("NO_COLOR") != "", detectColor(out, os.Environ()))
 	return writePlanTable(out, plan, home, colorEnabled(profile))
+}
+
+// loadPlan loads the configuration the command's flags and configPath select
+// and plans a render into the resolved target. It returns the plan and the
+// home directory the target was resolved against.
+func loadPlan(cmd *cobra.Command, configPath, target string) (render.Plan, string, error) {
+	cfg, _, err := config.Load(config.LoadOptions{
+		Env:   configloader.OSEnv(),
+		Flags: cmd.Flags(),
+		Path:  configPath,
+	})
+	if err != nil {
+		return render.Plan{}, "", err
+	}
+	effective, err := config.Resolve(cfg)
+	if err != nil {
+		return render.Plan{}, "", err
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return render.Plan{}, "", fmt.Errorf("locate home directory: %w", err)
+	}
+	absTarget, err := resolveTarget(target, home)
+	if err != nil {
+		return render.Plan{}, "", err
+	}
+
+	plan, err := render.Build(render.Request{
+		Home:     home,
+		Hostname: os.Hostname,
+		Layers:   config.LayerOrder(effective.Layers),
+		OS:       runtime.GOOS,
+		Sources:  effective.Sources,
+		Target:   absTarget,
+	})
+	if err != nil {
+		return render.Plan{}, "", err
+	}
+	return plan, home, nil
 }
 
 // resolveTarget turns the --target value into an absolute path: empty means

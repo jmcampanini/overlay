@@ -34,7 +34,9 @@ overlay reads one configuration file that lists the layers to apply and the
 git repositories that provide files. 'overlay bootstrap' writes that file
 and clones the sources; 'overlay config' prints the configuration in
 effect; 'overlay render' writes the files the layers select into the
-target directory, or with --dry-run only prints what it would write.
+target directory, or with --dry-run only prints what it would write;
+'overlay diff' prints a patch from the target's current files to what
+render would write.
 
 ` + configFileHelp + `
 
@@ -45,7 +47,8 @@ the network on its own.
 
 Run 'overlay config --help' for configuration precedence and the file
 schema, 'overlay render --help' for the source manifest and the rendering
-rules, and 'overlay help exit-codes' for exit-status meanings.`,
+rules, 'overlay diff --help' for the patch format, and 'overlay help
+exit-codes' for exit-status meanings.`,
 		Version:            Version,
 		DisableSuggestions: true,
 		SilenceUsage:       true,
@@ -63,6 +66,7 @@ rules, and 'overlay help exit-codes' for exit-status meanings.`,
 	cmd.AddCommand(
 		bootstrapCommand(),
 		configCommand(),
+		diffCommand(),
 		exitCodesTopic(),
 		renderCommand(),
 	)
