@@ -33,6 +33,8 @@ func newFileFixture(t *testing.T) fileFixture {
 	for _, name := range []string{"dotfiles-base", "dotfiles-personal"} {
 		path := filepath.Join(t.TempDir(), name)
 		gittest.Run(t, filepath.Dir(path), "init", "-q", path)
+		writeFixtureFile(t, filepath.Join(path, "overlay.toml"),
+			"[layers.base]\n[layers.work]\n[layers.laptop]\n[layers.local]\n", 0o644)
 		f.sources = append(f.sources, path)
 		fmt.Fprintf(&configuration, "[[source]]\nurl = %q\npath = %q\n", "git@fixture:"+name+".git", path)
 	}
@@ -225,6 +227,107 @@ func TestFileCommandsSourceFailuresLeaveStdoutEmpty(t *testing.T) {
 			}
 			for _, command := range []string{"files", "cat"} {
 				requireFileCommandFailure(t, []string{command, "--config", f.configPath, "p.{layer}"}, 1, "dotfiles-personal")
+			}
+		})
+	}
+}
+
+func TestFileCommandsOnlyMatchDeclaredLayers(t *testing.T) {
+	type match struct {
+		layer  string
+		source int
+	}
+	tests := []struct {
+		name      string
+		manifests []string
+		matches   []match
+	}{
+		{
+			name: "source declarations including empty package lists",
+			manifests: []string{
+				"[layers.base]\npackages = [\"render-only\"]\n[layers.work]\npackages = []\n[layers.server]\n",
+				"[layers.laptop]\n[layers.local]\n",
+			},
+			matches: []match{{layer: "base"}, {layer: "work"}, {layer: "laptop", source: 1}, {layer: "local", source: 1}},
+		},
+		{
+			name:      "automatic layers must be declared",
+			manifests: []string{"[layers.work]\n", "[layers.laptop]\n"},
+			matches:   []match{{layer: "work"}, {layer: "laptop", source: 1}},
+		},
+		{
+			name:      "empty manifests contribute nothing",
+			manifests: []string{"", ""},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFileFixture(t)
+			for i, source := range f.sources {
+				if err := os.Mkdir(filepath.Join(source, "render-only"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				writeFixtureFile(t, filepath.Join(source, "overlay.toml"), tt.manifests[i], 0o644)
+				for _, layer := range []string{"base", "work", "laptop", "server", "local"} {
+					writeFixtureFile(t, filepath.Join(source, "p."+layer), fmt.Sprintf("%d/p.%s\n", i, layer), 0o644)
+				}
+			}
+			for _, command := range []string{"files", "cat"} {
+				var want strings.Builder
+				for _, match := range tt.matches {
+					line := fmt.Sprintf("%d/p.%s", match.source, match.layer)
+					if command == "files" {
+						line = filepath.Join(f.sources[match.source], "p."+match.layer)
+					}
+					want.WriteString(line + "\n")
+				}
+
+				requireFileCommandOutput(t, []string{command, "--config", f.configPath, "p.{layer}"}, want.String())
+			}
+		})
+	}
+}
+
+func TestFileCommandsSkipUndeclaredLayersBeforeStat(t *testing.T) {
+	f := newFileFixture(t)
+	writeFixtureFile(t, filepath.Join(f.sources[0], "overlay.toml"), "", 0o644)
+	if err := os.Symlink("p.base", filepath.Join(f.sources[0], "p.base")); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(f.sources[1], "p.base")
+	writeFixtureFile(t, path, "declared\n", 0o644)
+
+	requireFileCommandOutput(t, []string{"files", "--config", f.configPath, "p.{layer}"}, path+"\n")
+	requireFileCommandOutput(t, []string{"cat", "--config", f.configPath, "p.{layer}"}, "declared\n")
+}
+
+func TestFileCommandsManifestFailuresLeaveStdoutEmpty(t *testing.T) {
+	tests := []struct {
+		name     string
+		manifest string
+		want     string
+	}{
+		{name: "missing", want: "read manifest"},
+		{name: "malformed", manifest: "[layers.", want: "read manifest"},
+		{name: "unknown key", manifest: "unknown = true\n", want: "unknown keys"},
+		{name: "invalid layer", manifest: "[layers.INVALID]\n", want: "layer name"},
+		{name: "missing package in unselected layer", manifest: "[layers.server]\npackages = [\"absent\"]\n", want: "absent"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFileFixture(t)
+			writeFixtureFile(t, filepath.Join(f.sources[0], "p.base"), "earlier match\n", 0o644)
+			manifest := filepath.Join(f.sources[1], "overlay.toml")
+			if tt.name == "missing" {
+				if err := os.Remove(manifest); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				writeFixtureFile(t, manifest, tt.manifest, 0o644)
+			}
+			for _, command := range []string{"files", "cat"} {
+				requireFileCommandFailure(t, []string{command, "--config", f.configPath, "p.{layer}"}, 1,
+					"dotfiles-personal", "overlay.toml", tt.want)
 			}
 		})
 	}

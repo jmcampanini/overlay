@@ -30,7 +30,7 @@ also goes to stderr.
      already written stay. 'diff' fails on the same conditions and on a
      target path holding anything other than a regular file or a symbolic
      link; the patch printed before the failure stays on stdout. 'files'
-     and 'cat' fail before output on a missing or invalid source directory,
+     and 'cat' fail before output on a missing or invalid source manifest,
      a stat error other than absence, or one pattern matching in two
      sources in the same layer. 'cat' also fails before output on an
      unreadable file, and 'files' on a path containing a newline.
