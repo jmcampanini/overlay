@@ -154,10 +154,12 @@ Command groups:
 
 	cmd.AddCommand(
 		bootstrapCommand(),
+		catCommand(),
 		completionCommand(),
 		configCommand(),
 		diffCommand(),
 		exitCodesTopic(),
+		filesCommand(),
 		help,
 		renderCommand(&options),
 	)

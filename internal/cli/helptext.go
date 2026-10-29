@@ -26,3 +26,23 @@ and neither may be listed.`
 const contractHelp = `Diagnostics go to stderr, and a failure is one line, 'overlay: <message>',
 with the exit status 'overlay help exit-codes' describes. overlay itself
 never prompts, and nothing works only interactively.`
+
+const fileSelectionHelp = `Each pattern selects files relative to the root of each configured source
+checkout. Patterns must be nonempty and contain {layer} at least once;
+every occurrence is replaced. They must not start with / or ~, contain a
+.. path segment, contain braces outside {layer}, or contain *, ?, or [
+(reserved for globs). Quote patterns to keep the shell from expanding them.
+
+Matches are ordered by layer (base, effective layers, local), then source
+in configuration order, then pattern in operand order. A regular file or
+a symbolic link to one matches; missing paths, directories, and other
+entries contribute nothing. Layer names in filenames select the files;
+overlay.toml manifests are not read. Nothing is modified.
+
+Every source directory must exist. An invalid source or a stat error other
+than absence fails. One pattern matching in two sources for the same layer
+fails, naming the pattern, layer, and sources. Different patterns or layers
+never conflict. Files are not deduplicated, so multiple patterns may select
+the same file more than once. All matches and collisions are checked before
+stdout is written. No matches means empty stdout and exit 0. Successful
+commands write nothing to stderr.`
