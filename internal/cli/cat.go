@@ -83,12 +83,9 @@ func appendList(output *bytes.Buffer, seen map[string]bool, content []byte) {
 		if entry == "" || strings.HasPrefix(entry, "#") {
 			continue
 		}
-		for i := 1; i < len(entry); i++ {
-			if entry[i] == '#' && (entry[i-1] == ' ' || entry[i-1] == '\t') {
-				entry = strings.Trim(entry[:i], " \t\r")
-				break
-			}
-		}
+		entry, _, _ = strings.Cut(entry, " #")
+		entry, _, _ = strings.Cut(entry, "\t#")
+		entry = strings.Trim(entry, " \t\r")
 		if seen[entry] {
 			continue
 		}
