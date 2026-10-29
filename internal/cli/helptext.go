@@ -38,19 +38,16 @@ in configuration order, then pattern in operand order. A regular file or
 a symbolic link to one matches; missing paths, directories, and other
 entries contribute nothing. Nothing is modified.
 
-Each source's root overlay.toml is read and validated before matching. A
-[layers.NAME] table declares that source's layer. Only declared layers can
-contribute, including base and local; an undeclared layer is skipped even
-when a matching file exists. The packages lists control rendering, not
-pattern matching: patterns may select files anywhere within the source.
-A declaration with no packages still permits matches. As with render,
-listed packages must be existing top-level directories, unknown keys and
-invalid layer names are errors, and missing or invalid manifests fail.
+Before matching, every source's overlay.toml is read and validated as
+'overlay render --help' describes; a missing or invalid manifest fails. A
+source matches only for layers its manifest declares with a [layers.NAME]
+table, base and local included, even when the table lists no packages.
+Packages do not limit matching: patterns may select files anywhere in the
+source.
 
 A stat error other than absence fails. One pattern matching in two sources
-for the same layer fails, naming the pattern, layer, and sources.
-Different patterns or layers
-never conflict. Files are not deduplicated, so multiple patterns may select
-the same file more than once. All matches and collisions are checked before
-stdout is written. No matches means empty stdout and exit 0. Successful
-commands write nothing to stderr.`
+for the same layer fails, naming the pattern, layer, and sources. Different
+patterns or layers never conflict. Files are not deduplicated, so multiple
+patterns may select the same file more than once. All matches and
+collisions are checked before stdout is written. No matches means empty
+stdout and exit 0. Successful commands write nothing to stderr.`
