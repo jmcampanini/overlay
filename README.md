@@ -57,6 +57,8 @@ install -m 755 build/overlay ~/.local/bin/overlay
 | `overlay render` | Write those files, skipping ones already identical, and print the same plan. |
 | `overlay render --target ~/staging --json` | Render into another directory and print the plan as one JSON document. |
 | `overlay diff` | Print a unified patch from the home directory's current files to what `overlay render` would write; from `~`, it feeds `git apply`. |
+| `overlay files 'packages/homebrew/Brewfile.{layer}'` | Print matching file paths in layer, source, and pattern order. |
+| `overlay cat --list 'packages/pacman/packages.{layer}'` | Print unique list entries in match order, trimming whitespace and comments. |
 
 `overlay --help`, each command's `--help`, and the help topic `overlay help exit-codes` are the canonical reference for every user-facing contract.
 

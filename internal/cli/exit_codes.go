@@ -13,7 +13,8 @@ also goes to stderr.
   0  Success. Outcomes that are not failures also exit 0: 'config' with no
      configuration file (it reports the defaults), 'bootstrap' finding a
      source already checked out, 'render' with nothing to write, 'diff'
-     whether or not anything differs, --help, --version, and a bare
+     whether or not anything differs, 'files' and 'cat' with no matches,
+     --help, --version, and a bare
      command group, which prints its help.
   1  Any failure other than a usage error: a missing --config file, an
      invalid configuration, an existing file during bootstrap, a path that
@@ -28,10 +29,17 @@ also goes to stderr.
      a failure while writing stops there and prints no plan, and files
      already written stay. 'diff' fails on the same conditions and on a
      target path holding anything other than a regular file or a symbolic
-     link; the patch printed before the failure stays on stdout.
+     link; the patch printed before the failure stays on stdout. 'files'
+     and 'cat' fail before output on a missing or invalid source manifest,
+     a stat error other than absence, or one pattern matching in two
+     sources in the same layer. 'cat' also fails before output on an
+     unreadable file, and 'files' on a path containing a newline.
   2  A usage error: an unknown command, help topic, operand, or flag, or a
      flag value that does not parse, such as '--color sometimes'. overlay
-     rejects the invocation before any command work.
+     rejects the invocation before any command work. 'files' and 'cat'
+     require at least one pattern. A pattern must be nonempty, contain
+     {layer}, not start with / or ~, have no .. path segment, have no
+     braces outside {layer}, and contain none of *, ?, or [.
 
 'overlay help exit-codes' prints this text on stdout, prompts for nothing,
 and needs no terminal.`,
