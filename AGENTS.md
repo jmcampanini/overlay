@@ -9,3 +9,5 @@
 - Keep command help and the README consistent with observable behavior.
 - Keep every configuration struct tag in `internal/config`.
 - Pass validated configuration values to other packages.
+- Read and validate every source's `overlay.toml` with `config.LoadManifest` before matching or composing.
+- Require source layer declarations in every composing command, including for automatic `base` and `local`. Filenames never make an undeclared layer eligible. A declared layer remains eligible when its package list is empty; package lists limit rendering traversal, not source-relative pattern matching.
