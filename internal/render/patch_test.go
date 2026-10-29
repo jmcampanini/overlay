@@ -188,7 +188,7 @@ func TestQuotePath(t *testing.T) {
 }
 
 func TestWritePatchPrintsMergedContent(t *testing.T) {
-	src := newSource(t, "src", "[layers.base]\npackages = [\"pkg\"]\n")
+	src := newSource(t, "src", "[layers.base]\npackages = [\"pkg\"]\n[layers.local]\n")
 	src.file("pkg/settings.olay.base.json", `{"a": 1}`, 0o644)
 	src.file("pkg/settings.olay.local.json", `{"b": "${OVERLAY_TEST_PATCH}"}`, 0o644)
 	t.Setenv("OVERLAY_TEST_PATCH", "two")

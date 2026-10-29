@@ -292,6 +292,7 @@ func TestRenderFailures(t *testing.T) {
 		}, want: "fragment dotfiles-base:bash/dot-claude/settings.olay.base.json: parse JSON"},
 		{name: "fragment above a whole file", setup: func(t *testing.T, f renderFixture) []string {
 			t.Helper()
+			writeFixtureFile(t, filepath.Join(baseSourcePath(t, f), "overlay.toml"), "[layers.base]\npackages = [\"bash\", \"ssh\"]\n[layers.personal]\n", 0o644)
 			writeFixtureFile(t, filepath.Join(baseSourcePath(t, f), "bash", "dot-claude", "settings.json"), "{}\n", 0o644)
 			writeFixtureFile(t, filepath.Join(baseSourcePath(t, f), "bash", "dot-claude", "settings.olay.personal.json"), "{}\n", 0o644)
 			return []string{"--dry-run"}
@@ -386,5 +387,73 @@ func TestRenderMergesFragmentsAndShowsEveryFragment(t *testing.T) {
 	}
 	if diff := cmp.Diff(wantEntry, doc.Entries[1]); diff != "" {
 		t.Errorf("JSON merge entry mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestRenderUsesOnlyDeclaredFragmentLayers(t *testing.T) {
+	for _, declared := range []bool{false, true} {
+		name := "undeclared"
+		if declared {
+			name = "declared"
+		}
+		t.Run(name, func(t *testing.T) {
+			f := newRenderFixture(t)
+			base := baseSourcePath(t, f)
+			manifest := "[layers.base]\npackages = [\"bash\"]\n"
+			if declared {
+				manifest += "[layers.work]\n[layers.local]\n"
+			}
+			writeFixtureFile(t, filepath.Join(base, "overlay.toml"), manifest, 0o644)
+			writeFixtureFile(t, filepath.Join(base, "bash", "settings.olay.base.json"), `{"base": true}`, 0o644)
+			writeFixtureFile(t, filepath.Join(base, "bash", "settings.olay.work.json"), `{"work": true}`, 0o644)
+			writeFixtureFile(t, filepath.Join(base, "bash", "settings.olay.local.json"), `{"local": true}`, 0o644)
+
+			_, _, err := executeForTest(t, "render", "--config", f.configPath, "--layers", "work")
+			if err != nil {
+				t.Fatalf("render error = %v", err)
+			}
+
+			data, err := os.ReadFile(filepath.Join(f.home, "settings.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got map[string]bool
+			if err := json.Unmarshal(data, &got); err != nil {
+				t.Fatal(err)
+			}
+			want := map[string]bool{"base": true}
+			if declared {
+				want["work"] = true
+				want["local"] = true
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("fragment layers mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestRenderAndDiffApplyEnvironmentLayersAfterFlags(t *testing.T) {
+	f := newRenderFixture(t)
+	data, err := os.ReadFile(f.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeConfig(t, f.configPath, "env_layers = [\"OVERLAY_TEST_SESSION_LAYERS\"]\n"+string(data))
+	t.Setenv("OVERLAY_TEST_SESSION_LAYERS", "personal")
+
+	patch, _, err := executeForTest(t, "diff", "--config", f.configPath, "--layers", "")
+	if err != nil {
+		t.Fatalf("diff error = %v", err)
+	}
+	if !strings.Contains(patch, "+Host personal\n") {
+		t.Errorf("diff output = %q, want personal layer content", patch)
+	}
+	_, _, err = executeForTest(t, "render", "--config", f.configPath, "--layers", "")
+	if err != nil {
+		t.Fatalf("render error = %v", err)
+	}
+	if got, err := os.ReadFile(filepath.Join(f.home, ".ssh", "config")); err != nil || string(got) != "Host personal\n" {
+		t.Errorf("rendered content = %q (%v), want personal layer content", got, err)
 	}
 }

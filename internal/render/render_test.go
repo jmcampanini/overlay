@@ -627,7 +627,7 @@ func TestBuildLooksUpTheHostnameOnlyForTemplates(t *testing.T) {
 func TestBuildMergesFragmentsAcrossSourcesInLayerOrder(t *testing.T) {
 	base := newSource(t, "dotfiles-base", "[layers.base]\npackages = [\"codex\"]\n")
 	base.file("codex/dot-codex/config.olay.base.toml", "model = \"gpt\"\ntags = [\"base\"]\n\n[features]\napps = false\n", 0o644)
-	personal := newSource(t, "dotfiles-personal", "[layers.personal]\npackages = [\"codex\"]\n")
+	personal := newSource(t, "dotfiles-personal", "[layers.personal]\npackages = [\"codex\"]\n[layers.local]\n")
 	personal.file("codex/dot-codex/config.olay.personal.toml", "model = \"gpt-pro\"\ntags = [\"personal\"]\n\n[features]\ngoals = true\n", 0o644)
 	personal.file("codex/dot-codex/config.olay.local.toml", "model = \"local\"\ntags = [\"local\"]\n\n[projects.\"${OVERLAY_TEST_HOME}/code\"]\ntrust_level = \"trusted\"\n", 0o600)
 	personal.file("codex/dot-codex/config.olay.work.toml", "model = \"never\"\n", 0o644)
@@ -738,7 +738,7 @@ func TestBuildFragmentFailures(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			src := newSource(t, "src", "[layers.base]\npackages = [\"claude\"]\n")
+			src := newSource(t, "src", "[layers.base]\npackages = [\"claude\"]\n[layers.personal]\n[layers.local]\n")
 			for name, content := range tt.files {
 				src.file(name, content, 0o644)
 			}
@@ -761,7 +761,7 @@ func TestBuildFragmentFailures(t *testing.T) {
 func TestBuildFragmentsInOneLayerCollide(t *testing.T) {
 	a := newSource(t, "a", "[layers.base]\npackages = [\"claude\"]\n")
 	a.file("claude/settings.olay.base.json", `{}`, 0o644)
-	b := newSource(t, "b", "[layers.personal]\npackages = [\"claude\"]\n")
+	b := newSource(t, "b", "[layers.personal]\npackages = [\"claude\"]\n[layers.base]\n")
 	b.file("claude/settings.olay.base.json", `{}`, 0o644)
 	target := t.TempDir()
 

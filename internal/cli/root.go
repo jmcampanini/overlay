@@ -7,11 +7,16 @@ import (
 	"io"
 	"strings"
 
+	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/spf13/cobra"
 )
 
 // Version is injected at build time by the mise build task or package manager.
 var Version = "n/a"
+
+type commandOptions struct {
+	color colorMode
+}
 
 // Exit statuses; the exit-codes help topic documents them.
 const (
@@ -80,9 +85,9 @@ func markUsageErrors(cmd *cobra.Command) {
 
 // newRootCommand builds the overlay command tree.
 func newRootCommand(out, errOut io.Writer) *cobra.Command {
-	// The long description ends with the task list: the command group block
-	// that would follow it is empty because overlay has no first-level
-	// command groups.
+	options := commandOptions{color: colorMode(config.DefaultColor)}
+	var showVersion bool
+
 	cmd := &cobra.Command{
 		Use:   "overlay",
 		Short: "Render layered dotfiles from source repositories",
@@ -99,6 +104,9 @@ Only 'overlay bootstrap' runs an external program: it runs git from PATH to
 clone sources and to read the origin of an existing checkout, and never
 lets git prompt for credentials. No command reads the network on its own.
 
+Without a command, print this help on stdout. --version prints the build
+version on stdout. Neither reads configuration or changes files.
+
 ` + contractHelp + `
 
 Common tasks:
@@ -106,11 +114,23 @@ Common tasks:
   Preview a render:     overlay render --dry-run
   Render into home:     overlay render
   Diff home vs render:  overlay diff
-  Show configuration:   overlay config`,
-		Version:            Version,
+  Show configuration:   overlay config
+
+Command groups:
+  completion  Shell completion scripts:  overlay completion --help`,
 		DisableSuggestions: true,
 		SilenceUsage:       true,
 		SilenceErrors:      true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := cobra.NoArgs(cmd, args); err != nil {
+				return usageError{err: err}
+			}
+			if showVersion {
+				_, err := fmt.Fprintf(cmd.OutOrStdout(), "overlay version %s\n", Version)
+				return err
+			}
+			return cmd.Help()
+		},
 	}
 	cmd.SetOut(out)
 	cmd.SetErr(errOut)
@@ -122,15 +142,30 @@ Common tasks:
 	// already treated an unregistered --help or --version as taking the next
 	// argument as its value.
 	cmd.InitDefaultHelpFlag()
-	cmd.InitDefaultVersionFlag()
+	cmd.Flags().BoolVarP(&showVersion, "version", "v", false, "print the build version")
+	cmd.PersistentFlags().Var(colorValue{mode: &options.color}, "color", "color output: auto, always, or never")
+	cmd.CompletionOptions.DisableDefaultCmd = true
+	cmd.AddGroup(
+		&cobra.Group{ID: "commands", Title: "Commands:"},
+		&cobra.Group{ID: helpTopicsGroupID, Title: "Help topics:"},
+	)
+	help := helpCommand()
+	cmd.SetHelpCommand(help)
 
 	cmd.AddCommand(
 		bootstrapCommand(),
+		completionCommand(),
 		configCommand(),
 		diffCommand(),
 		exitCodesTopic(),
-		renderCommand(),
+		help,
+		renderCommand(&options),
 	)
+	for _, child := range cmd.Commands() {
+		if child.GroupID == "" {
+			child.GroupID = "commands"
+		}
+	}
 	markUsageErrors(cmd)
 
 	return cmd

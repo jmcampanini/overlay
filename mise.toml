@@ -1,4 +1,4 @@
-min_version = "2026.1.0"
+min_version = "2026.9.16"
 
 [settings]
 lockfile = true
@@ -6,10 +6,10 @@ lockfile_platforms = ["linux-x64", "macos-arm64"]
 
 [tools]
 go = "1.27.3"
-golangci-lint = "2.14.0"
+golangci-lint = "2.15.0"
 goreleaser = "2.19.0"
 "go:golang.org/x/vuln/cmd/govulncheck" = "1.9.0"
-node = "24.21.0"
+node = "24.22.2"
 "npm:markdownlint-cli2" = "0.24.0"
 
 [env]
@@ -29,11 +29,11 @@ description = "Run all tests uncached with the race detector."
 run = "go test -count=1 -race ./..."
 
 [tasks.lint]
-description = "Run static analysis."
+description = "Run static analysis and report unformatted code."
 run = "golangci-lint run ./..."
 
 [tasks.lint-fix]
-description = "Run static analysis with --fix."
+description = "Apply the fixes static analysis can make, including formatting."
 run = "golangci-lint run --fix ./..."
 
 [tasks.lint-markdown]
@@ -92,9 +92,13 @@ run = [
 description = "Build and publish the release for the checked-out tag (Release workflow only)."
 run = """
 if [ "${GITHUB_ACTIONS:-}" != "true" ] || [ "${GITHUB_WORKFLOW:-}" != "Release" ] || [ "${GITHUB_REF_TYPE:-}" != "tag" ]; then
-  echo "release publishes artifacts and runs only from the Release workflow on a tag; use 'mise run release-snapshot' locally"
+  echo "release publishes artifacts and runs only from the Release workflow on a v* tag; use 'mise run release-snapshot' locally"
   exit 1
 fi
+case "${GITHUB_REF_NAME:-}" in
+  v*) ;;
+  *) echo "release requires a v* tag"; exit 1;;
+esac
 goreleaser release --clean
 """
 

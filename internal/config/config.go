@@ -20,6 +20,8 @@ const (
 	AppName = "overlay"
 	// FileName is the configuration file's base name.
 	FileName = "config.toml"
+	// DefaultColor selects automatic color detection for terminal output.
+	DefaultColor = "auto"
 
 	// BaseLayer is the automatic layer applied before every configured layer.
 	BaseLayer = "base"
@@ -34,8 +36,9 @@ var layerNameRE = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 // Config is the config.toml schema as loaded, before validation.
 type Config struct {
-	Layers  []string `toml:"layers" config:"layers" pflag_singular:"layer" help:"layers to apply; --layers accepts comma-separated lists"`
-	Sources []Source `toml:"source"`
+	EnvLayers []string `toml:"env_layers,omitempty"`
+	Layers    []string `toml:"layers" config:"layers" pflag_singular:"layer" help:"layers to apply; --layers accepts comma-separated lists"`
+	Sources   []Source `toml:"source"`
 }
 
 // Source is one [[source]] entry.
@@ -78,18 +81,18 @@ func RegisterFlags(flags *pflag.FlagSet) error {
 }
 
 // DefaultPath returns the discovered configuration file path under
-// XDG_CONFIG_HOME, or ~/.config when that variable is empty.
+// XDG_CONFIG_HOME, or ~/.config when that variable is empty or relative.
 func DefaultPath() (string, error) {
-	helper, err := configloader.NewFileHelper(AppName, FileName)
-	if err != nil {
-		return "", err
+	dir := os.Getenv("XDG_CONFIG_HOME")
+	if filepath.IsAbs(dir) {
+		return filepath.Join(dir, AppName, FileName), nil
 	}
 
-	paths := helper.XDGConfigFile()
-	if len(paths) == 0 {
-		return "", errors.New("locate config file: home directory is unknown")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("locate config file: %w", err)
 	}
-	return paths[0], nil
+	return filepath.Abs(filepath.Join(home, ".config", AppName, FileName))
 }
 
 // LoadOptions selects the sources Load applies on top of the defaults.
@@ -98,16 +101,18 @@ type LoadOptions struct {
 	Env map[string]string
 	// Flags holds the flags RegisterFlags added, or nil when the command has none.
 	Flags *pflag.FlagSet
-	// Path is an explicit configuration file that must exist. When empty, the
-	// default path is used and may be absent.
+	// Path is an explicit configuration file that must exist. When empty and
+	// PathSet is false, the default path is used and may be absent.
 	Path string
+	// PathSet reports whether the caller explicitly supplied Path, even empty.
+	PathSet bool
 }
 
 // Load applies the configuration file, environment, and flags to the defaults
 // and returns the raw configuration with its provenance report. Call Resolve
 // to validate it.
 func Load(opts LoadOptions) (Config, configloader.LoadReport, error) {
-	fileLoader, err := newFileLoader(opts.Path)
+	fileLoader, err := newFileLoader(opts.Path, opts.PathSet)
 	if err != nil {
 		return Config{}, configloader.LoadReport{}, err
 	}
@@ -131,7 +136,10 @@ func Load(opts LoadOptions) (Config, configloader.LoadReport, error) {
 	return cfg, report, nil
 }
 
-func newFileLoader(explicitPath string) (configloader.ConfigLoader[Config], error) {
+func newFileLoader(explicitPath string, pathSet bool) (configloader.ConfigLoader[Config], error) {
+	if pathSet && explicitPath == "" {
+		return nil, errors.New("--config must name a file; omit the flag to use the default location")
+	}
 	if explicitPath != "" {
 		return configloader.NewRequiredFileLoader[Config](explicitPath)
 	}
@@ -143,11 +151,22 @@ func newFileLoader(explicitPath string) (configloader.ConfigLoader[Config], erro
 	return configloader.NewMergeAllFilesLoader[Config](configloader.File(discovered))
 }
 
-// Resolve validates cfg and derives the effective configuration: layers are
-// reduced to their last occurrence and validated, source names are derived
-// from URLs unless set, and source paths are expanded to absolute paths.
-func Resolve(cfg Config) (Effective, error) {
-	layers := keepLastOccurrences(cfg.Layers)
+// Resolve validates cfg and derives the effective configuration. Values of
+// EnvLayers in env append to Layers before last-occurrence deduplication.
+// Source names are derived from URLs unless set, and paths become absolute.
+func Resolve(cfg Config, env map[string]string) (Effective, error) {
+	layers := append([]string(nil), cfg.Layers...)
+	for _, name := range cfg.EnvLayers {
+		if name == "" || strings.TrimSpace(name) != name {
+			return Effective{}, fmt.Errorf("env_layers variable name %q must be nonempty with no surrounding whitespace", name)
+		}
+		for _, item := range strings.Split(env[name], ",") {
+			if layer := strings.TrimSpace(item); layer != "" {
+				layers = append(layers, layer)
+			}
+		}
+	}
+	layers = keepLastOccurrences(layers)
 	for _, layer := range layers {
 		if err := ValidateLayerName(layer); err != nil {
 			return Effective{}, err

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -111,6 +112,7 @@ func TestConfigFailures(t *testing.T) {
 		want string
 	}{
 		{name: "missing explicit file", args: []string{"--config", filepath.Join(t.TempDir(), "missing.toml")}, want: "missing.toml"},
+		{name: "empty explicit file", args: []string{"--config", ""}, want: "--config must name a file"},
 		{name: "automatic layer selected", args: []string{"--layers", "base"}, want: "automatic"},
 		{name: "invalid layer from flag", args: []string{"--layer", "Work"}, want: "lowercase"},
 	}
@@ -127,6 +129,112 @@ func TestConfigFailures(t *testing.T) {
 				t.Errorf("config %v wrote to stdout on failure:\n%s", tt.args, out)
 			}
 		})
+	}
+}
+
+func TestConfigAppendsEnvironmentLayersAfterFlags(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		raw  []string
+		want string
+	}{
+		{name: "environment replaces file", raw: []string{"environment"}, want: `["environment", "laptop", "work"]`},
+		{name: "flags replace environment", args: []string{"--layers", "desktop,work"}, raw: []string{"desktop", "work"}, want: `["desktop", "laptop", "work"]`},
+		{name: "empty flags keep additions", args: []string{"--layers", ""}, raw: []string{}, want: `["laptop", "work"]`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config.toml")
+			writeConfig(t, configPath, `layers = ["file"]
+env_layers = ["OVERLAY_TEST_HOST_LAYERS", "OVERLAY_TEST_EMPTY_LAYERS", "OVERLAY_TEST_SESSION_LAYERS"]
+`)
+			t.Setenv("OVERLAY_LAYERS", "environment")
+			t.Setenv("OVERLAY_ENV_LAYERS", "OVERLAY_TEST_WRONG_LAYERS")
+			t.Setenv("OVERLAY_TEST_WRONG_LAYERS", "wrong")
+			t.Setenv("OVERLAY_TEST_HOST_LAYERS", " work, laptop ,, ")
+			t.Setenv("OVERLAY_TEST_EMPTY_LAYERS", "")
+			t.Setenv("OVERLAY_TEST_SESSION_LAYERS", "laptop, work,")
+
+			args := append([]string{"config", "--config", configPath, "--provenance"}, tt.args...)
+			out, errOut, err := executeForTest(t, args...)
+			if err != nil {
+				t.Fatalf("config error = %v, stderr = %s", err, errOut)
+			}
+
+			var reloaded config.Config
+			if _, err := toml.Decode(out, &reloaded); err != nil {
+				t.Fatalf("decode config report: %v", err)
+			}
+			if diff := cmp.Diff(tt.raw, reloaded.Layers); diff != "" {
+				t.Errorf("raw layers mismatch (-want +got):\n%s", diff)
+			}
+			wantNames := []string{"OVERLAY_TEST_HOST_LAYERS", "OVERLAY_TEST_EMPTY_LAYERS", "OVERLAY_TEST_SESSION_LAYERS"}
+			if diff := cmp.Diff(wantNames, reloaded.EnvLayers); diff != "" {
+				t.Errorf("env_layers mismatch (-want +got):\n%s", diff)
+			}
+			if want := "# effective_layers = " + tt.want + "\n"; !strings.Contains(out, want) {
+				t.Errorf("config output missing %q:\n%s", want, out)
+			}
+			if !rowHasSource(out, "envlayers", configPath) {
+				t.Errorf("env_layers provenance does not name %q:\n%s", configPath, out)
+			}
+		})
+	}
+}
+
+func TestConfigRejectsInvalidEnvironmentLayers(t *testing.T) {
+	tests := []struct {
+		name  string
+		field string
+		value string
+		want  string
+	}{
+		{name: "blank variable", field: "", want: "variable name"},
+		{name: "whitespace variable", field: " ", want: "variable name"},
+		{name: "padded variable", field: " OVERLAY_TEST_LAYERS", want: "variable name"},
+		{name: "uppercase layer", field: "OVERLAY_TEST_LAYERS", value: "Work", want: "lowercase"},
+		{name: "path layer", field: "OVERLAY_TEST_LAYERS", value: "../work", want: "lowercase"},
+		{name: "long layer", field: "OVERLAY_TEST_LAYERS", value: strings.Repeat("x", 65), want: "longer than 64"},
+		{name: "automatic base", field: "OVERLAY_TEST_LAYERS", value: "base", want: "automatic"},
+		{name: "automatic local", field: "OVERLAY_TEST_LAYERS", value: "local", want: "automatic"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "config.toml")
+			writeConfig(t, configPath, fmt.Sprintf("env_layers = [%q]\n", tt.field))
+			t.Setenv("OVERLAY_TEST_LAYERS", tt.value)
+			t.Setenv("OVERLAY_LAYERS", "")
+
+			out, _, err := executeForTest(t, "config", "--config", configPath)
+
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("config error = %v, want containing %q", err, tt.want)
+			}
+			if out != "" {
+				t.Errorf("config wrote to stdout on failure:\n%s", out)
+			}
+		})
+	}
+}
+
+func TestConfigIgnoresRelativeXDGConfigHome(t *testing.T) {
+	t.Chdir(t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "relative-config")
+	t.Setenv("OVERLAY_LAYERS", "")
+	writeConfig(t, filepath.Join("relative-config", "overlay", "config.toml"), `unexpected = true`)
+	configPath := filepath.Join(home, ".config", "overlay", "config.toml")
+	writeConfig(t, configPath, `layers = []`)
+
+	out, errOut, err := executeForTest(t, "config")
+	if err != nil {
+		t.Fatalf("config error = %v, stderr = %s", err, errOut)
+	}
+
+	if want := fmt.Sprintf("# loaded_files = [%q]\n", configPath); !strings.Contains(out, want) {
+		t.Errorf("config output missing %q:\n%s", want, out)
 	}
 }
 

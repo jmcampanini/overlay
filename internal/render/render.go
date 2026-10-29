@@ -72,6 +72,9 @@ type Request struct {
 	Layers []string
 	// OS is exposed to templates as .OS, usually runtime.GOOS.
 	OS string
+	// ProtectedPaths names files a render must never replace, including the
+	// configuration files used to select its sources.
+	ProtectedPaths []string
 	// Sources are consulted in order within each layer.
 	Sources []config.ResolvedSource
 	// Target is the absolute directory that receives the files.
@@ -144,7 +147,9 @@ func (e *CollisionError) Error() string {
 // plan without touching the target. A plain file or template applies in its
 // package's layer; a fragment named NAME.olay.LAYER.EXT applies in LAYER
 // however many layers list its package, and is skipped when LAYER is not in
-// req.Layers. Later layers replace earlier ones at the same target, except
+// req.Layers or the source manifest. Targets must stay within req.Target
+// after resolving parent symlinks and must not replace ProtectedPaths.
+// Later layers replace earlier ones at the same target, except
 // that consecutive fragments merge into one document; a fragment above a
 // plain file fails, two contributors within one layer fail with a
 // *CollisionError, and a template or fragment that fails to render fails the
@@ -176,6 +181,9 @@ func Build(req Request) (Plan, error) {
 
 					appliesIn, appliesAt := layer, rank
 					if class.kind == KindMerge {
+						if _, declared := manifests[i].Layers[class.layer]; !declared {
+							return nil
+						}
 						fragmentID := source.Name + ":" + filePath
 						if seenFragments[fragmentID] {
 							return nil
@@ -185,6 +193,9 @@ func Build(req Request) (Plan, error) {
 					}
 					if appliesAt < 0 {
 						return nil
+					}
+					if !filepath.IsLocal(class.target) {
+						return fmt.Errorf("source %s: %s maps outside the target directory", source.Name, filePath)
 					}
 
 					target := filepath.Join(req.Target, class.target)
@@ -213,6 +224,9 @@ func Build(req Request) (Plan, error) {
 		plan.Entries = append(plan.Entries, entry)
 	}
 	sort.Slice(plan.Entries, func(i, j int) bool { return plan.Entries[i].Target < plan.Entries[j].Target })
+	if err := validateTargets(req, plan.Entries); err != nil {
+		return Plan{}, err
+	}
 
 	ctx, err := templateContext(req, plan.Entries)
 	if err != nil {
@@ -232,6 +246,87 @@ func Build(req Request) (Plan, error) {
 		plan.Entries[i].Status = status
 	}
 	return plan, nil
+}
+
+func validateTargets(req Request, entries []Entry) error {
+	root, err := canonicalPath(req.Target)
+	if err != nil {
+		return fmt.Errorf("resolve target directory: %w", err)
+	}
+	protected := make(map[string]string, len(req.ProtectedPaths))
+	for _, path := range req.ProtectedPaths {
+		parent, err := canonicalPath(filepath.Dir(path))
+		if err != nil {
+			return fmt.Errorf("resolve protected path %q: %w", path, err)
+		}
+		protected[filepath.Join(parent, filepath.Base(path))] = path
+		resolved, err := canonicalPath(path)
+		if err != nil {
+			return fmt.Errorf("resolve protected path %q: %w", path, err)
+		}
+		protected[resolved] = path
+	}
+	protectedFiles := make(map[string]fs.FileInfo, len(protected))
+	for path, original := range protected {
+		info, err := os.Lstat(path)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("check protected path %q: %w", original, err)
+		}
+		if info != nil {
+			protectedFiles[path] = info
+		}
+	}
+
+	targets := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		parent, err := canonicalPath(filepath.Dir(entry.Target))
+		if err != nil {
+			return fmt.Errorf("resolve target %q: %w", entry.Target, err)
+		}
+		target := filepath.Join(parent, filepath.Base(entry.Target))
+		relative, err := filepath.Rel(root, target)
+		if err != nil || !filepath.IsLocal(relative) {
+			return fmt.Errorf("target %q resolves outside the target directory", entry.Target)
+		}
+		if path, ok := protected[target]; ok {
+			return fmt.Errorf("target %q would replace configuration file %q", entry.Target, path)
+		}
+		info, err := os.Lstat(target)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("check target %q: %w", entry.Target, err)
+		}
+		if info != nil {
+			for path, protectedInfo := range protectedFiles {
+				if os.SameFile(info, protectedInfo) {
+					return fmt.Errorf("target %q would replace configuration file %q", entry.Target, protected[path])
+				}
+			}
+		}
+		if previous, ok := targets[target]; ok {
+			return fmt.Errorf("targets %q and %q resolve to the same file", previous, entry.Target)
+		}
+		targets[target] = entry.Target
+	}
+	return nil
+}
+
+func canonicalPath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	_, err = os.Lstat(abs)
+	if errors.Is(err, fs.ErrNotExist) {
+		parent, err := canonicalPath(filepath.Dir(abs))
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(parent, filepath.Base(abs)), nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(abs)
 }
 
 // contribution is one source file before the files sharing its target are

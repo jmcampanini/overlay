@@ -52,7 +52,7 @@ other than a regular file, a symbolic link, or nothing is an error.
 ` + contractHelp + `
 
 ` + configFileHelp + `
---config PATH reads PATH instead and fails when PATH does not exist.
+--config PATH reads PATH instead and fails when PATH is empty or missing.
 
 ` + layerSelectionHelp,
 		Example: `  overlay diff
