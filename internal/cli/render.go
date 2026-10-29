@@ -14,15 +14,14 @@ import (
 )
 
 type renderOptions struct {
-	color      colorMode
 	configPath string
 	dryRun     bool
 	jsonOutput bool
 	target     string
 }
 
-func renderCommand() *cobra.Command {
-	opts := renderOptions{color: colorAuto}
+func renderCommand(options *commandOptions) *cobra.Command {
+	var opts renderOptions
 
 	cmd := &cobra.Command{
 		Use:   "render [--target DIR] [--dry-run] [--json] [--color MODE]",
@@ -96,8 +95,9 @@ or toml, every fragment for one target parses as that format and the
 fragments merge in layer order into one document written to NAME.EXT. The
 olay token is only a marker. LAYER is the layer the fragment belongs to,
 whatever layer its package is listed under, and a fragment whose LAYER is
-not in the layer order is skipped. NAME may hold dots, EXT is one
-segment, LAYER follows the layer grammar with base and local allowed, and
+not in the layer order or not declared in that source's manifest is
+skipped. NAME may hold dots, EXT is one segment, LAYER follows the layer
+grammar with base and local allowed, and
 any other shape is an error. So dot-codex/config.olay.base.toml in a base
 package and dot-codex/config.olay.personal.toml in a personal package
 merge into ~/.codex/config.toml.
@@ -141,8 +141,10 @@ target's previous content; a symbolic link at the target is replaced
 rather than followed, and a failed write removes its temporary file. No
 other file is ever deleted. A file is skipped when the target is a regular
 file with identical bytes and permission bits. A directory at a target
-path is an error. A failure while writing stops at that file, and files
-already written stay in place.
+path is an error. Paths that escape the target, including through parent
+symbolic links, and paths that replace overlay's active configuration are
+rejected before writing. A failure while writing stops at that file, and
+files already written stay in place.
 
 Both modes print the plan on stdout: a table with columns TARGET, SOURCE
 (name:path within the source; a merge lists every fragment in layer
@@ -163,7 +165,7 @@ empty.
 ` + contractHelp + `
 
 ` + configFileHelp + `
---config PATH reads PATH instead and fails when PATH does not exist.
+--config PATH reads PATH instead and fails when PATH is empty or missing.
 
 ` + layerSelectionHelp,
 		Example: `  overlay render --dry-run
@@ -171,7 +173,7 @@ empty.
   overlay render --dry-run --json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runRender(cmd, opts)
+			return runRender(cmd, opts, options.color)
 		},
 	}
 	if err := config.RegisterFlags(cmd.Flags()); err != nil {
@@ -180,12 +182,11 @@ empty.
 	cmd.Flags().StringVar(&opts.target, "target", "", "directory to render into (default the home directory)")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "print the plan without writing")
 	cmd.Flags().BoolVar(&opts.jsonOutput, "json", false, "print the plan as JSON")
-	cmd.Flags().Var(colorValue{mode: &opts.color}, "color", "auto (honors NO_COLOR), always, or never")
 	cmd.Flags().StringVar(&opts.configPath, "config", "", "configuration file to read instead of the default")
 	return cmd
 }
 
-func runRender(cmd *cobra.Command, opts renderOptions) error {
+func runRender(cmd *cobra.Command, opts renderOptions, color colorMode) error {
 	plan, home, err := loadPlan(cmd, opts.configPath, opts.target)
 	if err != nil {
 		return err
@@ -200,7 +201,7 @@ func runRender(cmd *cobra.Command, opts renderOptions) error {
 	if opts.jsonOutput {
 		return writePlanJSON(out, plan)
 	}
-	profile := resolveColor(opts.color, os.Getenv("NO_COLOR") != "", detectColor(out, os.Environ()))
+	profile := resolveColor(color, os.Getenv("NO_COLOR") != "", detectColor(out, os.Environ()))
 	return writePlanTable(out, plan, home, colorEnabled(profile))
 }
 
@@ -208,15 +209,17 @@ func runRender(cmd *cobra.Command, opts renderOptions) error {
 // and plans a render into the resolved target. It returns the plan and the
 // home directory the target was resolved against.
 func loadPlan(cmd *cobra.Command, configPath, target string) (render.Plan, string, error) {
-	cfg, _, err := config.Load(config.LoadOptions{
-		Env:   configloader.OSEnv(),
-		Flags: cmd.Flags(),
-		Path:  configPath,
+	env := configloader.OSEnv()
+	cfg, report, err := config.Load(config.LoadOptions{
+		Env:     env,
+		Flags:   cmd.Flags(),
+		Path:    configPath,
+		PathSet: cmd.Flags().Changed("config"),
 	})
 	if err != nil {
 		return render.Plan{}, "", err
 	}
-	effective, err := config.Resolve(cfg)
+	effective, err := config.Resolve(cfg, env)
 	if err != nil {
 		return render.Plan{}, "", err
 	}
@@ -230,12 +233,13 @@ func loadPlan(cmd *cobra.Command, configPath, target string) (render.Plan, strin
 	}
 
 	plan, err := render.Build(render.Request{
-		Home:     home,
-		Hostname: os.Hostname,
-		Layers:   config.LayerOrder(effective.Layers),
-		OS:       runtime.GOOS,
-		Sources:  effective.Sources,
-		Target:   absTarget,
+		Home:           home,
+		Hostname:       os.Hostname,
+		Layers:         config.LayerOrder(effective.Layers),
+		OS:             runtime.GOOS,
+		ProtectedPaths: report.LoadedFiles,
+		Sources:        effective.Sources,
+		Target:         absTarget,
 	})
 	if err != nil {
 		return render.Plan{}, "", err

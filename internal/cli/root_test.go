@@ -25,6 +25,13 @@ func TestExecuteReturnsStatusAndReportsErrors(t *testing.T) {
 		{name: "unknown operand", args: []string{"render", "extra"}, wantStatus: 2, wantText: `"extra"`},
 		{name: "unknown flag", args: []string{"render", "--bogus"}, wantStatus: 2, wantText: "--bogus"},
 		{name: "flag value that does not parse", args: []string{"render", "--color", "sometimes"}, wantStatus: 2, wantText: `"sometimes"`},
+		{name: "unknown help topic", args: []string{"help", "bogus"}, wantStatus: 2, wantText: `"bogus"`},
+		{name: "extra help operand", args: []string{"help", "render", "extra"}, wantStatus: 2, wantText: `"render extra"`},
+		{name: "completion grammar", args: []string{"completion", "bash", "extra"}, wantStatus: 2, wantText: `"extra"`},
+		{name: "unknown command after version", args: []string{"--version", "bogus"}, wantStatus: 2, wantText: `"bogus"`},
+		{name: "root operand after delimiter", args: []string{"--", "bogus"}, wantStatus: 2, wantText: `"bogus"`},
+		{name: "version operand after delimiter", args: []string{"--version", "--", "bogus"}, wantStatus: 2, wantText: `"bogus"`},
+		{name: "empty version operand", args: []string{"--version", ""}, wantStatus: 2, wantText: `""`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -71,9 +78,6 @@ func TestEveryApplicationCommandMeetsTheHelpBaseline(t *testing.T) {
 
 	var visit func(*cobra.Command)
 	visit = func(command *cobra.Command) {
-		if isLibraryCommand(command) {
-			return
-		}
 		path := strings.Fields(command.CommandPath())[1:]
 		if strings.TrimSpace(command.Short) == "" {
 			t.Errorf("%q has no short help", command.CommandPath())
@@ -115,12 +119,15 @@ func TestEveryApplicationCommandMeetsTheHelpBaseline(t *testing.T) {
 
 func TestEveryApplicationCommandDeclaresItsGrammar(t *testing.T) {
 	root := newRootCommand(&bytes.Buffer{}, &bytes.Buffer{})
+	if root.Args != nil {
+		t.Error("root declares an Args validator; command discovery must reject unknown commands")
+	}
+	if root.Version != "" {
+		t.Errorf("root Version = %q; version handling must belong to overlay", root.Version)
+	}
 
 	var visit func(*cobra.Command)
 	visit = func(command *cobra.Command) {
-		if isLibraryCommand(command) {
-			return
-		}
 		if command != root && command.Args == nil {
 			t.Errorf("%q has no Args validator", command.CommandPath())
 		}
@@ -134,14 +141,33 @@ func TestEveryApplicationCommandDeclaresItsGrammar(t *testing.T) {
 	visit(root)
 }
 
-// isLibraryCommand reports whether cobra, not overlay, added command.
-func isLibraryCommand(command *cobra.Command) bool {
-	return command.Name() == "help" || command.Name() == "completion"
+// isHelpTopic reports whether command belongs to the help topics group.
+func isHelpTopic(command *cobra.Command) bool {
+	return command.GroupID == helpTopicsGroupID
 }
 
-// isHelpTopic reports whether newHelpTopic built command.
-func isHelpTopic(command *cobra.Command) bool {
-	return command.Annotations[helpTopicAnnotation] == "true"
+func TestRootVersionDoesNotLoadConfiguration(t *testing.T) {
+	dir := t.TempDir()
+	writeConfig(t, filepath.Join(dir, "overlay", "config.toml"), "invalid TOML [")
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	stdout, stderr, err := executeForTest(t, "--version")
+
+	if err != nil || stderr != "" || stdout != "overlay version "+Version+"\n" {
+		t.Errorf("--version stdout = %q, stderr = %q, error = %v", stdout, stderr, err)
+	}
+}
+
+func TestRootHelpGroupsTopicsSeparately(t *testing.T) {
+	stdout, stderr, err := executeForTest(t)
+	if err != nil || stderr != "" {
+		t.Fatalf("root stdout = %q, stderr = %q, error = %v", stdout, stderr, err)
+	}
+
+	_, topics, ok := strings.Cut(stdout, "Help topics:\n")
+	if !ok || !strings.HasPrefix(topics, "  exit-codes") {
+		t.Errorf("root help does not group exit-codes under Help topics:\n%s", stdout)
+	}
 }
 
 func TestExecutePrintsAMultiLineFailureAsOneLine(t *testing.T) {

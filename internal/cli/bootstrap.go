@@ -40,14 +40,16 @@ list. Names follow the grammar in 'overlay config --help'. bootstrap does
 not read OVERLAY_LAYERS.
 
 ` + configFileHelp + `
---config PATH writes PATH instead. bootstrap never overwrites: when the
-file already exists, nothing happens and the command fails.
+--config PATH writes PATH instead; an empty PATH is an error.
+bootstrap never overwrites: when the file already exists, nothing happens
+and the command fails.
 
 Each source whose path is absent is created by running 'git clone' from
-PATH, with git's own output on stderr. An existing path is left alone when
-'git remote get-url origin' there equals the source url exactly; any other
-existing path is an error. Sources are cloned before the file is written,
-so a failed clone leaves no file and bootstrap can simply be run again.
+PATH, with git's own output on stderr. An existing path must be a checkout
+root whose origin equals the source url exactly; a subdirectory inside a
+checkout is an error. Matching checkouts are left alone. Sources are cloned
+before the file is written, so a failed clone leaves no file and bootstrap
+can simply be run again.
 Writing the file creates its missing parent directories with mode 755.
 
 git runs with its own prompts disabled, so a missing credential fails
@@ -65,6 +67,9 @@ success stdout gets one line per source, 'cloned NAME into PATH' or
     --layers abc,xyz`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if cmd.Flags().Changed("config") && req.configPath == "" {
+				return errors.New("--config must name a file; omit the flag to use the default location")
+			}
 			return runBootstrap(cmd.Context(), req, cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},
 	}
@@ -87,7 +92,7 @@ func runBootstrap(ctx context.Context, req bootstrapRequest, out, progress io.Wr
 	for i, url := range req.sourceURLs {
 		cfg.Sources = append(cfg.Sources, config.Source{Path: req.sourcePaths[i], URL: url})
 	}
-	effective, err := config.Resolve(cfg)
+	effective, err := config.Resolve(cfg, nil)
 	if err != nil {
 		return err
 	}

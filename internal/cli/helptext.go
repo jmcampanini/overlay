@@ -5,19 +5,23 @@ package cli
 // trailing newline; compose them with explicit separators.
 
 const configFileHelp = `The configuration file is $XDG_CONFIG_HOME/overlay/config.toml, or
-~/.config/overlay/config.toml when XDG_CONFIG_HOME is empty. A relative
-XDG_CONFIG_HOME resolves against the current directory. No other location
-is searched, and a missing file counts as empty.`
+~/.config/overlay/config.toml when XDG_CONFIG_HOME is unset, empty, or
+relative. No other location is searched, and a missing discovered file
+counts as empty.`
 
 const layerSelectionHelp = `Layers come from the highest layer that sets them: --layers LIST
 (comma-separated) and --layer NAME, which may repeat and combine with the
 --layers values first, override OVERLAY_LAYERS, which overrides layers in
-the file. --layers "" clears the list. When a name repeats, its last
-position wins, so 'work,laptop,work' becomes 'laptop,work'. Names are
-lowercase letters or digits in groups separated by single hyphens, at most
-64 characters; blank entries are errors. 'base' and 'local' are automatic:
-base applies before the configured layers and local after, and neither may
-be listed.`
+the file. --layers "" clears this initial list. The file's env_layers names
+environment variables whose comma-separated values append to that list,
+in the order named, even when flags set the initial list. Unset variables
+and blank entries in their values contribute nothing; surrounding spaces
+are trimmed. When a name repeats, its last position wins, so
+'work,laptop,work' becomes 'laptop,work'. Names are lowercase letters or
+digits in groups separated by single hyphens, at most 64 characters;
+blank entries in the initial list are errors. 'base' and 'local' are
+automatic: base applies before the configured layers and local after,
+and neither may be listed.`
 
 const contractHelp = `Diagnostics go to stderr, and a failure is one line, 'overlay: <message>',
 with the exit status 'overlay help exit-codes' describes. overlay itself

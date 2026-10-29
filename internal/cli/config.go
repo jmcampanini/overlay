@@ -26,40 +26,47 @@ holds no secrets.
 ` + contractHelp + `
 
 ` + configFileHelp + `
---config PATH reads PATH instead and fails when PATH does not exist.
+--config PATH reads PATH instead and fails when PATH is empty or absent.
 
 Settings load in this order, and a later layer replaces any value an
 earlier one sets: built-in defaults (an empty layer list and no sources),
 the configuration file, the environment variable OVERLAY_LAYERS, then the
-flags --layers and --layer. Sources are read from the file only.
+flags --layers and --layer. Sources and env_layers are file-only settings.
 
 ` + layerSelectionHelp + `
 
-File fields: layers (list) and [[source]] entries with url (required),
-path (required; absolute, ~, or starting with ~/), and name (optional). A
-source's name defaults to the last segment of its url with any .git suffix
+File fields: layers (list), env_layers (list of environment variable names),
+and [[source]] entries with url (required), path (required; absolute, ~, or
+starting with ~/), and name (optional). An env_layers name must be nonempty
+with no surrounding whitespace and is looked up exactly as written. There
+is no flag or environment override for env_layers.
+
+A source's name defaults to the last segment of its url with any .git suffix
 removed, and may not hold a space, tab, line break, '/', or ':'; two
 sources resolving to the same name is an error, fixed by setting name on
-one of them. Two sources sharing a path is also an error. Source order is
-the tie-break order for later commands.
+one of them. Two sources sharing a path is also an error. Two sources
+contributing the same target in the same layer are an error.
 
-The TOML body reloads as config.toml and shows the layer list as loaded.
+The TOML body reloads as config.toml and keeps the raw layers and env_layers.
 The '# Effective' comment block lists loaded_files, effective_layers after
-the last-occurrence rule, layer_order (base, the effective layers, then
-local), and each source's name with its absolute path. --provenance
-appends a '# Provenance' table naming where each field came from:
+env_layers expansion and the last-occurrence rule, layer_order (base, the
+effective layers, then local), and each source's name with its absolute
+path. --provenance appends a '# Provenance' table naming where each field
+came from:
 <default>, the file path, <env>, or <pflag>.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			env := configloader.OSEnv()
 			cfg, report, err := config.Load(config.LoadOptions{
-				Env:   configloader.OSEnv(),
-				Flags: cmd.Flags(),
-				Path:  configPath,
+				Env:     env,
+				Flags:   cmd.Flags(),
+				Path:    configPath,
+				PathSet: cmd.Flags().Changed("config"),
 			})
 			if err != nil {
 				return err
 			}
-			effective, err := config.Resolve(cfg)
+			effective, err := config.Resolve(cfg, env)
 			if err != nil {
 				return err
 			}

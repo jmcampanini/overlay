@@ -23,7 +23,7 @@ func TestResolveKeepsLastOccurrenceOfEachLayer(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Resolve(Config{Layers: tt.layers})
+			got, err := Resolve(Config{Layers: tt.layers}, nil)
 			if err != nil {
 				t.Fatalf("Resolve(%v) error = %v", tt.layers, err)
 			}
@@ -51,7 +51,7 @@ func TestResolveRejectsInvalidLayerNames(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.layer, func(t *testing.T) {
-			_, err := Resolve(Config{Layers: []string{"ok", tt.layer}})
+			_, err := Resolve(Config{Layers: []string{"ok", tt.layer}}, nil)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Errorf("Resolve with layer %q error = %v, want containing %q", tt.layer, err, tt.want)
 			}
@@ -108,7 +108,7 @@ func TestResolveSources(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Resolve(Config{Layers: []string{}, Sources: []Source{tt.source}})
+			got, err := Resolve(Config{Layers: []string{}, Sources: []Source{tt.source}}, nil)
 
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
@@ -131,13 +131,13 @@ func TestResolveRejectsCollidingSources(t *testing.T) {
 		{URL: "git@a.example.com:x/dotfiles.git", Path: "/srv/a"},
 		{URL: "git@b.example.com:y/dotfiles.git", Path: "/srv/b"},
 	}
-	_, err := Resolve(Config{Sources: sameName})
+	_, err := Resolve(Config{Sources: sameName}, nil)
 	if err == nil || !strings.Contains(err.Error(), `name "dotfiles"`) {
 		t.Errorf("Resolve with duplicate names error = %v, want name collision", err)
 	}
 
 	renamed := []Source{sameName[0], {Name: "dotfiles-b", URL: sameName[1].URL, Path: sameName[1].Path}}
-	if _, err := Resolve(Config{Sources: renamed}); err != nil {
+	if _, err := Resolve(Config{Sources: renamed}, nil); err != nil {
 		t.Errorf("Resolve with explicit name error = %v, want nil", err)
 	}
 
@@ -145,7 +145,7 @@ func TestResolveRejectsCollidingSources(t *testing.T) {
 		{URL: "git@a.example.com:x/one.git", Path: "/srv/shared"},
 		{URL: "git@b.example.com:y/two.git", Path: "/srv/shared/"},
 	}
-	_, err = Resolve(Config{Sources: samePath})
+	_, err = Resolve(Config{Sources: samePath}, nil)
 	if err == nil || !strings.Contains(err.Error(), `path "/srv/shared"`) {
 		t.Errorf("Resolve with duplicate paths error = %v, want path collision", err)
 	}
@@ -200,7 +200,7 @@ func TestLoadPrecedence(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Load() error = %v", err)
 			}
-			effective, err := Resolve(cfg)
+			effective, err := Resolve(cfg, tt.env)
 			if err != nil {
 				t.Fatalf("Resolve() error = %v", err)
 			}
@@ -244,7 +244,7 @@ func TestLoadRejectsBlankLayerItems(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Load() error = %v", err)
 			}
-			_, err = Resolve(cfg)
+			_, err = Resolve(cfg, tt.env)
 
 			if err == nil || !strings.Contains(err.Error(), "blank") {
 				t.Errorf("Resolve() error = %v, want blank layer name", err)

@@ -1,22 +1,40 @@
 # overlay
 
-overlay renders layered dotfiles from git source repositories into a target directory. One configuration file lists the layers to apply and the sources that provide files; `overlay bootstrap` writes that file and clones the sources, `overlay config` prints the configuration in effect, `overlay render` writes the files the layers select into the target directory, and `overlay diff` prints a patch from the target's current files to what render would write. A later layer replaces an earlier layer's file at the same path, except that JSON and TOML fragments named `NAME.olay.LAYER.EXT` merge across layers and sources into one `NAME.EXT`, so a base repository and a personal repository can each hold part of `~/.claude/settings.json` or `~/.codex/config.toml`. overlay never overwrites its configuration file, never touches an existing checkout, never deletes a rendered file, and never lets git prompt for credentials.
+overlay renders layered dotfiles from git source repositories into a target directory. Later layers replace earlier files or merge JSON and TOML fragments, so shared and personal repositories can contribute to the same configuration. Rendering preserves overlay's active configuration and never deletes a rendered file. Bootstrapping leaves existing checkouts untouched and never lets git prompt for credentials.
 
 
 ## Install
 
-Releases ship binaries for Linux and macOS on amd64 and arm64.
+Versioned releases ship binaries for Linux and macOS on amd64 and arm64, with SHA-256 checksums and GitHub build provenance attestations.
+
+Install or upgrade with [mise](https://mise.jdx.dev):
 
 ```sh
-mise use -g github:jmcampanini/overlay   # Install with mise
-mise upgrade github:jmcampanini/overlay  # Upgrade with mise
-brew install jmcampanini/tap/overlay     # Install with Homebrew
-brew upgrade jmcampanini/tap/overlay     # Upgrade with Homebrew
+mise use -g github:jmcampanini/overlay
+mise upgrade github:jmcampanini/overlay
 ```
 
-Or download an archive from the [releases page](https://github.com/jmcampanini/overlay/releases) and put `overlay` on your `PATH`; to upgrade, download the new release and replace the binary. Each release includes a SHA-256 checksums file and GitHub build provenance attestations. On macOS, a browser download needs `xattr -d com.apple.quarantine overlay` before it runs; mise, Homebrew, `curl`, and `gh` downloads do not.
+Install or upgrade with [Homebrew](https://brew.sh):
 
-To build from source, install [mise](https://mise.jdx.dev) (`brew install mise` on macOS) and run:
+```sh
+brew install jmcampanini/tap/overlay
+brew upgrade jmcampanini/tap/overlay
+```
+
+Download a [release archive](https://github.com/jmcampanini/overlay/releases) with [GitHub CLI](https://cli.github.com) (`gh`) and install or upgrade into `~/.local/bin`, which must be on your `PATH`:
+
+```sh
+# This example selects macOS arm64; use linux or amd64 for other platforms.
+gh release download --repo jmcampanini/overlay \
+  --pattern 'overlay_*_darwin_arm64.tar.gz' --output overlay.tar.gz --clobber
+tar -xzf overlay.tar.gz
+mkdir -p ~/.local/bin
+install -m 755 overlay ~/.local/bin/overlay
+# For a macOS archive downloaded through a browser instead of gh:
+# xattr -d com.apple.quarantine ~/.local/bin/overlay
+```
+
+Build from source with `git` and [mise](https://mise.jdx.dev), installing into `~/.local/bin`, which must be on your `PATH`:
 
 ```sh
 git clone https://github.com/jmcampanini/overlay
@@ -24,9 +42,9 @@ cd overlay
 mise trust
 mise install
 mise run build
+mkdir -p ~/.local/bin
+install -m 755 build/overlay ~/.local/bin/overlay
 ```
-
-Copy `./build/overlay` onto your `PATH`.
 
 
 ## Representative commands
@@ -50,10 +68,11 @@ Copy `./build/overlay` onto your `PATH`.
 
 ## Configuration
 
-overlay reads `$XDG_CONFIG_HOME/overlay/config.toml`, or `~/.config/overlay/config.toml` when `XDG_CONFIG_HOME` is empty, and searches nowhere else. `overlay config --help` documents configuration precedence and the file schema.
+overlay reads `$XDG_CONFIG_HOME/overlay/config.toml`, or `~/.config/overlay/config.toml` when `XDG_CONFIG_HOME` is unset, empty, or relative, and searches nowhere else. `overlay config --help` documents configuration precedence, environment-based layer additions, and the file schema.
 
 ```toml
 layers = ["abc", "xyz"]
+env_layers = ["OVERLAY_EXTRA_LAYERS"]
 
 [[source]]
 url = "git@github.com:jmcampanini/dotfiles-base.git"

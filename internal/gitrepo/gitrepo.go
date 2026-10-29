@@ -30,18 +30,43 @@ func Clone(ctx context.Context, url, path string, progress io.Writer) error {
 }
 
 // OriginURL returns the fetch URL of the remote named origin in the checkout
-// at path. It fails when path is not a git checkout or has no origin remote.
+// rooted at path. It fails when path is not a checkout root or has no origin
+// remote. Symbolic links to a checkout root and linked worktrees are accepted.
 func OriginURL(ctx context.Context, path string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", "-C", path, "remote", "get-url", "origin")
+	root, err := gitOutput(ctx, path, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", err
+	}
+	rootInfo, err := os.Stat(strings.TrimSuffix(root, "\n"))
+	if err != nil {
+		return "", fmt.Errorf("check checkout root for %q: %w", path, err)
+	}
+	pathInfo, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("check checkout path %q: %w", path, err)
+	}
+	if !os.SameFile(rootInfo, pathInfo) {
+		return "", fmt.Errorf("path %q is not a checkout root", path)
+	}
+
+	origin, err := gitOutput(ctx, path, "remote", "get-url", "origin")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(origin), nil
+}
+
+func gitOutput(ctx context.Context, path string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", path}, args...)...)
 	cmd.Env = nonInteractiveEnv()
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return "", describeFailure(fmt.Sprintf("read origin url of %q", path), err, stderr.String())
+		return "", describeFailure(fmt.Sprintf("git %s in %q", strings.Join(args, " "), path), err, stderr.String())
 	}
-	return strings.TrimSpace(stdout.String()), nil
+	return stdout.String(), nil
 }
 
 func nonInteractiveEnv() []string {

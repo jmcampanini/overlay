@@ -130,6 +130,24 @@ func TestBootstrapRefusesToOverwriteConfig(t *testing.T) {
 	requireNoFile(t, dest)
 }
 
+func TestBootstrapRejectsEmptyConfigBeforeCloning(t *testing.T) {
+	bare := gittest.NewBareRepo(t)
+	configDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+	dest := filepath.Join(t.TempDir(), "checkout")
+
+	out, _, err := executeForTest(t, "bootstrap", "--config", "", "--source-url", bare, "--source-path", dest)
+
+	if err == nil || !strings.Contains(err.Error(), "--config must name a file") {
+		t.Errorf("bootstrap error = %v, want empty config path error", err)
+	}
+	if out != "" {
+		t.Errorf("bootstrap stdout = %q, want empty", out)
+	}
+	requireNoFile(t, dest)
+	requireNoFile(t, filepath.Join(configDir, "overlay", "config.toml"))
+}
+
 func TestBootstrapLeavesNoConfigWhenCloneFails(t *testing.T) {
 	gittest.NewBareRepo(t)
 	missingRepo := filepath.Join(t.TempDir(), "missing.git")
