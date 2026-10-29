@@ -89,7 +89,7 @@ func appendList(output *bytes.Buffer, seen map[string]bool, content []byte) {
 				break
 			}
 		}
-		if entry == "" || seen[entry] {
+		if seen[entry] {
 			continue
 		}
 		seen[entry] = true
