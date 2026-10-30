@@ -29,6 +29,10 @@ A file that does not parse fails the command before anything is written.
 Every file loaded is protected from a render the way the configuration
 file is. 'overlay values' prints the merged document.`
 
+// configFlagHelp follows configFileHelp in every command that reads the
+// configuration file.
+const configFlagHelp = `--config PATH reads PATH instead and fails when PATH is empty or missing.`
+
 const layerSelectionHelp = `Layers come from the highest layer that sets them: --layers LIST
 (comma-separated) and --layer NAME, which may repeat and combine with the
 --layers values first, override OVERLAY_LAYERS, which overrides layers in

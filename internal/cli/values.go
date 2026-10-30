@@ -8,6 +8,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/BurntSushi/toml"
+	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/jmcampanini/overlay/internal/merge"
 	"github.com/spf13/cobra"
 )
@@ -60,9 +61,24 @@ would and the file quoted, so every row stays one comment line.
 			return writeValuesProvenance(out, values.Origins)
 		},
 	}
-	cmd.Flags().StringArrayVar(&paths, "values", nil, "merge `PATH` after the values directory; repeatable")
+	registerValuesFlag(cmd, &paths)
 	cmd.Flags().BoolVar(&showProvenance, "provenance", false, "append the file that last set each top-level key")
 	return cmd
+}
+
+// registerValuesFlag adds --values, bound to paths, to the command's flags.
+func registerValuesFlag(cmd *cobra.Command, paths *[]string) {
+	cmd.Flags().StringArrayVar(paths, "values", nil, "merge `PATH` after the values directory; repeatable")
+}
+
+// loadValues merges the discovered values directory with the --values
+// operands.
+func loadValues(paths []string) (config.Values, error) {
+	dir, err := config.DefaultValuesDir()
+	if err != nil {
+		return config.Values{}, err
+	}
+	return config.LoadValues(config.ValuesOptions{Dir: dir, Paths: paths})
 }
 
 func writeValuesProvenance(out io.Writer, origins map[string]string) error {

@@ -7,7 +7,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -85,7 +84,7 @@ func markUsageErrors(cmd *cobra.Command) {
 
 // newRootCommand builds the overlay command tree.
 func newRootCommand(out, errOut io.Writer) *cobra.Command {
-	options := commandOptions{color: colorMode(config.DefaultColor)}
+	options := commandOptions{color: colorAuto}
 	var showVersion bool
 
 	cmd := &cobra.Command{

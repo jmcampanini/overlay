@@ -24,7 +24,7 @@ File contents are not read. No color or other formatting is added.
 ` + contractHelp + `
 
 ` + configFileHelp + `
---config PATH reads PATH instead and fails when PATH is empty or missing.
+` + configFlagHelp + `
 
 ` + layerSelectionHelp,
 		Example: `  overlay files 'packages/pacman/packages.{layer}'
@@ -51,6 +51,6 @@ File contents are not read. No color or other formatting is added.
 	if err := config.RegisterFlags(cmd.Flags()); err != nil {
 		panic(err)
 	}
-	cmd.Flags().StringVar(&configPath, "config", "", "configuration file to read instead of the default")
+	registerConfigFlag(cmd, &configPath)
 	return cmd
 }
