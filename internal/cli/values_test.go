@@ -13,7 +13,7 @@ func TestValuesPrintsTheMergedDocumentAndItsFiles(t *testing.T) {
 	writeFixtureFile(t, filepath.Join(dir, "10-theme.toml"), "[theme]\nname = \"gruvbox\"\nbg = \"#282828\"\n", 0o644)
 	writeFixtureFile(t, filepath.Join(dir, "50-local.toml"), "[theme]\nbg = \"#000000\"\n", 0o644)
 	extra := filepath.Join(t.TempDir(), "editor.toml")
-	writeFixtureFile(t, extra, "editor = \"nvim\"\n", 0o644)
+	writeFixtureFile(t, extra, "editor = \"nvim\"\n\"two\\nlines\" = 1\n", 0o644)
 
 	out, errOut, err := executeForTest(t, "values", "--values", extra, "--provenance")
 	if err != nil {
@@ -22,6 +22,7 @@ func TestValuesPrintsTheMergedDocumentAndItsFiles(t *testing.T) {
 
 	want := strings.Join([]string{
 		`editor = "nvim"`,
+		`"two\nlines" = 1`,
 		``,
 		`[theme]`,
 		`bg = "#000000"`,
@@ -32,9 +33,10 @@ func TestValuesPrintsTheMergedDocumentAndItsFiles(t *testing.T) {
 		`# loaded_files = ["` + filepath.Join(dir, "10-theme.toml") + `", "` + filepath.Join(dir, "50-local.toml") + `", "` + extra + `"]`,
 		``,
 		`# Provenance`,
-		`# key     file`,
-		`# editor  ` + extra,
-		`# theme   ` + filepath.Join(dir, "50-local.toml"),
+		`# key           file`,
+		`# editor        "` + extra + `"`,
+		`# theme         "` + filepath.Join(dir, "50-local.toml") + `"`,
+		`# "two\nlines"  "` + extra + `"`,
 		``,
 	}, "\n")
 	if out != want {

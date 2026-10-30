@@ -123,13 +123,8 @@ func valuesFiles(dir string, entries []fs.DirEntry) ([]string, error) {
 	var files []string
 	for _, entry := range entries {
 		name := entry.Name()
-		if strings.HasPrefix(name, ".") {
-			continue
-		}
-		if strings.HasSuffix(name, templateSuffix) {
-			return nil, templateValuesError(filepath.Join(dir, name))
-		}
-		if !strings.HasSuffix(name, valuesExtension) {
+		isTemplate := strings.HasSuffix(name, templateSuffix)
+		if strings.HasPrefix(name, ".") || (!isTemplate && !strings.HasSuffix(name, valuesExtension)) {
 			continue
 		}
 		path := filepath.Join(dir, name)
@@ -139,6 +134,9 @@ func valuesFiles(dir string, entries []fs.DirEntry) ([]string, error) {
 		}
 		if info.IsDir() {
 			continue
+		}
+		if isTemplate {
+			return nil, templateValuesError(path)
 		}
 		files = append(files, path)
 	}

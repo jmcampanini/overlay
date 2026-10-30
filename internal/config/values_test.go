@@ -16,6 +16,7 @@ func TestLoadValuesMergesTheDirectoryInNameOrderThenThePaths(t *testing.T) {
 	writeFile(t, filepath.Join(dir, ".hidden.toml"), "hidden = true\n")
 	writeFile(t, filepath.Join(dir, "notes.txt"), "notes = true\n")
 	writeFile(t, filepath.Join(dir, "sub.toml", "inner.toml"), "sub = true\n")
+	writeFile(t, filepath.Join(dir, "archive.tmpl", "old.toml"), "archived = true\n")
 	if err := os.Symlink(filepath.Join(dir, "10-a.toml"), filepath.Join(dir, "30-link.toml")); err != nil {
 		t.Fatal(err)
 	}

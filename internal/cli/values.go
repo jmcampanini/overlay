@@ -7,6 +7,7 @@ import (
 	"slices"
 	"text/tabwriter"
 
+	"github.com/BurntSushi/toml"
 	"github.com/jmcampanini/overlay/internal/merge"
 	"github.com/spf13/cobra"
 )
@@ -28,7 +29,8 @@ The TOML body is the merged document with keys sorted at every level, and
 it reloads as one values file. The '# Effective' comment block lists
 values_dir, the directory searched, and loaded_files, every file merged in
 order. --provenance appends a '# Provenance' table naming the file that
-last contributed to each top-level key.
+last contributed to each top-level key, with the key written as TOML
+would and the file quoted, so every row stays one comment line.
 
 ` + contractHelp,
 		Example: `  overlay values
@@ -72,9 +74,8 @@ func writeValuesProvenance(out io.Writer, origins map[string]string) error {
 	if _, err := fmt.Fprintln(w, "# key\tfile"); err != nil {
 		return err
 	}
-	keys := slices.Sorted(maps.Keys(origins))
-	for _, key := range keys {
-		if _, err := fmt.Fprintf(w, "# %s\t%s\n", key, origins[key]); err != nil {
+	for _, key := range slices.Sorted(maps.Keys(origins)) {
+		if _, err := fmt.Fprintf(w, "# %s\t%q\n", toml.Key{key}, origins[key]); err != nil {
 			return err
 		}
 	}
