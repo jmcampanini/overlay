@@ -1,6 +1,5 @@
 // Package merge composes the layered fragments of one JSON, TOML, or YAML
-// file into a single document. Each fragment is parsed on its own, every
-// string value and map key gets ${NAME} environment substitution, the
+// file into a single document. Each fragment is parsed on its own, the
 // fragments deep-merge in the order given, and the result serializes with
 // sorted keys.
 package merge
@@ -12,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -58,40 +56,29 @@ type Fragment struct {
 	Name string
 }
 
-// variablePattern matches an escaped marker, $${, or a reference ${NAME}
-// whose NAME is a letter or underscore followed by letters, digits, or
-// underscores.
-var variablePattern = regexp.MustCompile(`\$\$\{|\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
-
-// Render parses every fragment as format, substitutes ${NAME} references in
-// string values and map keys from lookupEnv, merges the fragments in order,
+// Render parses every fragment as format, merges the fragments in order,
 // and returns the serialized result with keys sorted bytewise at every
 // level.
 //
 // Maps merge key by key, lists concatenate with the later fragment's items
 // last, and any other pairing takes the later value. A map, a list, or a
 // plain value meeting a different kind at the same key is an error that
-// names both fragments. A fragment that does not parse, whose root is not a
-// map, that references an unset variable, or whose keys collide after
-// substitution is an error naming the fragment. $${ writes a literal ${ and
-// any other text is left as written.
+// names both fragments. A fragment that does not parse or whose root is not
+// a map is an error naming the fragment. A fragment that is empty or only
+// whitespace is an empty document in every format.
 //
 // JSON numbers and YAML numbers and timestamps keep their source text. YAML
 // aliases expand in place; a YAML fragment with a merge key, a key that is
 // not a string, a tag outside the core schema, or a second document is an
-// error, and an empty one is an empty mapping.
-func Render(format Format, fragments []Fragment, lookupEnv func(string) (string, bool)) ([]byte, error) {
+// error, and a comment-only one is an empty mapping.
+func Render(format Format, fragments []Fragment) ([]byte, error) {
 	documents := make([]map[string]any, len(fragments))
 	for i, fragment := range fragments {
 		document, err := parse(format, fragment.Data)
 		if err != nil {
 			return nil, fmt.Errorf("fragment %s: %w", fragment.Name, err)
 		}
-		substituted, err := substituteMap(document, "", lookupEnv)
-		if err != nil {
-			return nil, fmt.Errorf("fragment %s: %w", fragment.Name, err)
-		}
-		documents[i] = substituted
+		documents[i] = document
 	}
 
 	merged := map[string]any{}
@@ -108,6 +95,10 @@ func Render(format Format, fragments []Fragment, lookupEnv func(string) (string,
 }
 
 func parse(format Format, data []byte) (map[string]any, error) {
+	if len(bytes.TrimSpace(data)) == 0 {
+		return map[string]any{}, nil
+	}
+
 	switch format {
 	case JSON:
 		return parseJSON(data)
@@ -341,79 +332,6 @@ func describeYAMLTag(tag string) string {
 		return "null"
 	}
 	return "tagged " + tag
-}
-
-// substituteMap returns a copy of document with ${NAME} expanded in every key
-// and string value. prefix is the path of document in the fragment followed
-// by a dot, or empty at the root, and only names keys in error messages.
-func substituteMap(document map[string]any, prefix string, lookupEnv func(string) (string, bool)) (map[string]any, error) {
-	result := make(map[string]any, len(document))
-	origins := make(map[string]string, len(document))
-	for key, value := range document {
-		keyPath := prefix + key
-		expandedKey, err := expand(key, lookupEnv)
-		if err != nil {
-			return nil, fmt.Errorf("key %s: %w", keyPath, err)
-		}
-		if previous, ok := origins[expandedKey]; ok {
-			return nil, fmt.Errorf("keys %s and %s both expand to %q", prefix+previous, keyPath, expandedKey)
-		}
-		origins[expandedKey] = key
-
-		expandedValue, err := substituteValue(value, keyPath, lookupEnv)
-		if err != nil {
-			return nil, err
-		}
-		result[expandedKey] = expandedValue
-	}
-	return result, nil
-}
-
-// substituteValue expands ${NAME} in value, where path is the value's key
-// path in the fragment, such as env.TOKEN or deny[1].
-func substituteValue(value any, path string, lookupEnv func(string) (string, bool)) (any, error) {
-	switch v := value.(type) {
-	case map[string]any:
-		return substituteMap(v, path+".", lookupEnv)
-	case []any:
-		result := make([]any, len(v))
-		for i, item := range v {
-			expanded, err := substituteValue(item, path+"["+strconv.Itoa(i)+"]", lookupEnv)
-			if err != nil {
-				return nil, err
-			}
-			result[i] = expanded
-		}
-		return result, nil
-	case string:
-		expanded, err := expand(v, lookupEnv)
-		if err != nil {
-			return nil, fmt.Errorf("key %s: %w", path, err)
-		}
-		return expanded, nil
-	}
-	return value, nil
-}
-
-// expand replaces every ${NAME} in s with the variable's value and every $${
-// with ${. An unset variable is an error.
-func expand(s string, lookupEnv func(string) (string, bool)) (string, error) {
-	var unset string
-	expanded := variablePattern.ReplaceAllStringFunc(s, func(match string) string {
-		if match == "$${" {
-			return "${"
-		}
-		name := match[2 : len(match)-1]
-		value, ok := lookupEnv(name)
-		if !ok && unset == "" {
-			unset = name
-		}
-		return value
-	})
-	if unset != "" {
-		return "", fmt.Errorf("variable %s is not set", unset)
-	}
-	return expanded, nil
 }
 
 // kindConflict records two values of different kinds meeting at one key.

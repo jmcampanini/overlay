@@ -7,15 +7,6 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-func lookupFrom(vars map[string]string) func(string) (string, bool) {
-	return func(name string) (string, bool) {
-		value, ok := vars[name]
-		return value, ok
-	}
-}
-
-func noEnv(string) (string, bool) { return "", false }
-
 func TestRenderJSONDeepMergesAndConcatenatesLists(t *testing.T) {
 	fragments := []Fragment{
 		{Name: "base", Data: []byte(`{
@@ -33,7 +24,7 @@ func TestRenderJSONDeepMergesAndConcatenatesLists(t *testing.T) {
 }`)},
 	}
 
-	got, err := Render(JSON, fragments, noEnv)
+	got, err := Render(JSON, fragments)
 	if err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
@@ -106,7 +97,7 @@ trust_level = "trusted"
 `)},
 	}
 
-	got, err := Render(TOML, fragments, noEnv)
+	got, err := Render(TOML, fragments)
 	if err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
@@ -138,7 +129,7 @@ trust_level = "trusted"
 }
 
 func TestRenderSingleFragmentIsNormalized(t *testing.T) {
-	got, err := Render(JSON, []Fragment{{Name: "only", Data: []byte(`{"b":1,"a":{"d":true,"c":null}}`)}}, noEnv)
+	got, err := Render(JSON, []Fragment{{Name: "only", Data: []byte(`{"b":1,"a":{"d":true,"c":null}}`)}})
 	if err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
@@ -150,7 +141,6 @@ func TestRenderSingleFragmentIsNormalized(t *testing.T) {
 }
 
 func TestRenderYAMLMergesMappingsAndKeepsScalarText(t *testing.T) {
-	lookup := lookupFrom(map[string]string{"HOME": "/home/me"})
 	fragments := []Fragment{
 		{Name: "base", Data: []byte(`# base settings
 version: 1.10
@@ -174,7 +164,7 @@ B1: 2
 servers:
   - name: beta
 b2: 3
-path: ${HOME}/plans
+path: /home/me/plans
 note: |
   first line
   second line
@@ -184,7 +174,7 @@ hooks:
 `)},
 	}
 
-	got, err := Render(YAML, fragments, lookup)
+	got, err := Render(YAML, fragments)
 	if err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
@@ -233,7 +223,7 @@ hash: "#comment"
 empty: ""
 `)}}
 
-	got, err := Render(YAML, fragments, noEnv)
+	got, err := Render(YAML, fragments)
 	if err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
@@ -261,7 +251,7 @@ map:
 marker: "<<"
 `)}}
 
-	got, err := Render(YAML, fragments, noEnv)
+	got, err := Render(YAML, fragments)
 	if err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
@@ -270,53 +260,20 @@ marker: "<<"
 	if string(got) != want {
 		t.Errorf("Render() =\n%s\nwant\n%s", got, want)
 	}
-	again, err := Render(YAML, []Fragment{{Name: "again", Data: got}}, noEnv)
+	again, err := Render(YAML, []Fragment{{Name: "again", Data: got}})
 	if err != nil || string(again) != want {
 		t.Errorf("Render() of its own output = %q (%v), want the same document", again, err)
 	}
 }
 
 func TestRenderEmptyYAMLFragmentsProduceAnEmptyMapping(t *testing.T) {
-	got, err := Render(YAML, []Fragment{{Name: "a", Data: []byte("# only a comment\n")}, {Name: "b", Data: nil}, {Name: "c", Data: []byte("---\n")}}, noEnv)
+	got, err := Render(YAML, []Fragment{{Name: "a", Data: []byte("# only a comment\n")}, {Name: "b", Data: nil}, {Name: "c", Data: []byte("---\n")}})
 	if err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 
 	if string(got) != "{}\n" {
 		t.Errorf("Render() = %q, want %q", got, "{}\n")
-	}
-}
-
-func TestRenderSubstitutesVariablesInValuesAndKeys(t *testing.T) {
-	lookup := lookupFrom(map[string]string{"HOME": "/home/me", "EMPTY": "", "N": "7"})
-	fragments := []Fragment{{Name: "f", Data: []byte(`
-plans = "${HOME}/plans"
-literal = "$${HOME} stays, $HOME too, ${lower-case} too"
-empty = "<${EMPTY}>"
-number = "${N}"
-list = ["${HOME}", 1]
-
-[projects."${HOME}/code"]
-trust = "${HOME}"
-`)}}
-
-	got, err := Render(TOML, fragments, lookup)
-	if err != nil {
-		t.Fatalf("Render() error = %v", err)
-	}
-
-	want := `empty = "<>"
-list = ["/home/me", 1]
-literal = "${HOME} stays, $HOME too, ${lower-case} too"
-number = "7"
-plans = "/home/me/plans"
-
-[projects]
-[projects."/home/me/code"]
-trust = "/home/me"
-`
-	if string(got) != want {
-		t.Errorf("Render() =\n%s\nwant\n%s", got, want)
 	}
 }
 
@@ -331,18 +288,10 @@ func TestRenderFailures(t *testing.T) {
 			want: []string{"fragment s:a.olay.base.json", "parse JSON"}},
 		{name: "JSON root is an array", format: JSON, fragments: []Fragment{{Name: "s:a", Data: []byte(`[1]`)}},
 			want: []string{"root is an array, not an object"}},
-		{name: "empty JSON", format: JSON, fragments: []Fragment{{Name: "s:a", Data: nil}},
-			want: []string{"parse JSON"}},
 		{name: "trailing JSON", format: JSON, fragments: []Fragment{{Name: "s:a", Data: []byte(`{} {}`)}},
 			want: []string{"data after the root object"}},
 		{name: "invalid TOML", format: TOML, fragments: []Fragment{{Name: "s:b", Data: []byte("a = \n")}},
 			want: []string{"fragment s:b", "parse TOML"}},
-		{name: "unset variable names the key", format: JSON, fragments: []Fragment{{Name: "s:a", Data: []byte(`{"env": {"TOKEN": "${OVERLAY_TEST_UNSET}"}}`)}},
-			want: []string{"fragment s:a", "key env.TOKEN", "variable OVERLAY_TEST_UNSET is not set"}},
-		{name: "unset variable inside a list", format: JSON, fragments: []Fragment{{Name: "s:a", Data: []byte(`{"deny": ["ok", "${OVERLAY_TEST_UNSET}"]}`)}},
-			want: []string{"key deny[1]"}},
-		{name: "keys collide after substitution", format: TOML, fragments: []Fragment{{Name: "s:a", Data: []byte("[t]\n\"${X}\" = 1\nv = 2\n")}},
-			want: []string{"both expand to \"v\""}},
 		{name: "table over string", format: TOML, fragments: []Fragment{
 			{Name: "s:base", Data: []byte("[a]\nb = \"text\"\n")},
 			{Name: "s:mid", Data: []byte("other = 1\n")},
@@ -405,9 +354,7 @@ func TestRenderFailures(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			lookup := lookupFrom(map[string]string{"X": "v"})
-
-			_, err := Render(tt.format, tt.fragments, lookup)
+			_, err := Render(tt.format, tt.fragments)
 
 			if err == nil {
 				t.Fatalf("Render() error = nil, want containing %q", tt.want)
@@ -427,7 +374,7 @@ func TestRenderScalarOverScalarTakesTheLaterValue(t *testing.T) {
 		{Name: "top", Data: []byte(`{"a": "one", "b": null, "c": 2.5}`)},
 	}
 
-	got, err := Render(JSON, fragments, noEnv)
+	got, err := Render(JSON, fragments)
 	if err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
@@ -438,8 +385,39 @@ func TestRenderScalarOverScalarTakesTheLaterValue(t *testing.T) {
 	}
 }
 
+func TestRenderWhitespaceOnlyFragmentsAreEmptyDocuments(t *testing.T) {
+	tests := []struct {
+		name   string
+		format Format
+		value  string
+		want   string
+	}{
+		{name: "JSON", format: JSON, value: `{"a": 1}`, want: "{\n  \"a\": 1\n}\n"},
+		{name: "TOML", format: TOML, value: "a = 1\n", want: "a = 1\n"},
+		{name: "YAML", format: YAML, value: "a: 1\n", want: "a: 1\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fragments := []Fragment{
+				{Name: "nothing", Data: nil},
+				{Name: "whitespace", Data: []byte(" \n\t\n")},
+				{Name: "value", Data: []byte(tt.value)},
+			}
+
+			got, err := Render(tt.format, fragments)
+
+			if err != nil {
+				t.Fatalf("Render() error = %v", err)
+			}
+			if string(got) != tt.want {
+				t.Errorf("Render() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRenderEmptyTOMLFragmentsProduceAnEmptyFile(t *testing.T) {
-	got, err := Render(TOML, []Fragment{{Name: "a", Data: []byte("# only a comment\n")}, {Name: "b", Data: nil}}, noEnv)
+	got, err := Render(TOML, []Fragment{{Name: "a", Data: []byte("# only a comment\n")}, {Name: "b", Data: nil}})
 	if err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}

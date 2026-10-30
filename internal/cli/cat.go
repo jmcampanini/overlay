@@ -18,8 +18,9 @@ func catCommand() *cobra.Command {
 		Short: "Print source file contents in layer order",
 		Long: `Read every matched file before writing anything to stdout. Raw mode
 prints each file's bytes unchanged, adding one newline after each nonempty
-file that lacks a final newline. Empty files add nothing. There are no
-headers, separators, or markers, and no color or other formatting is added.
+file that lacks a final newline. Empty files add nothing. A .tmpl file
+prints as stored, with its template text unrendered. There are no headers,
+separators, or markers, and no color or other formatting is added.
 
 --list treats each file as one entry per line, split on newline. It trims
 leading and trailing spaces, tabs, and carriage returns, then drops empty

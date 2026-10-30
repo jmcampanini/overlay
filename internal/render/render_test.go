@@ -601,8 +601,11 @@ func TestBuildLooksUpTheHostnameOnlyForTemplates(t *testing.T) {
 	failing := func() (string, error) { return "", lookupErr }
 	plain := newSource(t, "src", "[layers.base]\npackages = [\"pkg\"]\n")
 	plain.file("pkg/dot-rc", "plain\n", 0o644)
+	plain.file("pkg/settings.olay.base.json", `{}`, 0o644)
 	templated := newSource(t, "src", "[layers.base]\npackages = [\"pkg\"]\n")
 	templated.file("pkg/dot-rc.tmpl", "{{ .OS }}\n", 0o644)
+	templatedFragment := newSource(t, "src", "[layers.base]\npackages = [\"pkg\"]\n")
+	templatedFragment.file("pkg/settings.olay.base.json.tmpl", `{"os": "{{ .OS }}"}`, 0o644)
 
 	plainReq := templateRequest(t, plain)
 	plainReq.Hostname = failing
@@ -610,17 +613,19 @@ func TestBuildLooksUpTheHostnameOnlyForTemplates(t *testing.T) {
 		t.Errorf("Build() with plain files and a failing hostname lookup error = %v, want nil", err)
 	}
 
-	templatedReq := templateRequest(t, templated)
-	templatedReq.Hostname = failing
-	_, err := Build(templatedReq)
-	if !errors.Is(err, lookupErr) {
-		t.Errorf("Build() with a template and a failing hostname lookup error = %v, want %v", err, lookupErr)
-	}
+	for name, source := range map[string]fixture{"template": templated, "templated fragment": templatedFragment} {
+		req := templateRequest(t, source)
+		req.Hostname = failing
+		_, err := Build(req)
+		if !errors.Is(err, lookupErr) {
+			t.Errorf("Build() with a %s and a failing hostname lookup error = %v, want %v", name, err, lookupErr)
+		}
 
-	templatedReq.Hostname = nil
-	_, err = Build(templatedReq)
-	if err == nil || !strings.Contains(err.Error(), "hostname") {
-		t.Errorf("Build() with a template and no hostname lookup error = %v, want one naming the hostname", err)
+		req.Hostname = nil
+		_, err = Build(req)
+		if err == nil || !strings.Contains(err.Error(), "hostname") {
+			t.Errorf("Build() with a %s and no hostname lookup error = %v, want one naming the hostname", name, err)
+		}
 	}
 }
 
@@ -629,9 +634,8 @@ func TestBuildMergesFragmentsAcrossSourcesInLayerOrder(t *testing.T) {
 	base.file("codex/dot-codex/config.olay.base.toml", "model = \"gpt\"\ntags = [\"base\"]\n\n[features]\napps = false\n", 0o644)
 	personal := newSource(t, "dotfiles-personal", "[layers.personal]\npackages = [\"codex\"]\n[layers.local]\n")
 	personal.file("codex/dot-codex/config.olay.personal.toml", "model = \"gpt-pro\"\ntags = [\"personal\"]\n\n[features]\ngoals = true\n", 0o644)
-	personal.file("codex/dot-codex/config.olay.local.toml", "model = \"local\"\ntags = [\"local\"]\n\n[projects.\"${OVERLAY_TEST_HOME}/code\"]\ntrust_level = \"trusted\"\n", 0o600)
+	personal.file("codex/dot-codex/config.olay.local.toml", "model = \"local\"\ntags = [\"local\"]\n\n[projects.\"/home/me/code\"]\ntrust_level = \"trusted\"\n", 0o600)
 	personal.file("codex/dot-codex/config.olay.work.toml", "model = \"never\"\n", 0o644)
-	t.Setenv("OVERLAY_TEST_HOME", "/home/me")
 	target := t.TempDir()
 	req := Request{
 		Layers:  []string{"base", "personal", "local"},
@@ -673,7 +677,7 @@ func TestBuildMergesFragmentsAcrossSourcesInLayerOrder(t *testing.T) {
 		t.Errorf("Apply() wrote %q (%v), want the merged document", written, err)
 	}
 	if info, err := os.Stat(want.Target); err != nil || info.Mode().Perm() != 0o600 {
-		t.Errorf("Apply() mode = %v (%v), want 600 from the last fragment", info, err)
+		t.Errorf("Apply() mode = %v (%v), want 600, the bits every fragment has", info, err)
 	}
 	after, err := Build(req)
 	if err != nil {
@@ -681,6 +685,92 @@ func TestBuildMergesFragmentsAcrossSourcesInLayerOrder(t *testing.T) {
 	}
 	if after.Entries[0].Status != StatusUnchanged {
 		t.Errorf("status after Apply = %q, want %q", after.Entries[0].Status, StatusUnchanged)
+	}
+}
+
+func TestBuildRendersTemplatedFragmentsBeforeMerging(t *testing.T) {
+	base := newSource(t, "dotfiles-base", "[layers.base]\npackages = [\"claude\"]\n")
+	base.file("claude/dot-claude/settings.olay.base.json", `{"model": "opus", "hosts": ["alpha"]}`, 0o600)
+	personal := newSource(t, "dotfiles-personal", "[layers.personal]\npackages = [\"claude\"]\n[layers.local]\n")
+	personal.file("claude/dot-claude/settings.olay.personal.json.tmpl", `{"hosts": ["{{ .Hostname }}"], "home": "{{ .Home }}", "layers": "{{ join "," .Layers }}"}`, 0o644)
+	personal.file("claude/dot-claude/settings.olay.local.json.tmpl", "{{ if eq .OS \"darwin\" }}{\"model\": \"mac\"}{{ end }}\n", 0o644)
+	req := templateRequest(t, base, personal)
+
+	plan, err := Build(req)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	if len(plan.Entries) != 1 {
+		t.Fatalf("Build() returned %d entries, want 1: %+v", len(plan.Entries), plan.Entries)
+	}
+	want := Entry{
+		Origin:  Origin{Layer: "local", Path: "claude/dot-claude/settings.olay.local.json.tmpl", Source: "dotfiles-personal"},
+		Content: []byte("{\n  \"home\": \"/home/me\",\n  \"hosts\": [\n    \"alpha\",\n    \"wintermute\"\n  ],\n  \"layers\": \"base,personal,local\",\n  \"model\": \"opus\"\n}\n"),
+		Kind:    KindMerge,
+		Merges: []Fragment{
+			{Origin: Origin{Layer: "base", Path: "claude/dot-claude/settings.olay.base.json", Source: "dotfiles-base"}, SourceFile: filepath.Join(base.path, "claude/dot-claude/settings.olay.base.json")},
+			{Origin: Origin{Layer: "personal", Path: "claude/dot-claude/settings.olay.personal.json.tmpl", Source: "dotfiles-personal"}, SourceFile: filepath.Join(personal.path, "claude/dot-claude/settings.olay.personal.json.tmpl"), Template: true},
+			{Origin: Origin{Layer: "local", Path: "claude/dot-claude/settings.olay.local.json.tmpl", Source: "dotfiles-personal"}, SourceFile: filepath.Join(personal.path, "claude/dot-claude/settings.olay.local.json.tmpl"), Template: true},
+		},
+		Mode:       0o600,
+		SourceFile: filepath.Join(personal.path, "claude/dot-claude/settings.olay.local.json.tmpl"),
+		Status:     StatusNew,
+		Target:     filepath.Join(req.Target, ".claude", "settings.json"),
+	}
+	if diff := cmp.Diff(want, plan.Entries[0]); diff != "" {
+		t.Errorf("Build() merge entry mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestBuildTemplatedFragmentFailureNamesTheFragment(t *testing.T) {
+	src := newSource(t, "src", "[layers.base]\npackages = [\"claude\"]\n[layers.personal]\n")
+	src.file("claude/settings.olay.base.json", `{"model": }`, 0o644)
+	src.file("claude/settings.olay.personal.json.tmpl", `{"home": "{{ .Missing }}"}`, 0o644)
+
+	_, err := Build(templateRequest(t, src))
+
+	if err == nil {
+		t.Fatal("Build() error = nil, want a template error")
+	}
+	for _, want := range []string{"fragment src:claude/settings.olay.personal.json.tmpl: render template:", "can't evaluate field Missing"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Build() error = %v, want containing %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "parse JSON") {
+		t.Errorf("Build() error = %v, want the template error before any parse error", err)
+	}
+}
+
+func TestBuildTemplatedAndPlainFragmentsInOneLayerCollide(t *testing.T) {
+	src := newSource(t, "src", "[layers.base]\npackages = [\"claude\"]\n")
+	src.file("claude/settings.olay.base.json", `{}`, 0o644)
+	src.file("claude/settings.olay.base.json.tmpl", `{}`, 0o644)
+
+	_, err := Build(templateRequest(t, src))
+
+	var collision *CollisionError
+	if !errors.As(err, &collision) {
+		t.Fatalf("Build() error = %v, want a *CollisionError", err)
+	}
+	if collision.First.Layer != "base" || collision.Second.Layer != "base" {
+		t.Errorf("collision layers = %q and %q, want base", collision.First.Layer, collision.Second.Layer)
+	}
+}
+
+func TestBuildMergeModeKeepsOnlyTheBitsEveryFragmentHas(t *testing.T) {
+	src := newSource(t, "src", "[layers.base]\npackages = [\"claude\"]\n[layers.personal]\n")
+	src.file("claude/settings.olay.base.json", `{"a": 1}`, 0o600)
+	src.file("claude/settings.olay.personal.json", `{"b": 2}`, 0o644)
+
+	plan, err := Build(templateRequest(t, src))
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	if len(plan.Entries) != 1 || plan.Entries[0].Mode != 0o600 {
+		t.Errorf("Build() entries = %+v, want one entry with mode 600", plan.Entries)
 	}
 }
 
@@ -731,7 +821,8 @@ func TestBuildFragmentFailures(t *testing.T) {
 		{name: "no extension", files: map[string]string{"claude/settings.olay.base": `{}`}, want: []string{"a fragment needs LAYER.EXT after .olay."}},
 		{name: "invalid layer", files: map[string]string{"claude/settings.olay.Base.json": `{}`}, want: []string{"fragment layer: layer name \"Base\""}},
 		{name: "unsupported extension", files: map[string]string{"claude/settings.olay.base.ini": `a = 1`}, want: []string{"fragment extension \"ini\" must be json, toml, yaml, or yml"}},
-		{name: "template suffix on a fragment", files: map[string]string{"claude/settings.olay.base.json.tmpl": `{}`}, want: []string{"fragment extension \"json.tmpl\" must be json, toml, yaml, or yml"}},
+		{name: "template suffix without an extension", files: map[string]string{"claude/settings.olay.base.tmpl": `{}`}, want: []string{"a fragment needs LAYER.EXT after .olay."}},
+		{name: "template suffix before the layer", files: map[string]string{"claude/settings.tmpl.olay.base.ini": `{}`}, want: []string{"fragment extension \"ini\""}},
 		{name: "yaml and yml fragments for one name", files: map[string]string{
 			"claude/dot-claude/config.olay.base.yaml":    "a: 1\n",
 			"claude/dot-claude/config.olay.personal.yml": "b: 2\n",
@@ -742,7 +833,6 @@ func TestBuildFragmentFailures(t *testing.T) {
 		}, want: []string{"src:claude/dot-claude/config.olay.personal.yml and src:claude/dot-claude/config.yaml would render"}},
 		{name: "marker twice", files: map[string]string{"claude/settings.olay.base.olay.local.json": `{}`}, want: []string{"holds .olay. once"}},
 		{name: "fragment that does not parse", files: map[string]string{"claude/dot-claude/settings.olay.base.json": `{"model": }`}, want: []string{"merge ", "fragment src:claude/dot-claude/settings.olay.base.json"}},
-		{name: "unset variable", files: map[string]string{"claude/dot-claude/settings.olay.base.json": `{"a": "${OVERLAY_TEST_UNSET_VARIABLE}"}`}, want: []string{"variable OVERLAY_TEST_UNSET_VARIABLE is not set"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

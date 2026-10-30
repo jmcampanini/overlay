@@ -52,6 +52,7 @@ func TestRenderFunctions(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("OVERLAY_TEST_SECRET", "hunter2")
+	t.Setenv("OVERLAY_TEST_EMPTY", "")
 	dir := t.TempDir()
 	link := filepath.Join(t.TempDir(), "link")
 	if err := os.Symlink(present, link); err != nil {
@@ -74,7 +75,10 @@ func TestRenderFunctions(t *testing.T) {
 		{name: "fileExists absent", text: `{{ fileExists "` + filepath.Join(dir, "missing") + `" }}`, want: "false"},
 		{name: "fileExists does not expand tilde", text: `{{ fileExists "~/` + filepath.Base(present) + `" }}`, want: "false"},
 		{name: "env set", text: `{{ env "OVERLAY_TEST_SECRET" }}`, want: "hunter2"},
-		{name: "env unset is empty", text: `{{ if env "OVERLAY_TEST_UNSET" }}set{{ else }}unset{{ end }}`, want: "unset"},
+		{name: "env set to empty", text: `[{{ env "OVERLAY_TEST_EMPTY" }}]`, want: "[]"},
+		{name: "envOr set", text: `{{ envOr "OVERLAY_TEST_SECRET" "fallback" }}`, want: "hunter2"},
+		{name: "envOr set to empty keeps the empty value", text: `[{{ envOr "OVERLAY_TEST_EMPTY" "fallback" }}]`, want: "[]"},
+		{name: "envOr unset", text: `{{ envOr "OVERLAY_TEST_UNSET" "fallback" }}`, want: "fallback"},
 		{name: "readFile strips trailing newlines", text: `{{ readFile "` + present + `" }}`, want: "x"},
 		{name: "readFile keeps inner newlines", text: `{{ readFile "` + multiline + `" }}`, want: "one\ntwo"},
 		{name: "readFile quoted", text: `{{ readFile "` + present + `" | printf "%q" }}`, want: `"x"`},
@@ -117,6 +121,7 @@ func TestRenderFailures(t *testing.T) {
 		{name: "parse error", text: `{{ if .Home }}unclosed`, want: "unexpected EOF"},
 		{name: "unknown field", text: `{{ .Target }}`, want: "can't evaluate field Target"},
 		{name: "unknown function", text: `{{ now }}`, want: `function "now" not defined`},
+		{name: "env unset", text: `{{ env "OVERLAY_TEST_UNSET" }}`, want: `env "OVERLAY_TEST_UNSET": variable is not set`},
 		{name: "missing map key", text: `{{ index .Lookup "nope" }}`, want: "can't evaluate field Lookup"},
 		{name: "join with a non-list", text: `{{ join "," .Home }}`, want: "wrong type for value"},
 		{name: "readFile missing", text: `{{ readFile "` + filepath.Join(unreadable, "..", "missing") + `" }}`, want: "no such file"},
