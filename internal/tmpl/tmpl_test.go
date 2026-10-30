@@ -106,6 +106,7 @@ func TestRenderFunctions(t *testing.T) {
 		{name: "quote quote and backslash", text: `{{ quote "say \"hi\" \\ now" }}`, want: `"say \"hi\" \\ now"`},
 		{name: "quote named escapes", text: `{{ quote "a\b\f\n\r\tb" }}`, want: `"a\b\f\n\r\tb"`},
 		{name: "quote other control characters", text: `{{ quote "\x01\x1b\x7f" }}`, want: `"\u0001\u001B\u007F"`},
+		{name: "quote characters YAML rejects or folds", text: `{{ quote "a\u0080b\u0085c\u009fd\u2028e\u2029f\ufffeg\uffffh" }}`, want: `"a\u0080b\u0085c\u009Fd\u2028e\u2029f\uFFFEg\uFFFFh"`},
 		{name: "quote keeps non-ascii", text: `{{ quote "héllo ❯" }}`, want: `"héllo ❯"`},
 		{name: "quote from pipeline", text: `{{ "x" | quote }}`, want: `"x"`},
 		{name: "files one pattern", text: `{{ range files "envs/env.{layer}" }}{{ . }};{{ end }}`, want: "/src/envs/env.base;"},

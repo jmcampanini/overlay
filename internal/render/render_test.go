@@ -552,6 +552,33 @@ func TestBuildHonorsTheDelimsDirectiveInTemplatesAndFragments(t *testing.T) {
 	}
 }
 
+func TestBuildQuoteOutputParsesInEveryMergeFormat(t *testing.T) {
+	value := `{{ quote "a\u0085b\"c\\d\u0080e" }}`
+	base := newSource(t, "dotfiles-base", "[layers.base]\npackages = [\"pkg\"]\n")
+	base.file("pkg/j.olay.base.json.tmpl", `{"v": `+value+`}`, 0o644)
+	base.file("pkg/t.olay.base.toml.tmpl", "v = "+value+"\n", 0o644)
+	base.file("pkg/y.olay.base.yaml.tmpl", "v: "+value+"\n", 0o644)
+	req := templateRequest(t, base)
+
+	plan, err := Build(req)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	got := map[string]string{}
+	for _, entry := range plan.Entries {
+		got[strings.TrimPrefix(entry.Target, req.Target+"/")] = string(entry.Content)
+	}
+	want := map[string]string{
+		"j.json": "{\n  \"v\": \"a\u0085b\\\"c\\\\d\u0080e\"\n}\n",
+		"t.toml": "v = \"a\u0085b\\\"c\\\\d\u0080e\"\n",
+		"y.yaml": "v: \"a\\Nb\\\"c\\\\d\\x80e\"\n",
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("rendered content mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestBuildMalformedDelimsDirectiveNamesTheFile(t *testing.T) {
 	base := newSource(t, "dotfiles-base", "[layers.base]\npackages = [\"cmdk\"]\n")
 	base.file("cmdk/config.olay.base.toml.tmpl", "# overlay:delims <<\nos = \"<< .OS >>\"\n", 0o644)

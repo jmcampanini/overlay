@@ -192,13 +192,14 @@ func join(sep string, items []string) string {
 
 // quote returns s in double quotes using only the escapes JSON strings,
 // TOML basic strings, and YAML double-quoted scalars all accept: \" and
-// \\, \b \f \n \r \t for those characters, and \u00XX for any other control
-// character and DEL. Other characters, including non-ASCII ones, are
-// written as they are. Invalid UTF-8 fails the template, and text/template
-// rejects a non-string argument before quote runs.
+// \\, \b \f \n \r \t for those characters, and \uXXXX for every character
+// YAML does not allow or does not preserve in a quoted scalar. Other
+// characters, including non-ASCII ones, are written as they are. Invalid
+// UTF-8 fails the template without echoing s, which may be a secret, and
+// text/template rejects a non-string argument before quote runs.
 func quote(s string) (string, error) {
 	if !utf8.ValidString(s) {
-		return "", fmt.Errorf("quote: %q is not valid UTF-8", s)
+		return "", errors.New("quote: the value is not valid UTF-8")
 	}
 
 	var out strings.Builder
@@ -219,7 +220,7 @@ func quote(s string) (string, error) {
 		case '\t':
 			out.WriteString(`\t`)
 		default:
-			if r < 0x20 || r == 0x7f {
+			if needsUnicodeEscape(r) {
 				fmt.Fprintf(&out, `\u%04X`, r)
 				continue
 			}
@@ -228,6 +229,16 @@ func quote(s string) (string, error) {
 	}
 	out.WriteByte('"')
 	return out.String(), nil
+}
+
+// needsUnicodeEscape reports whether quote must write r as \uXXXX: the C0
+// and C1 control characters and DEL, which YAML rejects inside a quoted
+// scalar except for NEL, the line breaks NEL, U+2028, and U+2029, which
+// YAML folds into a space, and U+FFFE and U+FFFF, which YAML rejects. JSON
+// and TOML accept every one of them raw or escaped, so the escape is safe
+// in all three formats.
+func needsUnicodeEscape(r rune) bool {
+	return r < 0x20 || (r >= 0x7f && r <= 0x9f) || r == 0x2028 || r == 0x2029 || r == 0xfffe || r == 0xffff
 }
 
 // shellQuote quotes s so bash, zsh, and fish all read it as one literal

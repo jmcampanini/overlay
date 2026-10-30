@@ -51,7 +51,9 @@ Beyond the text/template builtins, templates may call:
   join SEP LIST    LIST's items concatenated with SEP between them
   quote S          S in double quotes using only the escapes JSON, TOML,
                    and YAML all accept: \" and \\, \b \f \n \r \t, and
-                   \u00XX for any other control character; S must be a
+                   \uXXXX for any other control character and for the
+                   few characters YAML would reject or fold, so the
+                   result parses as S in all three formats; S must be a
                    string, and any other value fails the render
   readFile PATH    the file's content with trailing newlines removed, as
                    $(cat PATH) would give; PATH is used as given, and a
@@ -85,9 +87,10 @@ stays in the output. For example, this fragment keeps Command K's own
 
 Quotes can stay in the file. accent = "{{ .Values.theme.colors.accent }}"
 renders a valid TOML, JSON, or YAML string whenever the value holds no
-quote, backslash, or control character, which is every color and path;
-use quote for a value that might. with removes a repeated prefix, a
-variable names a value used more than once, and {{- or -}} trims the
+quote, backslash, or control character, as a color never does. A path or
+an environment value may hold either, so quote one you do not control:
+path = {{ quote (print $code "/src") }}. with removes a repeated prefix,
+a variable names a value used more than once, and {{- or -}} trims the
 newline beside an action that produces no output:
 
   {{- with .Values.theme.colors }}
@@ -106,7 +109,9 @@ takes the template's permission bits, so keep such a template at 600.
 
 This loader sources every envs/env.LAYER a source declares a layer for,
 in layer order and then source order, and renders nothing for a layer no
-source has a file for:
+source has a file for. Like 'overlay files', it fails when two sources
+hold the file for one layer; a loader that must accept that walks
+.Layers and .Sources with fileExists instead:
 
   {{ range files "envs/env.{layer}" -}}
   source {{ shellQuote . }}
