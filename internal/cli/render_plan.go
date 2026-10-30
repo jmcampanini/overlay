@@ -19,14 +19,14 @@ type planDocument struct {
 }
 
 type planEntry struct {
-	Target   string       `json:"target"`
-	Source   string       `json:"source"`
-	Path     string       `json:"path"`
-	Layer    string       `json:"layer"`
-	Kind     string       `json:"kind"`
-	Status   string       `json:"status"`
-	Replaces []planOrigin `json:"replaces"`
-	Merges   []planOrigin `json:"merges"`
+	Target    string       `json:"target"`
+	Source    string       `json:"source"`
+	Path      string       `json:"path"`
+	Layer     string       `json:"layer"`
+	Kind      string       `json:"kind"`
+	Status    string       `json:"status"`
+	Replaces  []planOrigin `json:"replaces"`
+	Fragments []planOrigin `json:"fragments"`
 }
 
 type planOrigin struct {
@@ -38,23 +38,23 @@ type planOrigin struct {
 func writePlanJSON(out io.Writer, plan render.Plan) error {
 	doc := planDocument{Target: plan.Target, Layers: plan.Layers, Entries: make([]planEntry, 0, len(plan.Entries))}
 	for _, entry := range plan.Entries {
-		merges := make([]planOrigin, 0, len(entry.Merges))
-		for _, fragment := range entry.Merges {
-			merges = append(merges, planOriginOf(fragment.Origin))
+		fragments := make([]planOrigin, 0, len(entry.Fragments))
+		for _, fragment := range entry.Fragments {
+			fragments = append(fragments, planOriginOf(fragment.Origin))
 		}
 		replaces := make([]planOrigin, 0, len(entry.Replaces))
 		for _, origin := range entry.Replaces {
 			replaces = append(replaces, planOriginOf(origin))
 		}
 		doc.Entries = append(doc.Entries, planEntry{
-			Target:   entry.Target,
-			Source:   entry.Source,
-			Path:     entry.Path,
-			Layer:    entry.Layer,
-			Kind:     string(entry.Kind),
-			Status:   string(entry.Status),
-			Replaces: replaces,
-			Merges:   merges,
+			Target:    entry.Target,
+			Source:    entry.Source,
+			Path:      entry.Path,
+			Layer:     entry.Layer,
+			Kind:      string(entry.Kind),
+			Status:    string(entry.Status),
+			Replaces:  replaces,
+			Fragments: fragments,
 		})
 	}
 
@@ -130,14 +130,14 @@ func writePlanTable(out io.Writer, plan render.Plan, home string, color bool) er
 	return err
 }
 
-// sourceCell names the file an entry renders from, or for a merge every
-// fragment in layer order.
+// sourceCell names the file an entry renders from, or for a merge or concat
+// every fragment in layer order.
 func sourceCell(entry render.Entry) string {
-	if entry.Kind != render.KindMerge {
+	if len(entry.Fragments) == 0 {
 		return entry.Source + ":" + entry.Path
 	}
-	parts := make([]string, len(entry.Merges))
-	for i, fragment := range entry.Merges {
+	parts := make([]string, len(entry.Fragments))
+	for i, fragment := range entry.Fragments {
 		parts[i] = fragment.Source + ":" + fragment.Path
 	}
 	return strings.Join(parts, ", ")

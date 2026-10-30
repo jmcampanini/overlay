@@ -1,6 +1,6 @@
 # overlay
 
-overlay renders layered dotfiles from git source repositories into a target directory. Later layers replace earlier files or merge JSON, TOML, and YAML fragments, so shared and personal repositories can contribute to the same configuration. Rendering preserves overlay's active configuration and never deletes a rendered file. Bootstrapping leaves existing checkouts untouched and never lets git prompt for credentials.
+overlay renders layered dotfiles from git source repositories into a target directory. Later layers replace earlier files, merge JSON, TOML, and YAML fragments, or concatenate fragments of any other text file, so shared and personal repositories can contribute to the same configuration. Rendering preserves overlay's active configuration and never deletes a rendered file. Bootstrapping leaves existing checkouts untouched and never lets git prompt for credentials.
 
 
 ## Install

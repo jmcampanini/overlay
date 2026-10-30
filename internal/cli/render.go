@@ -92,47 +92,65 @@ time, for example {{ readFile (printf "%s/.config/overlay/local/api.key"
 .Home) }}. The plan output never prints rendered content, and the target
 takes the template's permission bits, so keep such a template at 600.
 
-A file named NAME.olay.LAYER.EXT is a fragment of NAME.EXT. With EXT json,
-toml, yaml, or yml, every fragment for one target parses as that format
-and the fragments merge in layer order into one document written to
-NAME.EXT. The olay token is only a marker. LAYER is the layer the fragment
-belongs to, whatever layer its package is listed under, and a fragment
-whose LAYER is not in the layer order or not declared in that source's
-manifest is skipped. NAME may hold dots, EXT is one segment, LAYER follows
-the layer grammar with base and local allowed, and any other shape is an
-error. So dot-codex/config.olay.base.toml in a base package and
+A file named NAME.olay.LAYER.EXT is a fragment of NAME.EXT, and a file
+named NAME.olay.LAYER is a fragment of NAME. Every fragment for one target
+composes into that one file in layer order. When the target's last
+extension is json, toml, yaml, or yml, the fragments parse as that format
+and merge into one document; with any other extension, or none, the
+fragments concatenate as text. The olay token is only a marker. LAYER is
+the layer the fragment belongs to, whatever layer its package is listed
+under, and a fragment whose LAYER is not in the layer order or not
+declared in that source's manifest is skipped. NAME and EXT may hold
+dots, LAYER follows the layer grammar with base and local allowed, and
+any other shape is an error, as is a merge format spelled in another case
+such as JSON. So dot-codex/config.olay.base.toml in a base package and
 dot-codex/config.olay.personal.toml in a personal package merge into
-~/.codex/config.toml. NAME.yaml and NAME.yml are different targets, so
-every fragment of one file spells the extension the same way; a fragment
-of NAME.yaml beside any NAME.yml, or the reverse, fails the render.
+~/.codex/config.toml, and dot-zshrc.olay.base beside
+dot-zshrc.olay.personal concatenate into ~/.zshrc. NAME.yaml and NAME.yml
+are different targets, so every fragment of one file spells the extension
+the same way; a fragment of NAME.yaml beside any NAME.yml, or the
+reverse, fails the render.
 
-A fragment named NAME.olay.LAYER.EXT.tmpl is a template of a fragment: it
-executes as a text/template with the data and functions above, and its
-output parses as EXT and merges like any other fragment of NAME.EXT. The
-suffix is only a marker and goes last; the merged target is still
-NAME.EXT. Every templated fragment of a target renders before any fragment
-parses, so a template error names the fragment that failed rather than
-the parse error it would cause. A fragment whose output is empty or only
-whitespace is an empty document in every format, so a fragment wrapped in
+A fragment whose name ends in .tmpl, such as NAME.olay.LAYER.EXT.tmpl or
+NAME.olay.LAYER.tmpl, is a template of a fragment: it executes as a
+text/template with the data and functions above, and its output merges or
+concatenates like any other fragment of the target. The suffix is only a
+marker, goes last, and is stripped once; a .tmpl before the olay marker
+is part of NAME. Every templated fragment of a target renders before any
+fragment is composed, so a template error names the fragment that failed
+rather than the parse error it would cause. A fragment whose output is
+empty or only whitespace is an empty document in every merge format and
+adds nothing to a concatenation, so a fragment wrapped in
 {{ if eq .OS "darwin" }} ... {{ end }} contributes nothing elsewhere.
 Templated and plain fragments mix freely across layers; two for one target
 in one layer collide like any other pair.
 
-Fragments merge key by key: tables, objects, and mappings merge
+Merged fragments combine key by key: tables, objects, and mappings merge
 recursively, arrays and sequences concatenate with the later layer's items
 last and nothing removed, and any other value takes the later layer's. A
 table, an array, and a plain value meeting at one key is an error naming
-both fragments. Nothing deletes a key or replaces a subtree; a plain
-NAME.EXT or NAME.EXT.tmpl in a later layer replaces the merged document
-whole, and a fragment in a later layer than a plain NAME.EXT is an error.
-Two fragments for one target with the same LAYER fail like any same-layer
-collision. The output sorts keys alphabetically at every level, drops
-comments, indents JSON with two spaces, writes TOML tables flush-left,
-writes YAML in block style with two-space indentation, and ends with a
-newline unless the document is empty TOML; a target with one fragment is
-rewritten the same way. The target keeps only the permission bits every
-fragment has, so one 600 fragment in the stack denies group and other
-access to the whole target.
+both fragments. Nothing deletes a key or replaces a subtree. The output
+sorts keys alphabetically at every level, drops comments, indents JSON
+with two spaces, writes TOML tables flush-left, writes YAML in block style
+with two-space indentation, and ends with a newline unless the document
+is empty TOML; a target with one fragment is rewritten the same way.
+
+Concatenated fragments are text joined in layer order with the base
+layer's fragment first. Each fragment that is not empty or only
+whitespace is written as it is, followed by a newline when it does not
+end in one, and nothing else is added, so no header or blank line marks
+where one fragment ends. A target with one fragment is that fragment,
+plus the newline if it lacked one. Concatenation knows nothing of the
+file's syntax, so a later layer can only append; it cannot change a line
+an earlier layer wrote. A fragment holding a NUL byte is binary and fails
+the render.
+
+However fragments compose, a plain NAME.EXT or NAME.EXT.tmpl in a later
+layer replaces the composed file whole, and a fragment in a later layer
+than a plain NAME.EXT is an error. Two fragments for one target with the
+same LAYER fail like any same-layer collision. The target keeps only the
+permission bits every fragment has, so one 600 fragment in the stack
+denies group and other access to the whole target.
 
 YAML fragments keep numbers and timestamps as written, so 1.10 stays
 1.10, expand aliases in place, read an empty or comment-only file as an
@@ -143,12 +161,11 @@ core schema such as !!binary, or a second document in one fragment is an
 error.
 
 Fragment text is otherwise taken as written; an environment variable
-reaches a fragment only through a templated fragment and env or envOr. An
-empty or whitespace-only fragment is an empty document in every format. A
+reaches a fragment only through a templated fragment and env or envOr. A
 fragment that does not parse, whose JSON root is not an object, or whose
-YAML root is not a mapping fails the whole render, with --dry-run too,
-before anything is written; a fragment a later plain NAME.EXT replaces is
-never read.
+YAML root is not a mapping, or a concatenated fragment holding a NUL
+byte, fails the whole render, with --dry-run too, before anything is
+written; a fragment a later plain NAME.EXT replaces is never read.
 
 For example, this loader sources every envs/env.LAYER that exists, in
 layer order and then source order:
@@ -171,20 +188,21 @@ rejected before writing. A failure while writing stops at that file, and
 files already written stay in place.
 
 Both modes print the plan on stdout: a table with columns TARGET, SOURCE
-(name:path within the source; a merge lists every fragment in layer
-order), KIND (file, template, or merge), STATUS (new, changed, or
-unchanged; a template or merge compares its rendered output), and
-REPLACES (the files earlier layers contributed), then a count summary.
+(name:path within the source; a merge or concat lists every fragment in
+layer order), KIND (file, template, merge, or concat), STATUS (new,
+changed, or unchanged; a template, merge, or concat compares its rendered
+output), and REPLACES (the files earlier layers contributed), then a
+count summary.
 Targets under the home directory are shortened to ~. --color MODE is auto
 by default: the table colors STATUS only when stdout is a terminal whose
 TERM is not dumb, and a nonempty NO_COLOR disables color. always and never
 override both. --json instead emits one JSON document {"target",
 "layers", "entries": [{"target", "source", "path", "layer", "kind",
-"status", "replaces": [{"source", "path", "layer"}], "merges": [{"source",
-"path", "layer"}]}]} with absolute paths and no escapes, even with --color
-always. For a merge, merges lists its fragments in layer order and
-source, path, and layer name the last of them; for other kinds merges is
-empty.
+"status", "replaces": [{"source", "path", "layer"}], "fragments":
+[{"source", "path", "layer"}]}]} with absolute paths and no escapes, even
+with --color always. For a merge or concat, fragments lists its fragments
+in layer order and source, path, and layer name the last of them; for
+other kinds fragments is empty.
 
 ` + contractHelp + `
 
