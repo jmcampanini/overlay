@@ -37,7 +37,7 @@ An unreadable file fails before any output.
 ` + contractHelp + `
 
 ` + configFileHelp + `
---config PATH reads PATH instead and fails when PATH is empty or missing.
+` + configFlagHelp + `
 
 ` + layerSelectionHelp,
 		Example: `  overlay cat --list 'packages/pacman/packages.{layer}' |
@@ -73,7 +73,7 @@ An unreadable file fails before any output.
 	if err := config.RegisterFlags(cmd.Flags()); err != nil {
 		panic(err)
 	}
-	cmd.Flags().StringVar(&configPath, "config", "", "configuration file to read instead of the default")
+	registerConfigFlag(cmd, &configPath)
 	cmd.Flags().BoolVar(&list, "list", false, "trim whitespace and comments; print unique entries")
 	return cmd
 }

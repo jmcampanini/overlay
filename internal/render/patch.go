@@ -43,12 +43,9 @@ func WritePatch(out io.Writer, plan Plan) ([]Omission, error) {
 			return nil, fmt.Errorf("relate %s to %s: %w", entry.Target, plan.Target, err)
 		}
 		path := filepath.ToSlash(rel)
-		rendered := entry.Content
-		if entry.Kind == KindFile {
-			rendered, err = os.ReadFile(entry.SourceFile)
-			if err != nil {
-				return nil, fmt.Errorf("read %s: %w", entry.SourceFile, err)
-			}
+		rendered, err := entry.bytes()
+		if err != nil {
+			return nil, err
 		}
 
 		if entry.Status == StatusNew {

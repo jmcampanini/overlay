@@ -53,6 +53,8 @@ func TestLoadManifestFailures(t *testing.T) {
 		{name: "package is a file", manifest: "[layers.base]\npackages = [\"README\"]\n", want: "not a directory"},
 		{name: "nested package", manifest: "[layers.base]\npackages = [\"bash/sub\"]\n", want: "top-level directory"},
 		{name: "blank package", manifest: "[layers.base]\npackages = [\"\"]\n", want: "blank"},
+		{name: "package under two layers", manifest: "[layers.base]\npackages = [\"bash\"]\n[layers.work]\npackages = [\"bash\"]\n", want: `package "bash" is listed under layers "base" and "work"`},
+		{name: "package twice in one layer", manifest: "[layers.base]\npackages = [\"bash\", \"bash\"]\n", want: `layer "base" lists package "bash" twice`},
 		{name: "malformed toml", manifest: "[layers.base\n", want: "read manifest"},
 	}
 	for _, tt := range tests {

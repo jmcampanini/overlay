@@ -84,7 +84,7 @@ func TestRenderAndDiffPreserveActiveConfiguration(t *testing.T) {
 
 				out, _, err := executeForTest(t, args...)
 
-				if err == nil || !strings.Contains(err.Error(), "configuration file") {
+				if err == nil || !strings.Contains(err.Error(), "a file overlay loaded") {
 					t.Errorf("%s error = %v, want protected configuration file", command, err)
 				}
 				if out != "" {
@@ -110,7 +110,7 @@ func TestRenderAndDiffPreserveLoadedValuesFiles(t *testing.T) {
 
 			out, _, err := executeForTest(t, command, "--config", f.configPath)
 
-			if err == nil || !strings.Contains(err.Error(), "configuration file") {
+			if err == nil || !strings.Contains(err.Error(), "a file overlay loaded") {
 				t.Errorf("%s error = %v, want protected values file", command, err)
 			}
 			if out != "" {

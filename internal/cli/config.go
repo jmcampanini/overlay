@@ -6,7 +6,6 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/jmcampanini/go-config-loader/configloader"
 	"github.com/jmcampanini/go-config-loader/configreporter"
 	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/spf13/cobra"
@@ -26,7 +25,7 @@ holds no secrets.
 ` + contractHelp + `
 
 ` + configFileHelp + `
---config PATH reads PATH instead and fails when PATH is empty or absent.
+` + configFlagHelp + `
 
 Settings load in this order, and a later layer replaces any value an
 earlier one sets: built-in defaults (an empty layer list and no sources),
@@ -56,27 +55,17 @@ came from:
 <default>, the file path, <env>, or <pflag>.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			env := configloader.OSEnv()
-			cfg, report, err := config.Load(config.LoadOptions{
-				Env:     env,
-				Flags:   cmd.Flags(),
-				Path:    configPath,
-				PathSet: cmd.Flags().Changed("config"),
-			})
-			if err != nil {
-				return err
-			}
-			effective, err := config.Resolve(cfg, env)
+			loaded, err := loadConfiguration(cmd, configPath)
 			if err != nil {
 				return err
 			}
 
 			out := cmd.OutOrStdout()
-			reporter := configreporter.New(cfg, report)
+			reporter := configreporter.New(loaded.config, loaded.report)
 			if err := reporter.WriteTOML(out); err != nil {
 				return err
 			}
-			if err := writeEffective(out, report.LoadedFiles, effective); err != nil {
+			if err := writeEffective(out, loaded.report.LoadedFiles, loaded.effective); err != nil {
 				return err
 			}
 			if !showProvenance {
@@ -88,7 +77,7 @@ came from:
 	if err := config.RegisterFlags(cmd.Flags()); err != nil {
 		panic(err)
 	}
-	cmd.Flags().StringVar(&configPath, "config", "", "configuration file to read instead of the default")
+	registerConfigFlag(cmd, &configPath)
 	cmd.Flags().BoolVar(&showProvenance, "provenance", false, "append the source of each field")
 	return cmd
 }

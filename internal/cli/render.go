@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/jmcampanini/go-config-loader/configloader"
 	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/jmcampanini/overlay/internal/render"
 	"github.com/spf13/cobra"
@@ -44,11 +43,11 @@ per layer, whose packages list names top-level directories of the source:
   [layers.base]
   packages = ["bash", "ssh"]
 
-A listed package must exist, layer names follow the grammar in 'overlay
-config --help' with base and local also allowed, and unknown keys are
-errors. A layer no manifest mentions contributes nothing. Layers apply in
-the order 'overlay config' reports as layer_order, and sources in file
-order within a layer.
+A listed package must exist and is listed under one layer, layer names
+follow the grammar in 'overlay config --help' with base and local also
+allowed, and unknown keys are errors. A layer no manifest mentions
+contributes nothing. Layers apply in the order 'overlay config' reports as
+layer_order, and sources in file order within a layer.
 
 Every regular file in a selected package renders; a symbolic link to a
 regular file is followed and its content copied, and any other entry is an
@@ -219,7 +218,7 @@ other kinds fragments is empty.
 ` + contractHelp + `
 
 ` + configFileHelp + `
---config PATH reads PATH instead and fails when PATH is empty or missing.
+` + configFlagHelp + `
 
 ` + layerSelectionHelp,
 		Example: `  overlay render --dry-run
@@ -236,8 +235,8 @@ other kinds fragments is empty.
 	cmd.Flags().StringVar(&opts.target, "target", "", "directory to render into (default the home directory)")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "print the plan without writing")
 	cmd.Flags().BoolVar(&opts.jsonOutput, "json", false, "print the plan as JSON")
-	cmd.Flags().StringVar(&opts.configPath, "config", "", "configuration file to read instead of the default")
-	cmd.Flags().StringArrayVar(&opts.values, "values", nil, "merge `PATH` after the values directory; repeatable")
+	registerConfigFlag(cmd, &opts.configPath)
+	registerValuesFlag(cmd, &opts.values)
 	return cmd
 }
 
@@ -264,17 +263,7 @@ func runRender(cmd *cobra.Command, opts renderOptions, color colorMode) error {
 // and plans a render into the resolved target. It returns the plan and the
 // home directory the target was resolved against.
 func loadPlan(cmd *cobra.Command, opts planOptions) (render.Plan, string, error) {
-	env := configloader.OSEnv()
-	cfg, report, err := config.Load(config.LoadOptions{
-		Env:     env,
-		Flags:   cmd.Flags(),
-		Path:    opts.configPath,
-		PathSet: cmd.Flags().Changed("config"),
-	})
-	if err != nil {
-		return render.Plan{}, "", err
-	}
-	effective, err := config.Resolve(cfg, env)
+	loaded, err := loadConfiguration(cmd, opts.configPath)
 	if err != nil {
 		return render.Plan{}, "", err
 	}
@@ -294,10 +283,10 @@ func loadPlan(cmd *cobra.Command, opts planOptions) (render.Plan, string, error)
 	plan, err := render.Build(render.Request{
 		Home:           home,
 		Hostname:       os.Hostname,
-		Layers:         config.LayerOrder(effective.Layers),
+		Layers:         config.LayerOrder(loaded.effective.Layers),
 		OS:             runtime.GOOS,
-		ProtectedPaths: append(report.LoadedFiles, values.Files...),
-		Sources:        effective.Sources,
+		ProtectedPaths: append(loaded.report.LoadedFiles, values.Files...),
+		Sources:        loaded.effective.Sources,
 		Target:         absTarget,
 		Values:         values.Document,
 	})
@@ -305,16 +294,6 @@ func loadPlan(cmd *cobra.Command, opts planOptions) (render.Plan, string, error)
 		return render.Plan{}, "", err
 	}
 	return plan, home, nil
-}
-
-// loadValues merges the discovered values directory with the --values
-// operands.
-func loadValues(paths []string) (config.Values, error) {
-	dir, err := config.DefaultValuesDir()
-	if err != nil {
-		return config.Values{}, err
-	}
-	return config.LoadValues(config.ValuesOptions{Dir: dir, Paths: paths})
 }
 
 // resolveTarget turns the --target value into an absolute path: empty means

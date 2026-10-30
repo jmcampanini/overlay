@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/jmcampanini/go-config-loader/configloader"
 	"github.com/jmcampanini/overlay/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -40,31 +39,20 @@ func filePatternArgs(cmd *cobra.Command, args []string) error {
 }
 
 func selectFiles(cmd *cobra.Command, configPath string, patterns []string) ([]string, error) {
-	env := configloader.OSEnv()
-	cfg, _, err := config.Load(config.LoadOptions{
-		Env: env, Flags: cmd.Flags(), Path: configPath,
-		PathSet: cmd.Flags().Changed("config"),
-	})
+	loaded, err := loadConfiguration(cmd, configPath)
 	if err != nil {
 		return nil, err
 	}
-	effective, err := config.Resolve(cfg, env)
+	sources := loaded.effective.Sources
+	manifests, err := config.LoadManifests(sources)
 	if err != nil {
 		return nil, err
-	}
-	manifests := make([]config.Manifest, len(effective.Sources))
-	for i, source := range effective.Sources {
-		manifest, err := config.LoadManifest(source.Path)
-		if err != nil {
-			return nil, fmt.Errorf("source %s: %w", source.Name, err)
-		}
-		manifests[i] = manifest
 	}
 
 	var paths []string
-	for _, layer := range config.LayerOrder(effective.Layers) {
+	for _, layer := range config.LayerOrder(loaded.effective.Layers) {
 		matchedSources := make(map[string]string)
-		for i, source := range effective.Sources {
+		for i, source := range sources {
 			if _, declared := manifests[i].Layers[layer]; !declared {
 				continue
 			}

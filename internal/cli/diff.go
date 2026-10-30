@@ -47,7 +47,7 @@ other than a regular file, a symbolic link, or nothing is an error.
 ` + contractHelp + `
 
 ` + configFileHelp + `
---config PATH reads PATH instead and fails when PATH is empty or missing.
+` + configFlagHelp + `
 
 ` + layerSelectionHelp,
 		Example: `  overlay diff
@@ -63,8 +63,8 @@ other than a regular file, a symbolic link, or nothing is an error.
 		panic(err)
 	}
 	cmd.Flags().StringVar(&opts.target, "target", "", "directory to compare with (default the home directory)")
-	cmd.Flags().StringVar(&opts.configPath, "config", "", "configuration file to read instead of the default")
-	cmd.Flags().StringArrayVar(&opts.values, "values", nil, "merge `PATH` after the values directory; repeatable")
+	registerConfigFlag(cmd, &opts.configPath)
+	registerValuesFlag(cmd, &opts.values)
 	return cmd
 }
 

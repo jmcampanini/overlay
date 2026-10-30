@@ -22,8 +22,6 @@ const (
 	FileName = "config.toml"
 	// ValuesDirName is the values directory's base name.
 	ValuesDirName = "values"
-	// DefaultColor selects automatic color detection for terminal output.
-	DefaultColor = "auto"
 
 	// BaseLayer is the automatic layer applied before every configured layer.
 	BaseLayer = "base"

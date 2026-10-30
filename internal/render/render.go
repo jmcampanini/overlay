@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -120,7 +119,7 @@ type Fragment struct {
 type Entry struct {
 	Origin
 	// Content holds the rendered bytes of a template, merge, or concat
-	// entry; a file entry leaves it nil and streams from SourceFile instead.
+	// entry; a file entry leaves it nil and reads SourceFile instead.
 	Content []byte
 	// Fragments lists every fragment a merge or concat entry composes, in
 	// layer order; Origin is the last of them. Other kinds leave it nil.
@@ -160,79 +159,31 @@ func (e *CollisionError) Error() string {
 
 // Build reads every source manifest, walks the packages the requested layers
 // list, renders every winning template, merge, and concat, and returns the
-// resulting plan without touching the target. A plain file or template
-// applies in its package's layer; a fragment named NAME.olay.LAYER.EXT or
-// NAME.olay.LAYER applies in LAYER however many layers list its package, and
-// is skipped when LAYER is not in req.Layers or the source manifest. A
+// resulting plan without touching the target. A plain file or template applies
+// in its package's layer; a fragment named NAME.olay.LAYER.EXT or
+// NAME.olay.LAYER applies in LAYER whatever layer its package is listed under,
+// and is skipped when LAYER is not in req.Layers or the source manifest. A
 // fragment whose name ends in .tmpl executes as a template before it is
-// composed. The fragments of one target merge as a document when the
-// target's last extension is json, toml, yaml, or yml and concatenate as
-// text otherwise. Targets must stay within req.Target after resolving parent
-// symlinks and must not replace ProtectedPaths. Later layers replace earlier
-// ones at the same target, except that consecutive fragments compose into
-// one entry; a fragment above a plain file fails, two contributors within
-// one layer fail with a *CollisionError, a merge target NAME.yaml beside any
-// NAME.yml or the reverse fails, and a template or fragment that fails to
-// render fails the whole build.
+// composed. The fragments of one target merge as a document when the target's
+// last extension is json, toml, yaml, or yml and concatenate as text otherwise.
+// Targets must stay within req.Target after resolving parent symlinks and must
+// not replace ProtectedPaths. Later layers replace earlier ones at the same
+// target, except that consecutive fragments compose into one entry; a fragment
+// above a plain file fails, two contributors within one layer fail with a
+// *CollisionError, a merge target NAME.yaml beside any NAME.yml or the reverse
+// fails, and a template or fragment that fails to render fails the whole build.
 func Build(req Request) (Plan, error) {
 	if err := requireDirectory(req.Target); err != nil {
 		return Plan{}, fmt.Errorf("target directory: %w", err)
 	}
 
-	manifests := make([]config.Manifest, len(req.Sources))
-	for i, source := range req.Sources {
-		manifest, err := config.LoadManifest(source.Path)
-		if err != nil {
-			return Plan{}, fmt.Errorf("source %s: %w", source.Name, err)
-		}
-		manifests[i] = manifest
+	manifests, err := config.LoadManifests(req.Sources)
+	if err != nil {
+		return Plan{}, err
 	}
-
-	contributions := make(map[string][]contribution)
-	seenFragments := make(map[string]bool)
-	for rank, layer := range req.Layers {
-		for i, source := range req.Sources {
-			for _, pkg := range manifests[i].Packages(layer) {
-				err := walkPackage(source, pkg, func(filePath, sourceFile string, mode fs.FileMode) error {
-					class, err := classify(pkg, filePath)
-					if err != nil {
-						return fmt.Errorf("source %s: %w", source.Name, err)
-					}
-
-					appliesIn, appliesAt := layer, rank
-					if class.kind.composesFragments() {
-						if _, declared := manifests[i].Layers[class.layer]; !declared {
-							return nil
-						}
-						fragmentID := source.Name + ":" + filePath
-						if seenFragments[fragmentID] {
-							return nil
-						}
-						seenFragments[fragmentID] = true
-						appliesIn, appliesAt = class.layer, slices.Index(req.Layers, class.layer)
-					}
-					if appliesAt < 0 {
-						return nil
-					}
-					if !filepath.IsLocal(class.target) {
-						return fmt.Errorf("source %s: %s maps outside the target directory", source.Name, filePath)
-					}
-
-					target := filepath.Join(req.Target, class.target)
-					contributions[target] = append(contributions[target], contribution{rank: appliesAt, template: class.template, Entry: Entry{
-						Kind:       class.kind,
-						Mode:       mode,
-						Origin:     Origin{Layer: appliesIn, Path: filePath, Source: source.Name},
-						SourceFile: sourceFile,
-						Target:     target,
-					}})
-					return nil
-				})
-				if err != nil {
-					return Plan{}, err
-				}
-			}
-		}
+	contributions, err := collectContributions(req, manifests)
+	if err != nil {
+		return Plan{}, err
 	}
 
 	plan := Plan{Entries: make([]Entry, 0, len(contributions)), Layers: req.Layers, Target: req.Target}
@@ -269,6 +220,56 @@ func Build(req Request) (Plan, error) {
 		plan.Entries[i].Status = status
 	}
 	return plan, nil
+}
+
+// collectContributions walks every package the layers list, in layer order
+// and then source order, and groups what each file contributes by its
+// target path. A plain file or template contributes in the layer its
+// package is listed under; a fragment contributes in the layer its name
+// carries, or nothing when the source manifest does not declare that layer
+// or req.Layers does not hold it.
+func collectContributions(req Request, manifests []config.Manifest) (map[string][]contribution, error) {
+	contributions := make(map[string][]contribution)
+	for rank, layer := range req.Layers {
+		for i, source := range req.Sources {
+			for _, pkg := range manifests[i].Packages(layer) {
+				visit := func(filePath, sourceFile string, mode fs.FileMode) error {
+					class, err := classify(pkg, filePath)
+					if err != nil {
+						return fmt.Errorf("source %s: %w", source.Name, err)
+					}
+
+					appliesIn, appliesAt := layer, rank
+					if class.kind.composesFragments() {
+						if _, declared := manifests[i].Layers[class.layer]; !declared {
+							return nil
+						}
+						appliesIn, appliesAt = class.layer, slices.Index(req.Layers, class.layer)
+					}
+					if appliesAt < 0 {
+						return nil
+					}
+					if !filepath.IsLocal(class.target) {
+						return fmt.Errorf("source %s: %s maps outside the target directory", source.Name, filePath)
+					}
+
+					target := filepath.Join(req.Target, class.target)
+					contributions[target] = append(contributions[target], contribution{rank: appliesAt, template: class.template, Entry: Entry{
+						Kind:       class.kind,
+						Mode:       mode,
+						Origin:     Origin{Layer: appliesIn, Path: filePath, Source: source.Name},
+						SourceFile: sourceFile,
+						Target:     target,
+					}})
+					return nil
+				}
+				if err := walkPackage(source, pkg, visit); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	return contributions, nil
 }
 
 // rejectMixedYAMLSpellings fails when a merge target NAME.yaml has a sibling
@@ -348,7 +349,7 @@ func validateTargets(req Request, entries []Entry) error {
 			return fmt.Errorf("target %q resolves outside the target directory", entry.Target)
 		}
 		if path, ok := protected[target]; ok {
-			return fmt.Errorf("target %q would replace configuration file %q", entry.Target, path)
+			return fmt.Errorf("target %q would replace %q, a file overlay loaded for this render", entry.Target, path)
 		}
 		info, err := os.Lstat(target)
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -357,7 +358,7 @@ func validateTargets(req Request, entries []Entry) error {
 		if info != nil {
 			for path, protectedInfo := range protectedFiles {
 				if os.SameFile(info, protectedInfo) {
-					return fmt.Errorf("target %q would replace configuration file %q", entry.Target, protected[path])
+					return fmt.Errorf("target %q would replace %q, a file overlay loaded for this render", entry.Target, protected[path])
 				}
 			}
 		}
@@ -622,7 +623,7 @@ func usesTemplates(entry Entry) bool {
 }
 
 // renderContent returns the bytes a template, merge, or concat entry writes,
-// and nil for a file entry, which streams from its SourceFile instead.
+// and nil for a file entry, whose bytes come from its SourceFile.
 func renderContent(entry Entry, ctx tmpl.Context) ([]byte, error) {
 	switch entry.Kind {
 	case KindTemplate:
@@ -730,12 +731,9 @@ func statusOf(entry Entry) (Status, error) {
 		return StatusChanged, nil
 	}
 
-	want := entry.Content
-	if entry.Kind == KindFile {
-		want, err = os.ReadFile(entry.SourceFile)
-		if err != nil {
-			return "", fmt.Errorf("read %s: %w", entry.SourceFile, err)
-		}
+	want, err := entry.bytes()
+	if err != nil {
+		return "", err
 	}
 	have, err := os.ReadFile(entry.Target)
 	if err != nil {
@@ -747,26 +745,34 @@ func statusOf(entry Entry) (Status, error) {
 	return StatusChanged, nil
 }
 
+// bytes returns the bytes an entry writes: the rendered Content of a
+// template, merge, or concat entry, or the source file of a file entry.
+func (e Entry) bytes() ([]byte, error) {
+	if e.Kind != KindFile {
+		return e.Content, nil
+	}
+	content, err := os.ReadFile(e.SourceFile)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", e.SourceFile, err)
+	}
+	return content, nil
+}
+
 func writeEntry(entry Entry) error {
+	content, err := entry.bytes()
+	if err != nil {
+		return err
+	}
 	dir := filepath.Dir(entry.Target)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
-	}
-	var source io.Reader = bytes.NewReader(entry.Content)
-	if entry.Kind == KindFile {
-		file, err := os.Open(entry.SourceFile)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = file.Close() }()
-		source = file
 	}
 
 	temp, err := os.CreateTemp(dir, "."+filepath.Base(entry.Target)+".overlay-*")
 	if err != nil {
 		return err
 	}
-	if err := fillTemp(temp, source, entry.Mode); err != nil {
+	if err := fillTemp(temp, content, entry.Mode); err != nil {
 		_ = os.Remove(temp.Name())
 		return err
 	}
@@ -777,8 +783,8 @@ func writeEntry(entry Entry) error {
 	return nil
 }
 
-func fillTemp(temp *os.File, source io.Reader, mode fs.FileMode) error {
-	if _, err := io.Copy(temp, source); err != nil {
+func fillTemp(temp *os.File, content []byte, mode fs.FileMode) error {
+	if _, err := temp.Write(content); err != nil {
 		_ = temp.Close()
 		return err
 	}

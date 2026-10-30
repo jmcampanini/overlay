@@ -3,9 +3,10 @@ package config
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -32,8 +33,8 @@ func (m Manifest) Packages(layer string) []string {
 
 // LoadManifest reads and validates the overlay.toml at the root of sourceDir.
 // Every layer name must follow the layer grammar (base and local are allowed),
-// every listed package must be a directory directly under sourceDir, and
-// unknown keys are errors.
+// every listed package must be a directory directly under sourceDir listed
+// once in the whole manifest, and unknown keys are errors.
 func LoadManifest(sourceDir string) (Manifest, error) {
 	path := filepath.Join(sourceDir, ManifestFileName)
 	var manifest Manifest
@@ -49,12 +50,8 @@ func LoadManifest(sourceDir string) (Manifest, error) {
 		return Manifest{}, fmt.Errorf("manifest %q: unknown keys: %s", path, strings.Join(keys, ", "))
 	}
 
-	layers := make([]string, 0, len(manifest.Layers))
-	for name := range manifest.Layers {
-		layers = append(layers, name)
-	}
-	sort.Strings(layers)
-	for _, name := range layers {
+	listedUnder := make(map[string]string)
+	for _, name := range slices.Sorted(maps.Keys(manifest.Layers)) {
 		if err := ValidateAnyLayerName(name); err != nil {
 			return Manifest{}, fmt.Errorf("manifest %q: %w", path, err)
 		}
@@ -62,9 +59,34 @@ func LoadManifest(sourceDir string) (Manifest, error) {
 			if err := validatePackage(sourceDir, pkg); err != nil {
 				return Manifest{}, fmt.Errorf("manifest %q: layer %q: %w", path, name, err)
 			}
+			if earlier, listed := listedUnder[pkg]; listed {
+				return Manifest{}, fmt.Errorf("manifest %q: %w", path, listedTwiceError(pkg, earlier, name))
+			}
+			listedUnder[pkg] = name
 		}
 	}
 	return manifest, nil
+}
+
+// LoadManifests loads the manifest of every source in order, naming the
+// source in any failure.
+func LoadManifests(sources []ResolvedSource) ([]Manifest, error) {
+	manifests := make([]Manifest, len(sources))
+	for i, source := range sources {
+		manifest, err := LoadManifest(source.Path)
+		if err != nil {
+			return nil, fmt.Errorf("source %s: %w", source.Name, err)
+		}
+		manifests[i] = manifest
+	}
+	return manifests, nil
+}
+
+func listedTwiceError(pkg, earlier, later string) error {
+	if earlier == later {
+		return fmt.Errorf("layer %q lists package %q twice; list each package once", later, pkg)
+	}
+	return fmt.Errorf("package %q is listed under layers %q and %q; list each package under one layer", pkg, earlier, later)
 }
 
 func validatePackage(sourceDir, pkg string) error {

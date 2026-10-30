@@ -956,7 +956,7 @@ func TestBuildFragmentKindFollowsTheTargetExtension(t *testing.T) {
 }
 
 func TestBuildMergesYMLFragmentsIntoAYMLTarget(t *testing.T) {
-	src := newSource(t, "src", "[layers.base]\npackages = [\"tool\"]\n[layers.personal]\npackages = [\"tool\"]\n")
+	src := newSource(t, "src", "[layers.base]\npackages = [\"tool\"]\n[layers.personal]\n")
 	src.file("tool/dot-tool/config.olay.base.yml", "version: 1.10\nhosts:\n  - alpha\n", 0o644)
 	src.file("tool/dot-tool/config.olay.personal.yml", "hosts:\n  - beta\n", 0o644)
 	src.file("tool/dot-tool/other.yaml", "plain: file\n", 0o644)
@@ -994,24 +994,5 @@ func TestBuildFragmentsInOneLayerCollide(t *testing.T) {
 	}
 	if collision.First.Source != "a" || collision.Second.Source != "b" || collision.First.Layer != "base" || collision.Second.Layer != "base" {
 		t.Errorf("collision = %+v, want both base fragments named", collision)
-	}
-}
-
-func TestBuildPackageListedUnderTwoLayersContributesEachFragmentOnce(t *testing.T) {
-	src := newSource(t, "src", "[layers.base]\npackages = [\"claude\"]\n[layers.personal]\npackages = [\"claude\"]\n")
-	src.file("claude/settings.olay.base.json", `{"a": 1}`, 0o644)
-	src.file("claude/settings.olay.personal.json", `{"b": 2}`, 0o644)
-	target := t.TempDir()
-
-	plan, err := Build(Request{Layers: []string{"base", "personal", "local"}, Sources: []config.ResolvedSource{src.resolved()}, Target: target})
-	if err != nil {
-		t.Fatalf("Build() error = %v", err)
-	}
-
-	if len(plan.Entries) != 1 || len(plan.Entries[0].Fragments) != 2 {
-		t.Fatalf("Build() entries = %+v, want one merge of two fragments", plan.Entries)
-	}
-	if got := string(plan.Entries[0].Content); got != "{\n  \"a\": 1,\n  \"b\": 2\n}\n" {
-		t.Errorf("Content = %q, want both fragments merged once", got)
 	}
 }
