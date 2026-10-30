@@ -70,6 +70,24 @@ func TestExitCodesTopicListsEveryStatus(t *testing.T) {
 	}
 }
 
+func TestTemplatesTopicDocumentsEveryFunctionAndTheDirective(t *testing.T) {
+	help, errOut, err := executeForTest(t, "help", "templates")
+	if err != nil {
+		t.Fatalf("help templates error = %v, stderr = %s", err, errOut)
+	}
+
+	for _, want := range []string{
+		"\n  .Layers ", "\n  .Sources ", "\n  .Home ", "\n  .OS ", "\n  .Hostname ", "\n  .Values ",
+		"\n  env NAME ", "\n  envOr NAME DEF ", "\n  fileExists PATH ", "\n  files PATTERN... ", "\n  hasLayer NAME ",
+		"\n  join SEP LIST ", "\n  quote S ", "\n  readFile PATH ", "\n  shellQuote S ",
+		"overlay:delims LEFT RIGHT",
+	} {
+		if !strings.Contains(help, want) {
+			t.Errorf("templates help missing %q:\n%s", want, help)
+		}
+	}
+}
+
 // TestEveryApplicationCommandMeetsTheHelpBaseline renders each command's
 // help as --help does, so the Usage line and flag usage count toward the
 // width limit.

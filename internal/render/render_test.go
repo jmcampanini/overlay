@@ -475,6 +475,94 @@ func TestBuildRendersTheShellenvLoader(t *testing.T) {
 	}
 }
 
+func TestBuildFilesFunctionSelectsLikeTheFilesCommand(t *testing.T) {
+	loader := "{{ range files \"envs/env.{layer}\" -}}\nsource {{ shellQuote . }}\n{{ end }}"
+	base := newSource(t, "dotfiles-base", "[layers.base]\npackages = [\"shellenv\"]\n")
+	base.file("shellenv/dot-shellenv.tmpl", loader, 0o644)
+	base.file("envs/env.base", "export BASE=1\n", 0o644)
+	base.file("envs/env.personal", "undeclared here\n", 0o644)
+	personal := newSource(t, "dotfiles-personal", "[layers.personal]\npackages = []\n[layers.local]\n")
+	personal.file("envs/env.base", "undeclared here\n", 0o644)
+	personal.file("envs/env.personal", "export PERSONAL=1\n", 0o644)
+	personal.file("envs/env.local", "export LOCAL=1\n", 0o644)
+	personal.file("envs/env.work", "layer not selected\n", 0o644)
+
+	plan, err := Build(templateRequest(t, base, personal))
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	want := "source '" + base.path + "/envs/env.base'\n" +
+		"source '" + personal.path + "/envs/env.personal'\n" +
+		"source '" + personal.path + "/envs/env.local'\n"
+	if len(plan.Entries) != 1 || string(plan.Entries[0].Content) != want {
+		t.Errorf("Build() entries = %+v, want one loader with content %q", plan.Entries, want)
+	}
+}
+
+func TestBuildFilesFunctionFailuresNameTheTemplate(t *testing.T) {
+	tests := []struct {
+		name     string
+		template string
+		want     string
+	}{
+		{name: "two sources in one layer", template: "{{ files \"envs/env.{layer}\" }}", want: "envs/env.{layer}: layer base matches in two sources: dotfiles-base, dotfiles-personal"},
+		{name: "malformed pattern", template: "{{ files \"envs/env.base\" }}", want: `pattern "envs/env.base" must contain {layer}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base := newSource(t, "dotfiles-base", "[layers.base]\npackages = [\"shellenv\"]\n")
+			base.file("shellenv/dot-shellenv.tmpl", tt.template, 0o644)
+			base.file("envs/env.base", "export BASE=1\n", 0o644)
+			personal := newSource(t, "dotfiles-personal", "[layers.base]\n")
+			personal.file("envs/env.base", "export BASE=2\n", 0o644)
+
+			_, err := Build(templateRequest(t, base, personal))
+
+			if err == nil || !strings.Contains(err.Error(), tt.want) || !strings.Contains(err.Error(), "dotfiles-base:shellenv/dot-shellenv.tmpl") {
+				t.Errorf("Build() error = %v, want one naming the template and containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildHonorsTheDelimsDirectiveInTemplatesAndFragments(t *testing.T) {
+	base := newSource(t, "dotfiles-base", "[layers.base]\npackages = [\"cmdk\", \"rc\"]\n")
+	base.file("rc/dot-rc.tmpl", "# overlay:delims << >>\nos=<< .OS >> {{ .Nope }}\n", 0o644)
+	base.file("cmdk/config.olay.base.toml.tmpl", "# overlay:delims << >>\ncmd = \"idea {{sq .path}}\"\nos = \"<< .OS >>\"\n", 0o644)
+	personal := newSource(t, "dotfiles-personal", "[layers.personal]\npackages = [\"cmdk\"]\n")
+	personal.file("cmdk/config.olay.personal.toml", "name = \"p\"\n", 0o644)
+	req := templateRequest(t, base, personal)
+
+	plan, err := Build(req)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	got := map[string]string{}
+	for _, entry := range plan.Entries {
+		got[strings.TrimPrefix(entry.Target, req.Target+"/")] = string(entry.Content)
+	}
+	want := map[string]string{
+		".rc":         "os=linux {{ .Nope }}\n",
+		"config.toml": "cmd = \"idea {{sq .path}}\"\nname = \"p\"\nos = \"linux\"\n",
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("rendered content mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestBuildMalformedDelimsDirectiveNamesTheFile(t *testing.T) {
+	base := newSource(t, "dotfiles-base", "[layers.base]\npackages = [\"cmdk\"]\n")
+	base.file("cmdk/config.olay.base.toml.tmpl", "# overlay:delims <<\nos = \"<< .OS >>\"\n", 0o644)
+
+	_, err := Build(templateRequest(t, base))
+
+	if err == nil || !strings.Contains(err.Error(), "dotfiles-base:cmdk/config.olay.base.toml.tmpl") || !strings.Contains(err.Error(), "overlay:delims needs two delimiters") {
+		t.Errorf("Build() error = %v, want one naming the fragment and the directive", err)
+	}
+}
+
 func TestBuildTemplateContextAndTargetMapping(t *testing.T) {
 	base := newSource(t, "dotfiles-base", "[layers.base]\npackages = [\"facts\"]\n")
 	base.file("facts/dot-config/dot-facts.tmpl", "{{ .Home }} {{ .Hostname }} {{ .OS }} {{ len .Sources }} {{ (index .Sources 0).Name }} {{ .Values.theme.bg }}\n", 0o644)

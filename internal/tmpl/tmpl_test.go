@@ -1,15 +1,25 @@
 package tmpl
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func testContext(t *testing.T) Context {
 	t.Helper()
 	return Context{
+		Files: func(patterns []string) ([]string, error) {
+			var paths []string
+			for _, pattern := range patterns {
+				paths = append(paths, "/src/"+strings.ReplaceAll(pattern, "{layer}", "base"))
+			}
+			return paths, nil
+		},
 		Home:     "/home/me",
 		Hostname: "wintermute.local",
 		Layers:   []string{"base", "personal", "local"},
@@ -91,6 +101,15 @@ func TestRenderFunctions(t *testing.T) {
 		{name: "shellQuote single quote", text: `{{ shellQuote "it's" }}`, want: `'it'\''s'`},
 		{name: "shellQuote backslash", text: `{{ shellQuote "a\\b" }}`, want: `'a'\\'b'`},
 		{name: "shellQuote space and dollar", text: `{{ shellQuote "a b$c" }}`, want: `'a b$c'`},
+		{name: "quote plain", text: `{{ quote "#282828" }}`, want: `"#282828"`},
+		{name: "quote empty", text: `{{ quote "" }}`, want: `""`},
+		{name: "quote quote and backslash", text: `{{ quote "say \"hi\" \\ now" }}`, want: `"say \"hi\" \\ now"`},
+		{name: "quote named escapes", text: `{{ quote "a\b\f\n\r\tb" }}`, want: `"a\b\f\n\r\tb"`},
+		{name: "quote other control characters", text: `{{ quote "\x01\x1b\x7f" }}`, want: `"\u0001\u001B\u007F"`},
+		{name: "quote keeps non-ascii", text: `{{ quote "héllo ❯" }}`, want: `"héllo ❯"`},
+		{name: "quote from pipeline", text: `{{ "x" | quote }}`, want: `"x"`},
+		{name: "files one pattern", text: `{{ range files "envs/env.{layer}" }}{{ . }};{{ end }}`, want: "/src/envs/env.base;"},
+		{name: "files several patterns", text: `{{ join " " (files "a.{layer}" "b.{layer}") }}`, want: "/src/a.base /src/b.base"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -127,6 +146,11 @@ func TestRenderFailures(t *testing.T) {
 		{name: "readFile missing", text: `{{ readFile "` + filepath.Join(unreadable, "..", "missing") + `" }}`, want: "no such file"},
 		{name: "readFile directory", text: `{{ readFile "` + filepath.Dir(unreadable) + `" }}`, want: "is a directory"},
 		{name: "fileExists under an unreadable directory", text: `{{ fileExists "` + filepath.Join(unreadable, "x") + `" }}`, want: "permission denied"},
+		{name: "quote number", text: `{{ quote 14 }}`, want: "expected string; found 14"},
+		{name: "quote invalid utf-8", text: `{{ quote "\xff" }}`, want: "not valid UTF-8"},
+		{name: "files without a pattern", text: `{{ files }}`, want: "files: at least one pattern is required"},
+		{name: "delims with one word", text: "# overlay:delims <<\n", want: `overlay:delims needs two delimiters on the first line, got "# overlay:delims <<"`},
+		{name: "delims with equal words", text: "# overlay:delims ## ##\n", want: `overlay:delims delimiters must differ, got "##" twice`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -152,10 +176,66 @@ func TestRenderFailures(t *testing.T) {
 	}
 }
 
+func TestRenderDelimsDirective(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want string
+	}{
+		{name: "replaces the delimiters and drops the line", text: "# overlay:delims << >>\nos=<< .OS >> literal {{ .Nope }}\n", want: "os=linux literal {{ .Nope }}\n"},
+		{name: "ignores the comment syntax around it", text: "/* overlay:delims [[ ]] */\n[[ .OS ]]\n", want: "linux\n"},
+		{name: "keeps a CRLF body", text: "# overlay:delims << >>\r\n<< .OS >>\r\n", want: "linux\r\n"},
+		{name: "directive alone", text: "# overlay:delims << >>", want: ""},
+		{name: "second line is not a directive", text: "{{ .OS }}\n# overlay:delims << >>\n", want: "linux\n# overlay:delims << >>\n"},
+		{name: "shebang on the second line becomes the first", text: "# overlay:delims << >>\n#!/bin/sh\necho << .OS >>\n", want: "#!/bin/sh\necho linux\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Render(tt.name, []byte(tt.text), testContext(t))
+
+			if err != nil {
+				t.Fatalf("Render(%q) error = %v", tt.text, err)
+			}
+			if string(got) != tt.want {
+				t.Errorf("Render(%q) = %q, want %q", tt.text, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFilesFailsWithoutASelector(t *testing.T) {
+	ctx := testContext(t)
+	ctx.Files = nil
+
+	_, err := Render("unselectable", []byte(`{{ files "a.{layer}" }}`), ctx)
+
+	if err == nil || !strings.Contains(err.Error(), "files: no source selection configured") {
+		t.Errorf("Render() error = %v, want one naming the missing selector", err)
+	}
+}
+
+func TestFilesPassesPatternsThroughAndNamesSelectorErrors(t *testing.T) {
+	var got []string
+	ctx := testContext(t)
+	ctx.Files = func(patterns []string) ([]string, error) {
+		got = patterns
+		return nil, errors.New("a.{layer}: layer base matches in two sources: x, y")
+	}
+
+	_, err := Render("colliding", []byte(`{{ files "a.{layer}" "b.{layer}" }}`), ctx)
+
+	if diff := cmp.Diff([]string{"a.{layer}", "b.{layer}"}, got); diff != "" {
+		t.Errorf("selector patterns mismatch (-want +got):\n%s", diff)
+	}
+	if err == nil || !strings.Contains(err.Error(), "files: a.{layer}: layer base matches in two sources: x, y") {
+		t.Errorf("Render() error = %v, want the selector's error under files", err)
+	}
+}
+
 func TestMissingMapKeyIsAnError(t *testing.T) {
 	// Context has no map fields today; this pins the option so a future map
 	// field fails on a typo instead of rendering "<no value>".
-	parsed, err := newTemplate("mapped", nil).Parse(`{{ .shel }}`)
+	parsed, err := newTemplate("mapped", Context{}).Parse(`{{ .shel }}`)
 	if err != nil {
 		t.Fatal(err)
 	}

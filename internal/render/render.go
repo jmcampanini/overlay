@@ -202,7 +202,7 @@ func Build(req Request) (Plan, error) {
 		return Plan{}, err
 	}
 
-	ctx, err := templateContext(req, plan.Entries)
+	ctx, err := templateContext(req, manifests, plan.Entries)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -591,10 +591,12 @@ func targetPath(pkg, sourcePath string) string {
 	return filepath.FromSlash(strings.Join(segments, "/"))
 }
 
-// templateContext builds the data every template among entries sees. It
-// returns an empty context without looking up the hostname when no entry is
-// a template and no merge or concat entry holds a templated fragment.
-func templateContext(req Request, entries []Entry) (tmpl.Context, error) {
+// templateContext builds the data every template among entries sees,
+// including the selector behind the files function, which matches against
+// req.Sources with manifests the way the files command does. It returns an
+// empty context without looking up the hostname when no entry is a template
+// and no merge or concat entry holds a templated fragment.
+func templateContext(req Request, manifests []config.Manifest, entries []Entry) (tmpl.Context, error) {
 	if !slices.ContainsFunc(entries, usesTemplates) {
 		return tmpl.Context{}, nil
 	}
@@ -610,7 +612,10 @@ func templateContext(req Request, entries []Entry) (tmpl.Context, error) {
 	for i, source := range req.Sources {
 		sources[i] = tmpl.Source{Name: source.Name, Path: source.Path}
 	}
-	return tmpl.Context{Home: req.Home, Hostname: hostname, Layers: req.Layers, OS: req.OS, Sources: sources, Values: req.Values}, nil
+	selectFiles := func(patterns []string) ([]string, error) {
+		return config.SelectFiles(req.Sources, manifests, req.Layers, patterns)
+	}
+	return tmpl.Context{Files: selectFiles, Home: req.Home, Hostname: hostname, Layers: req.Layers, OS: req.OS, Sources: sources, Values: req.Values}, nil
 }
 
 // usesTemplates reports whether entry is a template or a merge or concat
