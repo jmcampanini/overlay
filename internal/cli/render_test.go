@@ -203,6 +203,25 @@ func TestRenderTemplatesShowTheirKindAndRenderedContent(t *testing.T) {
 	}
 }
 
+func TestRenderMergesValuesFromTheDirectoryThenTheFlag(t *testing.T) {
+	f := newRenderFixture(t)
+	writeFixtureFile(t, filepath.Join(valuesDir(), "10-theme.toml"), "[theme]\nname = \"gruvbox\"\nbg = \"#282828\"\n", 0o644)
+	writeFixtureFile(t, filepath.Join(valuesDir(), "50-local.toml"), "[theme]\nbg = \"#000000\"\n", 0o644)
+	writeFixtureFile(t, filepath.Join(valuesDir(), "notes.txt"), "[theme]\nname = \"ignored\"\n", 0o644)
+	extra := filepath.Join(t.TempDir(), "extra.toml")
+	writeFixtureFile(t, extra, "[theme]\nname = \"nord\"\n", 0o644)
+	writeFixtureFile(t, filepath.Join(baseSourcePath(t, f), "bash", "dot-theme.tmpl"), "{{ .Values.theme.name }} {{ .Values.theme.bg }}\n", 0o644)
+
+	_, errOut, err := executeForTest(t, "render", "--config", f.configPath, "--values", extra)
+	if err != nil {
+		t.Fatalf("render error = %v, stderr = %s", err, errOut)
+	}
+
+	if raw, err := os.ReadFile(filepath.Join(f.home, ".theme")); err != nil || string(raw) != "nord #000000\n" {
+		t.Errorf(".theme = %q (%v), want the flag's name over the directory's and the later file's bg", raw, err)
+	}
+}
+
 func TestRenderTargetFlag(t *testing.T) {
 	f := newRenderFixture(t)
 	target := filepath.Join(f.home, "staging")
@@ -308,6 +327,24 @@ func TestRenderFailures(t *testing.T) {
 		{name: "automatic layer selected", setup: func(_ *testing.T, _ renderFixture) []string {
 			return []string{"--layer", "local"}
 		}, want: "automatic"},
+		{name: "values file that fails to parse", setup: func(t *testing.T, _ renderFixture) []string {
+			t.Helper()
+			writeFixtureFile(t, filepath.Join(valuesDir(), "bad.toml"), "theme =\n", 0o644)
+			return []string{"--dry-run"}
+		}, want: "bad.toml: parse TOML"},
+		{name: "template in the values directory", setup: func(t *testing.T, _ renderFixture) []string {
+			t.Helper()
+			writeFixtureFile(t, filepath.Join(valuesDir(), "theme.toml.tmpl"), "", 0o644)
+			return []string{"--dry-run"}
+		}, want: "cannot be a template"},
+		{name: "missing --values path", setup: func(t *testing.T, _ renderFixture) []string {
+			return []string{"--dry-run", "--values", filepath.Join(t.TempDir(), "missing.toml")}
+		}, want: "--values: stat"},
+		{name: "template reads a value no file set", setup: func(t *testing.T, f renderFixture) []string {
+			t.Helper()
+			writeFixtureFile(t, filepath.Join(baseSourcePath(t, f), "bash", "dot-theme.tmpl"), "{{ .Values.theme }}\n", 0o644)
+			return []string{"--dry-run"}
+		}, want: "map has no entry for key \"theme\""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -325,6 +362,11 @@ func TestRenderFailures(t *testing.T) {
 			requireNoFile(t, filepath.Join(f.home, ".ssh", "config"))
 		})
 	}
+}
+
+// valuesDir is the values directory the fixture's XDG_CONFIG_HOME selects.
+func valuesDir() string {
+	return filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "overlay", "values")
 }
 
 func baseSourcePath(t *testing.T, f renderFixture) string {

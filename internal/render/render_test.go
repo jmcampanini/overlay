@@ -477,9 +477,10 @@ func TestBuildRendersTheShellenvLoader(t *testing.T) {
 
 func TestBuildTemplateContextAndTargetMapping(t *testing.T) {
 	base := newSource(t, "dotfiles-base", "[layers.base]\npackages = [\"facts\"]\n")
-	base.file("facts/dot-config/dot-facts.tmpl", "{{ .Home }} {{ .Hostname }} {{ .OS }} {{ len .Sources }} {{ (index .Sources 0).Name }}\n", 0o644)
+	base.file("facts/dot-config/dot-facts.tmpl", "{{ .Home }} {{ .Hostname }} {{ .OS }} {{ len .Sources }} {{ (index .Sources 0).Name }} {{ .Values.theme.bg }}\n", 0o644)
 	base.file("facts/plain.tmpl.txt", "not a template {{ .Nope }}\n", 0o644)
 	req := templateRequest(t, base)
+	req.Values = map[string]any{"theme": map[string]any{"bg": "#282828"}}
 
 	plan, err := Build(req)
 	if err != nil {
@@ -494,7 +495,7 @@ func TestBuildTemplateContextAndTargetMapping(t *testing.T) {
 	if !ok {
 		t.Fatalf("Build() targets = %v, want .config/.facts", got)
 	}
-	if string(facts.Content) != "/home/me wintermute linux 1 dotfiles-base\n" {
+	if string(facts.Content) != "/home/me wintermute linux 1 dotfiles-base #282828\n" {
 		t.Errorf(".facts content = %q, want every context field", facts.Content)
 	}
 	plain, ok := got["plain.tmpl.txt"]

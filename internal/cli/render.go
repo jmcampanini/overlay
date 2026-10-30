@@ -14,10 +14,16 @@ import (
 )
 
 type renderOptions struct {
-	configPath string
+	planOptions
 	dryRun     bool
 	jsonOutput bool
+}
+
+// planOptions are the flags every command that plans a render shares.
+type planOptions struct {
+	configPath string
 	target     string
+	values     []string
 }
 
 func renderCommand(options *commandOptions) *cobra.Command {
@@ -67,6 +73,10 @@ than empty output. Every template sees the same data:
   .Home      the home directory, whatever --target is
   .OS        the operating system as Go names it: darwin or linux
   .Hostname  the hostname exactly as the system reports it
+  .Values    the merged values document described below, so a file holding
+             [theme] followed by bg = "#282828" renders {{ .Values.theme.bg
+             }}; a key no file set is an error, and {{ with index .Values
+             "theme" }} ... {{ end }} guards an optional one
 
 Beyond the text/template builtins, templates may call:
 
@@ -91,6 +101,8 @@ A secret can stay in a file outside every source and be read at render
 time, for example {{ readFile (printf "%s/.config/overlay/local/api.key"
 .Home) }}. The plan output never prints rendered content, and the target
 takes the template's permission bits, so keep such a template at 600.
+
+` + valuesHelp + `
 
 A file named NAME.olay.LAYER.EXT is a fragment of NAME.EXT, and a file
 named NAME.olay.LAYER is a fragment of NAME. Every fragment for one target
@@ -225,11 +237,12 @@ other kinds fragments is empty.
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "print the plan without writing")
 	cmd.Flags().BoolVar(&opts.jsonOutput, "json", false, "print the plan as JSON")
 	cmd.Flags().StringVar(&opts.configPath, "config", "", "configuration file to read instead of the default")
+	cmd.Flags().StringArrayVar(&opts.values, "values", nil, "merge `PATH` after the values directory; repeatable")
 	return cmd
 }
 
 func runRender(cmd *cobra.Command, opts renderOptions, color colorMode) error {
-	plan, home, err := loadPlan(cmd, opts.configPath, opts.target)
+	plan, home, err := loadPlan(cmd, opts.planOptions)
 	if err != nil {
 		return err
 	}
@@ -247,15 +260,15 @@ func runRender(cmd *cobra.Command, opts renderOptions, color colorMode) error {
 	return writePlanTable(out, plan, home, colorEnabled(profile))
 }
 
-// loadPlan loads the configuration the command's flags and configPath select
+// loadPlan loads the configuration and values the command's flags select
 // and plans a render into the resolved target. It returns the plan and the
 // home directory the target was resolved against.
-func loadPlan(cmd *cobra.Command, configPath, target string) (render.Plan, string, error) {
+func loadPlan(cmd *cobra.Command, opts planOptions) (render.Plan, string, error) {
 	env := configloader.OSEnv()
 	cfg, report, err := config.Load(config.LoadOptions{
 		Env:     env,
 		Flags:   cmd.Flags(),
-		Path:    configPath,
+		Path:    opts.configPath,
 		PathSet: cmd.Flags().Changed("config"),
 	})
 	if err != nil {
@@ -265,11 +278,15 @@ func loadPlan(cmd *cobra.Command, configPath, target string) (render.Plan, strin
 	if err != nil {
 		return render.Plan{}, "", err
 	}
+	values, err := loadValues(opts.values)
+	if err != nil {
+		return render.Plan{}, "", err
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return render.Plan{}, "", fmt.Errorf("locate home directory: %w", err)
 	}
-	absTarget, err := resolveTarget(target, home)
+	absTarget, err := resolveTarget(opts.target, home)
 	if err != nil {
 		return render.Plan{}, "", err
 	}
@@ -279,14 +296,25 @@ func loadPlan(cmd *cobra.Command, configPath, target string) (render.Plan, strin
 		Hostname:       os.Hostname,
 		Layers:         config.LayerOrder(effective.Layers),
 		OS:             runtime.GOOS,
-		ProtectedPaths: report.LoadedFiles,
+		ProtectedPaths: append(report.LoadedFiles, values.Files...),
 		Sources:        effective.Sources,
 		Target:         absTarget,
+		Values:         values.Document,
 	})
 	if err != nil {
 		return render.Plan{}, "", err
 	}
 	return plan, home, nil
+}
+
+// loadValues merges the discovered values directory with the --values
+// operands.
+func loadValues(paths []string) (config.Values, error) {
+	dir, err := config.DefaultValuesDir()
+	if err != nil {
+		return config.Values{}, err
+	}
+	return config.LoadValues(config.ValuesOptions{Dir: dir, Paths: paths})
 }
 
 // resolveTarget turns the --target value into an absolute path: empty means

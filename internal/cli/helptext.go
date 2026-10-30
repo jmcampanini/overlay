@@ -9,6 +9,26 @@ const configFileHelp = `The configuration file is $XDG_CONFIG_HOME/overlay/confi
 relative. No other location is searched, and a missing discovered file
 counts as empty.`
 
+const valuesHelp = `Values are the per-machine data templates read as .Values. They come
+from $XDG_CONFIG_HOME/overlay/values/, or ~/.config/overlay/values/ when
+XDG_CONFIG_HOME is unset, empty, or relative; --config does not move the
+directory, and an absent one holds no values. Every file in it whose name
+ends in .toml loads in byte order of name, so 10-theme.toml precedes
+50-local.toml; a name starting with a dot, a directory, or any other
+extension is ignored, and a name ending in .tmpl is an error, because
+values are the data templates read. --values PATH, which may repeat, then
+loads PATH after the directory in the order given: a directory by the same
+rule, a file as TOML whatever its name. PATH must exist.
+
+The files merge in that order as TOML fragments with the rules 'overlay
+render --help' gives for merged fragments: tables merge key by key, arrays
+concatenate, any other value takes the later file's, and a table meeting a
+plain value at one key is an error naming both files. A later file
+therefore overrides a key an earlier one set, and nothing deletes a key.
+A file that does not parse fails the command before anything is written.
+Every file loaded is protected from a render the way the configuration
+file is. 'overlay values' prints the merged document.`
+
 const layerSelectionHelp = `Layers come from the highest layer that sets them: --layers LIST
 (comma-separated) and --layer NAME, which may repeat and combine with the
 --layers values first, override OVERLAY_LAYERS, which overrides layers in

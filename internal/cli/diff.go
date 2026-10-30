@@ -8,22 +8,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type diffOptions struct {
-	configPath string
-	target     string
-}
-
 func diffCommand() *cobra.Command {
-	var opts diffOptions
+	var opts planOptions
 
 	cmd := &cobra.Command{
 		Use:   "diff [--target DIR]",
 		Short: "Print a patch from the target directory to the rendered files",
 		Long: `Print on stdout a unified patch that turns the files in the target
 directory into what 'overlay render' would write. The configuration,
-layers, --target rules, and rendering rules are those of render; see
-'overlay render --help'. diff reads the file or symbolic link at each
-target path to compare and writes nothing.
+layers, values, --target and --values rules, and rendering rules are those
+of render; see 'overlay render --help'. diff reads the file or symbolic
+link at each target path to compare and writes nothing.
 
 Each new or changed file is a 'diff --git a/PATH b/PATH' block with PATH
 relative to the target, so from the target directory the output feeds
@@ -69,11 +64,12 @@ other than a regular file, a symbolic link, or nothing is an error.
 	}
 	cmd.Flags().StringVar(&opts.target, "target", "", "directory to compare with (default the home directory)")
 	cmd.Flags().StringVar(&opts.configPath, "config", "", "configuration file to read instead of the default")
+	cmd.Flags().StringArrayVar(&opts.values, "values", nil, "merge `PATH` after the values directory; repeatable")
 	return cmd
 }
 
-func runDiff(cmd *cobra.Command, opts diffOptions) error {
-	plan, home, err := loadPlan(cmd, opts.configPath, opts.target)
+func runDiff(cmd *cobra.Command, opts planOptions) error {
+	plan, home, err := loadPlan(cmd, opts)
 	if err != nil {
 		return err
 	}
