@@ -52,7 +52,6 @@ install -m 755 build/overlay ~/.local/bin/overlay
 | Command | Result |
 |---|---|
 | `overlay bootstrap --source-url URL --source-path PATH --layers LIST` | Clone each source that is not checked out yet and write the configuration file. |
-| `overlay config` | Print the configuration in effect as TOML with the effective layers and resolved sources. |
 | `overlay render --dry-run` | Print the files the effective layers would write to the home directory, with their status and what they replace. |
 | `overlay render` | Write those files, skipping ones already identical, and print the same plan. |
 | `overlay render --target ~/staging --json` | Render into another directory and print the plan as one JSON document. |
