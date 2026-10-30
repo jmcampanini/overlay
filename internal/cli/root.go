@@ -162,6 +162,7 @@ Command groups:
 		filesCommand(),
 		help,
 		renderCommand(&options),
+		templatesTopic(),
 		valuesCommand(),
 	)
 	for _, child := range cmd.Commands() {

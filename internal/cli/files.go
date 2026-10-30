@@ -17,7 +17,9 @@ func filesCommand() *cobra.Command {
 		Long: `Print one absolute, cleaned path per line on stdout, including a newline
 after the last path. Symbolic links are listed by their own paths, without
 resolving them. A path containing a newline fails before any output.
-File contents are not read. No color or other formatting is added.
+File contents are not read. No color or other formatting is added. The
+files template function 'overlay help templates' describes selects the
+same paths with the same rules.
 
 ` + fileSelectionHelp + `
 

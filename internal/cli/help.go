@@ -19,7 +19,7 @@ extra operands are usage errors. No configuration or source files are read.
 The output is human-readable text, with no machine-readable format.
 
 ` + contractHelp,
-		Example: "  overlay help render\n  overlay help completion bash\n  overlay help exit-codes",
+		Example: "  overlay help render\n  overlay help completion bash\n  overlay help exit-codes\n  overlay help templates",
 		Args: func(cmd *cobra.Command, args []string) error {
 			_, err := findHelpCommand(cmd.Root(), args)
 			return err

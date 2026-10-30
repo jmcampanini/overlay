@@ -65,42 +65,10 @@ target path without that suffix, so envs/dot-shellenv.tmpl becomes
 suffix is an error. Templates execute while planning, so a template that
 fails to parse or execute fails the whole render, with --dry-run too,
 before anything is written. A missing field or map key is an error rather
-than empty output. Every template sees the same data:
-
-  .Layers    the layer order as a list, including base and local
-  .Sources   the configured sources in order; each has .Name and .Path,
-             the absolute checkout directory
-  .Home      the home directory, whatever --target is
-  .OS        the operating system as Go names it: darwin or linux
-  .Hostname  the hostname exactly as the system reports it
-  .Values    the merged values document described below, so a file holding
-             [theme] followed by bg = "#282828" renders {{ .Values.theme.bg
-             }}; a key no file set is an error, and {{ with index .Values
-             "theme" }} ... {{ end }} guards an optional one
-
-Beyond the text/template builtins, templates may call:
-
-  env NAME         the environment variable's value; an unset variable
-                   fails the render, and a variable set to "" is set
-  envOr NAME DEF   the environment variable's value, or DEF when unset
-  fileExists PATH  true when anything exists at PATH (a file, directory,
-                   or other entry, following symbolic links); PATH is used
-                   as given, ~ is not expanded, and an error other than
-                   absence fails the render
-  hasLayer NAME    true when NAME is one of the layers in .Layers
-  readFile PATH    the file's content with trailing newlines removed, as
-                   $(cat PATH) would give; PATH is used as given, and a
-                   missing or unreadable file fails the render, so guard
-                   an optional file with fileExists
-  shellQuote S     S single-quoted so bash, zsh, and fish read one literal
-                   word; quotes and backslashes inside S are escaped
-                   outside the quotes
-  join SEP LIST    LIST's items concatenated with SEP between them
-
-A secret can stay in a file outside every source and be read at render
-time, for example {{ readFile (printf "%s/.config/overlay/local/api.key"
-.Home) }}. The plan output never prints rendered content, and the target
-takes the template's permission bits, so keep such a template at 600.
+than empty output. 'overlay help templates' describes the data every
+template sees, including .Values below, the functions it may call, the
+overlay:delims directive for a file whose own syntax uses {{, and how to
+keep a template short.
 
 ` + valuesHelp + `
 
@@ -125,17 +93,18 @@ reverse, fails the render.
 
 A fragment whose name ends in .tmpl, such as NAME.olay.LAYER.EXT.tmpl or
 NAME.olay.LAYER.tmpl, is a template of a fragment: it executes as a
-text/template with the data and functions above, and its output merges or
-concatenates like any other fragment of the target. The suffix is only a
-marker, goes last, and is stripped once; a .tmpl before the olay marker
-is part of NAME. Every templated fragment of a target renders before any
-fragment is composed, so a template error names the fragment that failed
-rather than the parse error it would cause. A fragment whose output is
-empty or only whitespace is an empty document in every merge format and
-adds nothing to a concatenation, so a fragment wrapped in
-{{ if eq .OS "darwin" }} ... {{ end }} contributes nothing elsewhere.
-Templated and plain fragments mix freely across layers; two for one target
-in one layer collide like any other pair.
+text/template with the data and functions 'overlay help templates'
+describes, and its output merges or concatenates like any other fragment
+of the target. The suffix is only a marker, goes last, and is stripped
+once; a .tmpl before the olay marker is part of NAME. Every templated
+fragment of a target renders before any fragment is composed, so a
+template error names the fragment that failed rather than the parse error
+it would cause. A fragment whose output is empty or only whitespace is an
+empty document in every merge format and adds nothing to a concatenation,
+so a fragment wrapped in {{ if eq .OS "darwin" }} ... {{ end }}
+contributes nothing elsewhere. Templated and plain fragments mix freely
+across layers; two for one target in one layer collide like any other
+pair.
 
 Merged fragments combine key by key: tables, objects, and mappings merge
 recursively, arrays and sequences concatenate with the later layer's items
@@ -178,14 +147,6 @@ fragment that does not parse, whose JSON root is not an object, or whose
 YAML root is not a mapping, or a concatenated fragment holding a NUL
 byte, fails the whole render, with --dry-run too, before anything is
 written; a fragment a later plain NAME.EXT replaces is never read.
-
-For example, this loader sources every envs/env.LAYER that exists, in
-layer order and then source order:
-
-  {{ range $layer := .Layers }}{{ range $.Sources }}
-  {{- $f := printf "%s/envs/env.%s" .Path $layer }}{{ if fileExists $f }}
-  test -f {{ shellQuote $f }} && source {{ shellQuote $f }}
-  {{ end }}{{ end }}{{ end }}
 
 Writing creates missing directories with mode 755, writes each file to a
 temporary .NAME.overlay-* in its final directory with the source's

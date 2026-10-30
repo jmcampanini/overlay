@@ -60,7 +60,7 @@ install -m 755 build/overlay ~/.local/bin/overlay
 | `overlay files 'packages/homebrew/Brewfile.{layer}'` | Print matching file paths in layer, source, and pattern order. |
 | `overlay cat --list 'packages/pacman/packages.{layer}'` | Print unique list entries in match order, trimming whitespace and comments. |
 
-`overlay --help`, each command's `--help`, and the help topic `overlay help exit-codes` are the canonical reference for every user-facing contract.
+`overlay --help`, each command's `--help`, and the help topics `overlay help exit-codes` and `overlay help templates` are the canonical reference for every user-facing contract.
 
 
 ## Required external programs
