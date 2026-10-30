@@ -79,7 +79,7 @@ func Render(name string, text []byte, ctx Context) ([]byte, error) {
 // ignored. Fewer than two words after the marker or two equal words are
 // errors.
 func splitDelimsDirective(text []byte) (body []byte, left, right string, err error) {
-	firstLine, rest, hasNewline := bytes.Cut(text, []byte("\n"))
+	firstLine, rest, _ := bytes.Cut(text, []byte("\n"))
 	_, after, found := strings.Cut(string(firstLine), delimsDirective)
 	if !found {
 		return text, "", "", nil
@@ -91,9 +91,6 @@ func splitDelimsDirective(text []byte) (body []byte, left, right string, err err
 	}
 	if words[0] == words[1] {
 		return nil, "", "", fmt.Errorf("%s delimiters must differ, got %q twice", delimsDirective, words[0])
-	}
-	if !hasNewline {
-		rest = nil
 	}
 	return rest, words[0], words[1], nil
 }
