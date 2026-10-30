@@ -123,8 +123,11 @@ func valuesFiles(dir string, entries []fs.DirEntry) ([]string, error) {
 	var files []string
 	for _, entry := range entries {
 		name := entry.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
 		isTemplate := strings.HasSuffix(name, templateSuffix)
-		if strings.HasPrefix(name, ".") || (!isTemplate && !strings.HasSuffix(name, valuesExtension)) {
+		if !isTemplate && !strings.HasSuffix(name, valuesExtension) {
 			continue
 		}
 		path := filepath.Join(dir, name)
