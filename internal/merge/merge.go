@@ -56,42 +56,64 @@ type Fragment struct {
 	Name string
 }
 
-// Render parses every fragment as format, merges the fragments in order,
-// and returns the serialized result with keys sorted bytewise at every
-// level.
-//
-// Maps merge key by key, lists concatenate with the later fragment's items
-// last, and any other pairing takes the later value. A map, a list, or a
-// plain value meeting a different kind at the same key is an error that
-// names both fragments. A fragment that does not parse or whose root is not
-// a map is an error naming the fragment. A fragment that is empty or only
-// whitespace is an empty document in every format.
+// Document is one parsed fragment: its root table and the name errors use.
+type Document struct {
+	Name  string
+	Table map[string]any
+}
+
+// Render parses every fragment as format with Parse, merges the documents
+// with Merge, and returns the result encoded with Encode.
+func Render(format Format, fragments []Fragment) ([]byte, error) {
+	documents := make([]Document, len(fragments))
+	for i, fragment := range fragments {
+		document, err := Parse(format, fragment)
+		if err != nil {
+			return nil, err
+		}
+		documents[i] = document
+	}
+
+	merged, err := Merge(format, documents)
+	if err != nil {
+		return nil, err
+	}
+	return Encode(format, merged)
+}
+
+// Parse parses fragment as format. A fragment that does not parse or whose
+// root is not a map is an error naming the fragment. A fragment that is
+// empty or only whitespace is an empty document in every format.
 //
 // JSON numbers and YAML numbers and timestamps keep their source text. YAML
 // aliases expand in place; a YAML fragment with a merge key, a key that is
 // not a string, a tag outside the core schema, or a second document is an
 // error, and a comment-only one is an empty mapping.
-func Render(format Format, fragments []Fragment) ([]byte, error) {
-	documents := make([]map[string]any, len(fragments))
-	for i, fragment := range fragments {
-		document, err := parse(format, fragment.Data)
-		if err != nil {
-			return nil, fmt.Errorf("fragment %s: %w", fragment.Name, err)
-		}
-		documents[i] = document
+func Parse(format Format, fragment Fragment) (Document, error) {
+	table, err := parse(format, fragment.Data)
+	if err != nil {
+		return Document{}, fmt.Errorf("fragment %s: %w", fragment.Name, err)
 	}
+	return Document{Name: fragment.Name, Table: table}, nil
+}
 
+// Merge deep-merges documents in order and returns a new table. Maps merge
+// key by key, lists concatenate with the later document's items last, and
+// any other pairing takes the later value. A map, a list, or a plain value
+// meeting a different kind at the same key is an error that names both
+// documents in format's vocabulary.
+func Merge(format Format, documents []Document) (map[string]any, error) {
 	merged := map[string]any{}
 	for i, document := range documents {
-		result, conflict := mergeMaps(merged, document, nil)
+		result, conflict := mergeMaps(merged, document.Table, nil)
 		if conflict != nil {
-			earlier := fragments[lastHolder(documents[:i], conflict.path)].Name
+			earlier := documents[lastHolder(documents[:i], conflict.path)].Name
 			return nil, fmt.Errorf("fragment %s: key %s: cannot merge %s over %s from fragment %s",
-				fragments[i].Name, strings.Join(conflict.path, "."), describe(format, conflict.over), describe(format, conflict.under), earlier)
+				document.Name, strings.Join(conflict.path, "."), describe(format, conflict.over), describe(format, conflict.under), earlier)
 		}
 		merged = result
 	}
-	return encode(format, merged)
+	return merged, nil
 }
 
 func parse(format Format, data []byte) (map[string]any, error) {
@@ -382,9 +404,9 @@ func mergeValues(under, over any, path []string) (any, *kindConflict) {
 // lastHolder returns the index of the last document that holds a value at
 // path. Callers pass the documents merged so far, so a conflict always has
 // one.
-func lastHolder(documents []map[string]any, path []string) int {
+func lastHolder(documents []Document, path []string) int {
 	for i := len(documents) - 1; i >= 0; i-- {
-		if _, ok := valueAt(documents[i], path); ok {
+		if _, ok := valueAt(documents[i].Table, path); ok {
 			return i
 		}
 	}
@@ -435,7 +457,10 @@ func describe(format Format, value any) string {
 	return fmt.Sprintf("a %T", value)
 }
 
-func encode(format Format, document map[string]any) ([]byte, error) {
+// Encode serializes document as format with keys sorted bytewise at every
+// level: JSON indented with two spaces, TOML flush-left, and YAML in block
+// style with two-space indentation.
+func Encode(format Format, document map[string]any) ([]byte, error) {
 	var out bytes.Buffer
 	switch format {
 	case JSON:

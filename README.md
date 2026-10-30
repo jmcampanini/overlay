@@ -57,6 +57,7 @@ install -m 755 build/overlay ~/.local/bin/overlay
 | `overlay render` | Write those files, skipping ones already identical, and print the same plan. |
 | `overlay render --target ~/staging --json` | Render into another directory and print the plan as one JSON document. |
 | `overlay diff` | Print a unified patch from the home directory's current files to what `overlay render` would write; from `~`, it feeds `git apply`. |
+| `overlay values --provenance` | Print the merged values templates read as `.Values`, with the file that last set each top-level key. |
 | `overlay files 'packages/homebrew/Brewfile.{layer}'` | Print matching file paths in layer, source, and pattern order. |
 | `overlay cat --list 'packages/pacman/packages.{layer}'` | Print unique list entries in match order, trimming whitespace and comments. |
 
@@ -70,7 +71,7 @@ install -m 755 build/overlay ~/.local/bin/overlay
 
 ## Configuration
 
-overlay reads `$XDG_CONFIG_HOME/overlay/config.toml`, or `~/.config/overlay/config.toml` when `XDG_CONFIG_HOME` is unset, empty, or relative, and searches nowhere else. `overlay config --help` documents configuration precedence, environment-based layer additions, and the file schema.
+overlay reads `$XDG_CONFIG_HOME/overlay/config.toml`, or `~/.config/overlay/config.toml` when `XDG_CONFIG_HOME` is unset, empty, or relative, and searches nowhere else. `overlay config --help` documents configuration precedence, environment-based layer additions, and the file schema. Templates read per-machine data as `.Values`, merged from every `*.toml` in the `values` directory beside the configuration file and from `--values PATH` operands; `overlay render --help` documents the merge order.
 
 ```toml
 layers = ["abc", "xyz"]

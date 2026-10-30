@@ -99,6 +99,30 @@ func TestRenderAndDiffPreserveActiveConfiguration(t *testing.T) {
 	}
 }
 
+func TestRenderAndDiffPreserveLoadedValuesFiles(t *testing.T) {
+	for _, command := range []string{"render", "diff"} {
+		t.Run(command, func(t *testing.T) {
+			f := newRenderFixture(t)
+			t.Setenv("XDG_CONFIG_HOME", filepath.Join(f.home, ".config"))
+			valuesFile := filepath.Join(valuesDir(), "10-theme.toml")
+			writeFixtureFile(t, valuesFile, "[theme]\nname = \"gruvbox\"\n", 0o644)
+			writeFixtureFile(t, filepath.Join(baseSourcePath(t, f), "bash", "dot-config", "overlay", "values", "10-theme.toml"), "replace\n", 0o644)
+
+			out, _, err := executeForTest(t, command, "--config", f.configPath)
+
+			if err == nil || !strings.Contains(err.Error(), "configuration file") {
+				t.Errorf("%s error = %v, want protected values file", command, err)
+			}
+			if out != "" {
+				t.Errorf("%s stdout = %q, want no plan or patch", command, out)
+			}
+			if got, err := os.ReadFile(valuesFile); err != nil || string(got) != "[theme]\nname = \"gruvbox\"\n" {
+				t.Errorf("values file = %q (%v), want the original values", got, err)
+			}
+		})
+	}
+}
+
 func TestRenderAllowsSymlinksWithinTarget(t *testing.T) {
 	f := newRenderFixture(t)
 	base := baseSourcePath(t, f)

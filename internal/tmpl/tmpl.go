@@ -26,6 +26,9 @@ type Context struct {
 	OS string
 	// Sources lists every configured source in configuration order.
 	Sources []Source
+	// Values is the per-machine values document; a key it lacks is an error
+	// under missingkey=error.
+	Values map[string]any
 }
 
 // Source is one configured source as a template sees it.

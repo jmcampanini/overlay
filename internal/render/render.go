@@ -89,6 +89,8 @@ type Request struct {
 	Sources []config.ResolvedSource
 	// Target is the absolute directory that receives the files.
 	Target string
+	// Values is exposed to templates as .Values.
+	Values map[string]any
 }
 
 // Origin names one file a source contributes.
@@ -607,7 +609,7 @@ func templateContext(req Request, entries []Entry) (tmpl.Context, error) {
 	for i, source := range req.Sources {
 		sources[i] = tmpl.Source{Name: source.Name, Path: source.Path}
 	}
-	return tmpl.Context{Home: req.Home, Hostname: hostname, Layers: req.Layers, OS: req.OS, Sources: sources}, nil
+	return tmpl.Context{Home: req.Home, Hostname: hostname, Layers: req.Layers, OS: req.OS, Sources: sources, Values: req.Values}, nil
 }
 
 // usesTemplates reports whether entry is a template or a merge or concat

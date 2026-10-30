@@ -20,6 +20,8 @@ const (
 	AppName = "overlay"
 	// FileName is the configuration file's base name.
 	FileName = "config.toml"
+	// ValuesDirName is the values directory's base name.
+	ValuesDirName = "values"
 	// DefaultColor selects automatic color detection for terminal output.
 	DefaultColor = "auto"
 
@@ -83,16 +85,36 @@ func RegisterFlags(flags *pflag.FlagSet) error {
 // DefaultPath returns the discovered configuration file path under
 // XDG_CONFIG_HOME, or ~/.config when that variable is empty or relative.
 func DefaultPath() (string, error) {
+	dir, err := defaultDir()
+	if err != nil {
+		return "", fmt.Errorf("locate config file: %w", err)
+	}
+	return filepath.Join(dir, FileName), nil
+}
+
+// DefaultValuesDir returns the discovered values directory, beside the
+// configuration file DefaultPath names.
+func DefaultValuesDir() (string, error) {
+	dir, err := defaultDir()
+	if err != nil {
+		return "", fmt.Errorf("locate values directory: %w", err)
+	}
+	return filepath.Join(dir, ValuesDirName), nil
+}
+
+// defaultDir returns overlay's directory under XDG_CONFIG_HOME, or under
+// ~/.config when that variable is empty or relative.
+func defaultDir() (string, error) {
 	dir := os.Getenv("XDG_CONFIG_HOME")
 	if filepath.IsAbs(dir) {
-		return filepath.Join(dir, AppName, FileName), nil
+		return filepath.Join(dir, AppName), nil
 	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("locate config file: %w", err)
+		return "", err
 	}
-	return filepath.Abs(filepath.Join(home, ".config", AppName, FileName))
+	return filepath.Abs(filepath.Join(home, ".config", AppName))
 }
 
 // LoadOptions selects the sources Load applies on top of the defaults.

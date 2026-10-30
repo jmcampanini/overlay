@@ -115,6 +115,7 @@ Common tasks:
   Render into home:     overlay render
   Diff home vs render:  overlay diff
   Show configuration:   overlay config
+  Show values:          overlay values
 
 Command groups:
   completion  Shell completion scripts:  overlay completion --help`,
@@ -162,6 +163,7 @@ Command groups:
 		filesCommand(),
 		help,
 		renderCommand(&options),
+		valuesCommand(),
 	)
 	for _, child := range cmd.Commands() {
 		if child.GroupID == "" {
