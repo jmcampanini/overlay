@@ -290,6 +290,11 @@ func TestRenderFailures(t *testing.T) {
 			writeFixtureFile(t, filepath.Join(baseSourcePath(t, f), "bash", "dot-claude", "settings.olay.base.json"), "{\n", 0o644)
 			return []string{"--dry-run"}
 		}, want: "fragment dotfiles-base:bash/dot-claude/settings.olay.base.json: parse JSON"},
+		{name: "templated fragment that fails to execute", setup: func(t *testing.T, f renderFixture) []string {
+			t.Helper()
+			writeFixtureFile(t, filepath.Join(baseSourcePath(t, f), "bash", "dot-claude", "settings.olay.base.json.tmpl"), "{\"token\": \"{{ env \"OVERLAY_TEST_UNSET_TOKEN\" }}\"}\n", 0o644)
+			return []string{"--dry-run"}
+		}, want: "fragment dotfiles-base:bash/dot-claude/settings.olay.base.json.tmpl: render template: dotfiles-base:bash/dot-claude/settings.olay.base.json.tmpl:1:"},
 		{name: "fragment above a whole file", setup: func(t *testing.T, f renderFixture) []string {
 			t.Helper()
 			writeFixtureFile(t, filepath.Join(baseSourcePath(t, f), "overlay.toml"), "[layers.base]\npackages = [\"bash\", \"ssh\"]\n[layers.personal]\n", 0o644)
@@ -349,7 +354,7 @@ func TestRenderMergesFragmentsAndShowsEveryFragment(t *testing.T) {
 	writeFixtureFile(t, filepath.Join(base, "claude", "dot-claude", "settings.olay.base.json"), "{\"permissions\": {\"deny\": [\"Read(a)\"]}, \"model\": \"opus\"}\n", 0o644)
 	writeFixtureFile(t, filepath.Join(base, "claude", "dot-claude", "settings.olay.work.json"), "{\"model\": \"inactive\"}\n", 0o644)
 	writeFixtureFile(t, filepath.Join(personal, "overlay.toml"), "[layers.personal]\npackages = [\"ssh\", \"claude\"]\n", 0o644)
-	writeFixtureFile(t, filepath.Join(personal, "claude", "dot-claude", "settings.olay.personal.json"), "{\"permissions\": {\"deny\": [\"Read(b)\"]}, \"env\": {\"URL\": \"${OVERLAY_TEST_URL}\"}}\n", 0o600)
+	writeFixtureFile(t, filepath.Join(personal, "claude", "dot-claude", "settings.olay.personal.json.tmpl"), "{\"permissions\": {\"deny\": [\"Read(b)\"]}, \"env\": {\"URL\": \"{{ env \"OVERLAY_TEST_URL\" }}\", \"HOME\": \"{{ .Home }}\"}}\n", 0o600)
 	t.Setenv("OVERLAY_TEST_URL", "http://proxy")
 
 	out, errOut, err := executeForTest(t, "render", "--config", f.configPath)
@@ -357,16 +362,16 @@ func TestRenderMergesFragmentsAndShowsEveryFragment(t *testing.T) {
 		t.Fatalf("render error = %v, stderr = %s", err, errOut)
 	}
 
-	wantRow := "~/.claude/settings.json  dotfiles-base:claude/dot-claude/settings.olay.base.json, dotfiles-personal:claude/dot-claude/settings.olay.personal.json  merge  new"
+	wantRow := "~/.claude/settings.json  dotfiles-base:claude/dot-claude/settings.olay.base.json, dotfiles-personal:claude/dot-claude/settings.olay.personal.json.tmpl  merge  new"
 	if !strings.Contains(out, wantRow) {
 		t.Errorf("output lacks %q:\n%s", wantRow, out)
 	}
-	want := "{\n  \"env\": {\n    \"URL\": \"http://proxy\"\n  },\n  \"model\": \"opus\",\n  \"permissions\": {\n    \"deny\": [\n      \"Read(a)\",\n      \"Read(b)\"\n    ]\n  }\n}\n"
+	want := "{\n  \"env\": {\n    \"HOME\": \"" + f.home + "\",\n    \"URL\": \"http://proxy\"\n  },\n  \"model\": \"opus\",\n  \"permissions\": {\n    \"deny\": [\n      \"Read(a)\",\n      \"Read(b)\"\n    ]\n  }\n}\n"
 	if raw, err := os.ReadFile(filepath.Join(f.home, ".claude", "settings.json")); err != nil || string(raw) != want {
 		t.Errorf("settings.json = %q (%v), want %q", raw, err, want)
 	}
 	if info, err := os.Stat(filepath.Join(f.home, ".claude", "settings.json")); err != nil || info.Mode().Perm() != 0o600 {
-		t.Errorf("settings.json mode = %v (%v), want 600 from the last fragment", info, err)
+		t.Errorf("settings.json mode = %v (%v), want 600, the bits every fragment has", info, err)
 	}
 
 	out, errOut, err = executeForTest(t, "render", "--config", f.configPath, "--dry-run", "--json")
@@ -378,11 +383,11 @@ func TestRenderMergesFragmentsAndShowsEveryFragment(t *testing.T) {
 		t.Fatalf("decode JSON: %v\n%s", err, out)
 	}
 	wantEntry := planEntry{
-		Target: filepath.Join(f.home, ".claude", "settings.json"), Source: "dotfiles-personal", Path: "claude/dot-claude/settings.olay.personal.json", Layer: "personal",
+		Target: filepath.Join(f.home, ".claude", "settings.json"), Source: "dotfiles-personal", Path: "claude/dot-claude/settings.olay.personal.json.tmpl", Layer: "personal",
 		Kind: "merge", Status: "unchanged", Replaces: []planOrigin{},
 		Merges: []planOrigin{
 			{Source: "dotfiles-base", Path: "claude/dot-claude/settings.olay.base.json", Layer: "base"},
-			{Source: "dotfiles-personal", Path: "claude/dot-claude/settings.olay.personal.json", Layer: "personal"},
+			{Source: "dotfiles-personal", Path: "claude/dot-claude/settings.olay.personal.json.tmpl", Layer: "personal"},
 		},
 	}
 	if diff := cmp.Diff(wantEntry, doc.Entries[1]); diff != "" {

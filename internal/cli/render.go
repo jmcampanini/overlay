@@ -70,7 +70,9 @@ than empty output. Every template sees the same data:
 
 Beyond the text/template builtins, templates may call:
 
-  env NAME         the environment variable's value, or "" when unset
+  env NAME         the environment variable's value; an unset variable
+                   fails the render, and a variable set to "" is set
+  envOr NAME DEF   the environment variable's value, or DEF when unset
   fileExists PATH  true when anything exists at PATH (a file, directory,
                    or other entry, following symbolic links); PATH is used
                    as given, ~ is not expanded, and an error other than
@@ -104,6 +106,18 @@ dot-codex/config.olay.personal.toml in a personal package merge into
 every fragment of one file spells the extension the same way; a fragment
 of NAME.yaml beside any NAME.yml, or the reverse, fails the render.
 
+A fragment named NAME.olay.LAYER.EXT.tmpl is a template of a fragment: it
+executes as a text/template with the data and functions above, and its
+output parses as EXT and merges like any other fragment of NAME.EXT. The
+suffix is only a marker and goes last; the merged target is still
+NAME.EXT. Every templated fragment of a target renders before any fragment
+parses, so a template error names the fragment that failed rather than
+the parse error it would cause. A fragment whose output is empty or only
+whitespace is an empty document in every format, so a fragment wrapped in
+{{ if eq .OS "darwin" }} ... {{ end }} contributes nothing elsewhere.
+Templated and plain fragments mix freely across layers; two for one target
+in one layer collide like any other pair.
+
 Fragments merge key by key: tables, objects, and mappings merge
 recursively, arrays and sequences concatenate with the later layer's items
 last and nothing removed, and any other value takes the later layer's. A
@@ -116,8 +130,9 @@ collision. The output sorts keys alphabetically at every level, drops
 comments, indents JSON with two spaces, writes TOML tables flush-left,
 writes YAML in block style with two-space indentation, and ends with a
 newline unless the document is empty TOML; a target with one fragment is
-rewritten the same way. The target takes the last fragment's permission
-bits.
+rewritten the same way. The target keeps only the permission bits every
+fragment has, so one 600 fragment in the stack denies group and other
+access to the whole target.
 
 YAML fragments keep numbers and timestamps as written, so 1.10 stays
 1.10, expand aliases in place, read an empty or comment-only file as an
@@ -127,15 +142,13 @@ key (<<), a key that is not a string, a duplicate key, a tag outside the
 core schema such as !!binary, or a second document in one fragment is an
 error.
 
-Before merging, every string value and key in a fragment has ${NAME}
-replaced by the environment variable NAME, where NAME is letters, digits,
-and underscores not starting with a digit. An unset variable fails the
-render, $${ writes a literal ${, and any other text is left as written.
-Values stay strings, so a number or boolean cannot come from a variable.
-A fragment that does not parse, whose JSON root is not an object, whose
-YAML root is not a mapping, or whose keys collide after substitution
-fails the whole render, with --dry-run too, before anything is written;
-a fragment a later plain NAME.EXT replaces is never read.
+Fragment text is otherwise taken as written; an environment variable
+reaches a fragment only through a templated fragment and env or envOr. An
+empty or whitespace-only fragment is an empty document in every format. A
+fragment that does not parse, whose JSON root is not an object, or whose
+YAML root is not a mapping fails the whole render, with --dry-run too,
+before anything is written; a fragment a later plain NAME.EXT replaces is
+never read.
 
 For example, this loader sources every envs/env.LAYER that exists, in
 layer order and then source order:
