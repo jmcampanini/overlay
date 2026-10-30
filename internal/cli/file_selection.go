@@ -43,16 +43,16 @@ func selectFiles(cmd *cobra.Command, configPath string, patterns []string) ([]st
 	if err != nil {
 		return nil, err
 	}
-	sources := loaded.effective.Sources
-	manifests, err := config.LoadManifests(sources)
+	effective := loaded.effective
+	manifests, err := config.LoadManifests(effective.Sources)
 	if err != nil {
 		return nil, err
 	}
 
 	var paths []string
-	for _, layer := range config.LayerOrder(loaded.effective.Layers) {
+	for _, layer := range config.LayerOrder(effective.Layers) {
 		matchedSources := make(map[string]string)
-		for i, source := range sources {
+		for i, source := range effective.Sources {
 			if _, declared := manifests[i].Layers[layer]; !declared {
 				continue
 			}

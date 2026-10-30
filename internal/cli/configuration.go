@@ -6,9 +6,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// loadedConfiguration is a command's configuration as loaded and as
-// resolved. The raw configuration and its report serve the commands that
-// print them beside the effective configuration.
+// loadedConfiguration is a command's configuration as loaded, with its load
+// report, and as resolved.
 type loadedConfiguration struct {
 	config    config.Config
 	effective config.Effective

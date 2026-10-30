@@ -43,9 +43,10 @@ per layer, whose packages list names top-level directories of the source:
   [layers.base]
   packages = ["bash", "ssh"]
 
-A listed package must exist and is listed under one layer, layer names
-follow the grammar in 'overlay config --help' with base and local also
-allowed, and unknown keys are errors. A layer no manifest mentions
+A listed package must exist, layer names follow the grammar in 'overlay
+config --help' with base and local also allowed, and unknown keys are
+errors. Each package is listed once in the whole manifest; a package under
+two layers, or twice under one, is an error. A layer no manifest mentions
 contributes nothing. Layers apply in the order 'overlay config' reports as
 layer_order, and sources in file order within a layer.
 
