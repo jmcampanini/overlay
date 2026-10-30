@@ -730,8 +730,16 @@ func TestBuildFragmentFailures(t *testing.T) {
 		{name: "no name before the marker", files: map[string]string{"claude/.olay.base.json": `{}`}, want: []string{"a fragment needs a name before .olay."}},
 		{name: "no extension", files: map[string]string{"claude/settings.olay.base": `{}`}, want: []string{"a fragment needs LAYER.EXT after .olay."}},
 		{name: "invalid layer", files: map[string]string{"claude/settings.olay.Base.json": `{}`}, want: []string{"fragment layer: layer name \"Base\""}},
-		{name: "unsupported extension", files: map[string]string{"claude/settings.olay.base.yaml": `a: 1`}, want: []string{"fragment extension \"yaml\" must be json or toml"}},
-		{name: "template suffix on a fragment", files: map[string]string{"claude/settings.olay.base.json.tmpl": `{}`}, want: []string{"fragment extension \"json.tmpl\" must be json or toml"}},
+		{name: "unsupported extension", files: map[string]string{"claude/settings.olay.base.ini": `a = 1`}, want: []string{"fragment extension \"ini\" must be json, toml, yaml, or yml"}},
+		{name: "template suffix on a fragment", files: map[string]string{"claude/settings.olay.base.json.tmpl": `{}`}, want: []string{"fragment extension \"json.tmpl\" must be json, toml, yaml, or yml"}},
+		{name: "yaml and yml fragments for one name", files: map[string]string{
+			"claude/dot-claude/config.olay.base.yaml":    "a: 1\n",
+			"claude/dot-claude/config.olay.personal.yml": "b: 2\n",
+		}, want: []string{"src:claude/dot-claude/config.olay.base.yaml and src:claude/dot-claude/config.olay.personal.yml would render", "config.yaml", "config.yml", "as separate files"}},
+		{name: "yml fragment beside a whole yaml file", files: map[string]string{
+			"claude/dot-claude/config.yaml":              "a: 1\n",
+			"claude/dot-claude/config.olay.personal.yml": "b: 2\n",
+		}, want: []string{"src:claude/dot-claude/config.olay.personal.yml and src:claude/dot-claude/config.yaml would render"}},
 		{name: "marker twice", files: map[string]string{"claude/settings.olay.base.olay.local.json": `{}`}, want: []string{"holds .olay. once"}},
 		{name: "fragment that does not parse", files: map[string]string{"claude/dot-claude/settings.olay.base.json": `{"model": }`}, want: []string{"merge ", "fragment src:claude/dot-claude/settings.olay.base.json"}},
 		{name: "unset variable", files: map[string]string{"claude/dot-claude/settings.olay.base.json": `{"a": "${OVERLAY_TEST_UNSET_VARIABLE}"}`}, want: []string{"variable OVERLAY_TEST_UNSET_VARIABLE is not set"}},
@@ -755,6 +763,30 @@ func TestBuildFragmentFailures(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestBuildMergesYMLFragmentsIntoAYMLTarget(t *testing.T) {
+	src := newSource(t, "src", "[layers.base]\npackages = [\"tool\"]\n[layers.personal]\npackages = [\"tool\"]\n")
+	src.file("tool/dot-tool/config.olay.base.yml", "version: 1.10\nhosts:\n  - alpha\n", 0o644)
+	src.file("tool/dot-tool/config.olay.personal.yml", "hosts:\n  - beta\n", 0o644)
+	src.file("tool/dot-tool/other.yaml", "plain: file\n", 0o644)
+	target := t.TempDir()
+
+	plan, err := Build(Request{Layers: []string{"base", "personal"}, Sources: []config.ResolvedSource{src.resolved()}, Target: target})
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	if len(plan.Entries) != 2 {
+		t.Fatalf("Build() returned %d entries, want 2: %+v", len(plan.Entries), plan.Entries)
+	}
+	merged := plan.Entries[0]
+	if merged.Target != filepath.Join(target, ".tool", "config.yml") || merged.Kind != KindMerge {
+		t.Fatalf("first entry = %+v, want the merged .tool/config.yml", merged)
+	}
+	if got := string(merged.Content); got != "hosts:\n  - alpha\n  - beta\nversion: 1.10\n" {
+		t.Errorf("Content = %q, want both fragments merged with the version kept as written", got)
 	}
 }
 
