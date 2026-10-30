@@ -41,8 +41,8 @@ render would skip prints nothing, and when nothing would change stdout is
 empty. The exit status is 0 whether or not anything differs; failures
 exit as they do for render. Output is never colored.
 
-Every file is treated as text, and a template or merge contributes its
-rendered output, so anything a template or fragment reads, including a
+Every file is treated as text, and a template, merge, or concat contributes
+its rendered output, so anything a template or fragment reads, including a
 secret, appears in the patch. A file whose rendered bytes match the target
 but whose permission bits differ cannot be expressed as a patch; it is
 reported on stderr as 'overlay: PATH: no content change, but render would

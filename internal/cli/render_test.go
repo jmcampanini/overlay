@@ -120,9 +120,9 @@ func TestRenderJSONDocument(t *testing.T) {
 		Target: f.home,
 		Layers: []string{"base", "personal", "local"},
 		Entries: []planEntry{
-			{Target: filepath.Join(f.home, ".bashrc"), Source: "dotfiles-base", Path: "bash/dot-bashrc", Layer: "base", Kind: "file", Status: "unchanged", Replaces: []planOrigin{}, Merges: []planOrigin{}},
+			{Target: filepath.Join(f.home, ".bashrc"), Source: "dotfiles-base", Path: "bash/dot-bashrc", Layer: "base", Kind: "file", Status: "unchanged", Replaces: []planOrigin{}, Fragments: []planOrigin{}},
 			{Target: filepath.Join(f.home, ".ssh", "config"), Source: "dotfiles-personal", Path: "ssh/dot-ssh/config", Layer: "personal", Kind: "file", Status: "new",
-				Replaces: []planOrigin{{Source: "dotfiles-base", Path: "ssh/dot-ssh/config", Layer: "base"}}, Merges: []planOrigin{}},
+				Replaces: []planOrigin{{Source: "dotfiles-base", Path: "ssh/dot-ssh/config", Layer: "base"}}, Fragments: []planOrigin{}},
 		},
 	}
 	if diff := cmp.Diff(want, doc); diff != "" {
@@ -385,13 +385,57 @@ func TestRenderMergesFragmentsAndShowsEveryFragment(t *testing.T) {
 	wantEntry := planEntry{
 		Target: filepath.Join(f.home, ".claude", "settings.json"), Source: "dotfiles-personal", Path: "claude/dot-claude/settings.olay.personal.json.tmpl", Layer: "personal",
 		Kind: "merge", Status: "unchanged", Replaces: []planOrigin{},
-		Merges: []planOrigin{
+		Fragments: []planOrigin{
 			{Source: "dotfiles-base", Path: "claude/dot-claude/settings.olay.base.json", Layer: "base"},
 			{Source: "dotfiles-personal", Path: "claude/dot-claude/settings.olay.personal.json.tmpl", Layer: "personal"},
 		},
 	}
 	if diff := cmp.Diff(wantEntry, doc.Entries[1]); diff != "" {
 		t.Errorf("JSON merge entry mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestRenderConcatenatesFragmentsAndShowsEveryFragment(t *testing.T) {
+	f := newRenderFixture(t)
+	base := baseSourcePath(t, f)
+	personal := readConfig(t, f.configPath).Sources[1].Path
+	writeFixtureFile(t, filepath.Join(base, "overlay.toml"), "[layers.base]\npackages = [\"bash\", \"ssh\", \"zsh\"]\n", 0o644)
+	writeFixtureFile(t, filepath.Join(base, "zsh", "dot-zshrc.olay.base"), "export BASE=1", 0o644)
+	writeFixtureFile(t, filepath.Join(personal, "overlay.toml"), "[layers.personal]\npackages = [\"ssh\", \"zsh\"]\n", 0o644)
+	writeFixtureFile(t, filepath.Join(personal, "zsh", "dot-zshrc.olay.personal.tmpl"), "export HOME_COPY={{ .Home }}\n", 0o600)
+
+	out, errOut, err := executeForTest(t, "render", "--config", f.configPath)
+	if err != nil {
+		t.Fatalf("render error = %v, stderr = %s", err, errOut)
+	}
+
+	wantRow := "~/.zshrc       dotfiles-base:zsh/dot-zshrc.olay.base, dotfiles-personal:zsh/dot-zshrc.olay.personal.tmpl  concat  new"
+	if !strings.Contains(out, wantRow) {
+		t.Errorf("output lacks %q:\n%s", wantRow, out)
+	}
+	want := "export BASE=1\nexport HOME_COPY=" + f.home + "\n"
+	if raw, err := os.ReadFile(filepath.Join(f.home, ".zshrc")); err != nil || string(raw) != want {
+		t.Errorf(".zshrc = %q (%v), want %q", raw, err, want)
+	}
+
+	out, errOut, err = executeForTest(t, "render", "--config", f.configPath, "--dry-run", "--json")
+	if err != nil {
+		t.Fatalf("render --json error = %v, stderr = %s", err, errOut)
+	}
+	var doc planDocument
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatalf("decode JSON: %v\n%s", err, out)
+	}
+	wantEntry := planEntry{
+		Target: filepath.Join(f.home, ".zshrc"), Source: "dotfiles-personal", Path: "zsh/dot-zshrc.olay.personal.tmpl", Layer: "personal",
+		Kind: "concat", Status: "unchanged", Replaces: []planOrigin{},
+		Fragments: []planOrigin{
+			{Source: "dotfiles-base", Path: "zsh/dot-zshrc.olay.base", Layer: "base"},
+			{Source: "dotfiles-personal", Path: "zsh/dot-zshrc.olay.personal.tmpl", Layer: "personal"},
+		},
+	}
+	if diff := cmp.Diff(wantEntry, doc.Entries[2]); diff != "" {
+		t.Errorf("JSON concat entry mismatch (-want +got):\n%s", diff)
 	}
 }
 

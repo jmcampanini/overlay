@@ -24,8 +24,9 @@ also goes to stderr.
      regular file or a link to one, two files in one layer rendering to
      the same target, a template that fails to parse or execute, a
      malformed fragment name, a fragment that fails to parse, substitute,
-     or merge, a fragment in a later layer than a plain file at its
-     target, a missing target directory, or a directory at a target path;
+     or merge, a concatenated fragment holding a NUL byte, a fragment in
+     a later layer than a plain file at its target, a missing target
+     directory, or a directory at a target path;
      a failure while writing stops there and prints no plan, and files
      already written stay. 'diff' fails on the same conditions and on a
      target path holding anything other than a regular file or a symbolic
