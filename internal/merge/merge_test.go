@@ -3,6 +3,8 @@ package merge
 import (
 	"strings"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 )
 
 func lookupFrom(vars map[string]string) func(string) (string, bool) {
@@ -147,6 +149,144 @@ func TestRenderSingleFragmentIsNormalized(t *testing.T) {
 	}
 }
 
+func TestRenderYAMLMergesMappingsAndKeepsScalarText(t *testing.T) {
+	lookup := lookupFrom(map[string]string{"HOME": "/home/me"})
+	fragments := []Fragment{
+		{Name: "base", Data: []byte(`# base settings
+version: 1.10
+mask: 0x1F
+since: 2001-12-14
+enabled: yes
+quoted: "1.0"
+nothing: ~
+flag: true
+defaults: &shared
+  retries: 3
+servers:
+  - name: alpha
+    tags: [a, b]
+    options: *shared
+hooks: {}
+b10: 1
+B1: 2
+`)},
+		{Name: "personal", Data: []byte(`
+servers:
+  - name: beta
+b2: 3
+path: ${HOME}/plans
+note: |
+  first line
+  second line
+hooks:
+  start:
+    - echo hi
+`)},
+	}
+
+	got, err := Render(YAML, fragments, lookup)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	want := `B1: 2
+b10: 1
+b2: 3
+defaults:
+  retries: 3
+enabled: "yes"
+flag: true
+hooks:
+  start:
+    - echo hi
+mask: 0x1F
+note: |
+  first line
+  second line
+nothing: null
+path: /home/me/plans
+quoted: "1.0"
+servers:
+  - name: alpha
+    options:
+      retries: 3
+    tags:
+      - a
+      - b
+  - name: beta
+since: 2001-12-14
+version: 1.10
+`
+	if string(got) != want {
+		t.Errorf("Render() =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestRenderYAMLQuotesStringsThatWouldReadAsAnotherType(t *testing.T) {
+	fragments := []Fragment{{Name: "f", Data: []byte(`
+"on": "true"
+"off": "null"
+date: "2001-12-14"
+number: "0x1F"
+dash: "- item"
+hash: "#comment"
+empty: ""
+`)}}
+
+	got, err := Render(YAML, fragments, noEnv)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	var back map[string]any
+	if err := yaml.Unmarshal(got, &back); err != nil {
+		t.Fatalf("output does not parse: %v\n%s", err, got)
+	}
+	for key, value := range back {
+		if _, ok := value.(string); !ok {
+			t.Errorf("key %s reads back as %T, want string:\n%s", key, value, got)
+		}
+	}
+	if !strings.Contains(string(got), `"on": "true"`) {
+		t.Errorf("Render() =\n%s\nwant the YAML 1.1 boolean words double-quoted", got)
+	}
+}
+
+func TestRenderYAMLKeepsAliasKeysAndLiteralMergeMarkers(t *testing.T) {
+	fragments := []Fragment{{Name: "f", Data: []byte(`
+name: &key hello
+map:
+  *key : value
+  "<<": {b: 1}
+marker: "<<"
+`)}}
+
+	got, err := Render(YAML, fragments, noEnv)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	want := "map:\n  \"<<\":\n    b: 1\n  hello: value\nmarker: \"<<\"\nname: hello\n"
+	if string(got) != want {
+		t.Errorf("Render() =\n%s\nwant\n%s", got, want)
+	}
+	again, err := Render(YAML, []Fragment{{Name: "again", Data: got}}, noEnv)
+	if err != nil || string(again) != want {
+		t.Errorf("Render() of its own output = %q (%v), want the same document", again, err)
+	}
+}
+
+func TestRenderEmptyYAMLFragmentsProduceAnEmptyMapping(t *testing.T) {
+	got, err := Render(YAML, []Fragment{{Name: "a", Data: []byte("# only a comment\n")}, {Name: "b", Data: nil}, {Name: "c", Data: []byte("---\n")}}, noEnv)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	if string(got) != "{}\n" {
+		t.Errorf("Render() = %q, want %q", got, "{}\n")
+	}
+}
+
 func TestRenderSubstitutesVariablesInValuesAndKeys(t *testing.T) {
 	lookup := lookupFrom(map[string]string{"HOME": "/home/me", "EMPTY": "", "N": "7"})
 	fragments := []Fragment{{Name: "f", Data: []byte(`
@@ -216,6 +356,52 @@ func TestRenderFailures(t *testing.T) {
 			{Name: "s:base", Data: []byte(`{"hooks": {"a": 1}}`)},
 			{Name: "s:top", Data: []byte(`{"hooks": null}`)},
 		}, want: []string{"cannot merge null over an object"}},
+		{name: "invalid YAML", format: YAML, fragments: []Fragment{{Name: "s:c", Data: []byte("a: [1\n")}},
+			want: []string{"fragment s:c", "parse YAML"}},
+		{name: "YAML root is a sequence", format: YAML, fragments: []Fragment{{Name: "s:c", Data: []byte("- 1\n")}},
+			want: []string{"root is a sequence, not a mapping"}},
+		{name: "YAML root is null", format: YAML, fragments: []Fragment{{Name: "s:c", Data: []byte("~\n")}},
+			want: []string{"root is null, not a mapping"}},
+		{name: "second YAML document", format: YAML, fragments: []Fragment{{Name: "s:c", Data: []byte("a: 1\n---\nb: 2\n")}},
+			want: []string{"a second document after the root mapping"}},
+		{name: "YAML merge key", format: YAML, fragments: []Fragment{{Name: "s:c", Data: []byte("base: &b\n  x: 1\nover:\n  <<: *b\n")}},
+			want: []string{"line 4: merge key << is not supported"}},
+		{name: "YAML key is a number", format: YAML, fragments: []Fragment{{Name: "s:c", Data: []byte("a: 1\n10: b\n")}},
+			want: []string{"line 2: key 10 is a number, not a string"}},
+		{name: "YAML key is a sequence", format: YAML, fragments: []Fragment{{Name: "s:c", Data: []byte("? [x]\n: 1\n")}},
+			want: []string{"line 1: key is not a string"}},
+		{name: "YAML custom tag", format: YAML, fragments: []Fragment{{Name: "s:c", Data: []byte("a: !custom x\n")}},
+			want: []string{"tag !custom is not supported"}},
+		{name: "YAML custom tag on a mapping", format: YAML, fragments: []Fragment{{Name: "s:c", Data: []byte("a: !custom {b: 1}\n")}},
+			want: []string{"line 1: tag !custom is not supported"}},
+		{name: "YAML set tag on a sequence", format: YAML, fragments: []Fragment{{Name: "s:c", Data: []byte("a:\n  - 1\n  - !!set [2]\n")}},
+			want: []string{"line 3: tag !!set is not supported"}},
+		{name: "YAML explicit int tag with text", format: YAML, fragments: []Fragment{{Name: "s:c", Data: []byte("a: !!int garbage\n")}},
+			want: []string{"line 1:", "cannot decode !!str `garbage` as a !!int"}},
+		{name: "YAML explicit null tag with text", format: YAML, fragments: []Fragment{{Name: "s:c", Data: []byte("a: !!null garbage\n")}},
+			want: []string{"cannot decode !!str `garbage` as a !!null"}},
+		{name: "YAML explicit bool tag with a number", format: YAML, fragments: []Fragment{{Name: "s:c", Data: []byte("a: !!bool 1\n")}},
+			want: []string{"cannot decode !!int `1` as a !!bool"}},
+		{name: "YAML explicit null root", format: YAML, fragments: []Fragment{{Name: "s:c", Data: []byte("--- !!null\n")}},
+			want: []string{"root is null, not a mapping"}},
+		{name: "YAML binary tag", format: YAML, fragments: []Fragment{{Name: "s:c", Data: []byte("a: !!binary aGk=\n")}},
+			want: []string{"tag !!binary is not supported"}},
+		{name: "YAML duplicate key", format: YAML, fragments: []Fragment{{Name: "s:c", Data: []byte("a: 1\nb:\n  c: 1\n  c: 2\n")}},
+			want: []string{"line 4: key c already defined at line 3"}},
+		{name: "YAML alias from another fragment", format: YAML, fragments: []Fragment{
+			{Name: "s:base", Data: []byte("a: &x 1\n")},
+			{Name: "s:top", Data: []byte("b: *x\n")},
+		}, want: []string{"fragment s:top", "unknown anchor"}},
+		{name: "YAML alias inside its own anchor", format: YAML, fragments: []Fragment{{Name: "s:c", Data: []byte("a: &x\n  b: *x\n")}},
+			want: []string{"alias *x is inside the node it refers to"}},
+		{name: "sequence over mapping", format: YAML, fragments: []Fragment{
+			{Name: "s:base", Data: []byte("hooks:\n  a: 1\n")},
+			{Name: "s:top", Data: []byte("hooks: [1]\n")},
+		}, want: []string{"key hooks: cannot merge a sequence over a mapping from fragment s:base"}},
+		{name: "timestamp over mapping", format: YAML, fragments: []Fragment{
+			{Name: "s:base", Data: []byte("when:\n  a: 1\n")},
+			{Name: "s:top", Data: []byte("when: 2001-12-14\n")},
+		}, want: []string{"cannot merge a timestamp over a mapping"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

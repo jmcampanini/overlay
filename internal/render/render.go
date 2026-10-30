@@ -52,7 +52,7 @@ const (
 	// KindFile copies the source bytes verbatim.
 	KindFile Kind = "file"
 	// KindMerge composes every active NAME.olay.LAYER.EXT fragment for one
-	// target into a single JSON or TOML document.
+	// target into a single JSON, TOML, or YAML document.
 	KindMerge Kind = "merge"
 	// KindTemplate executes the source as a text/template and writes the
 	// output to the target path without the .tmpl suffix.
@@ -152,7 +152,8 @@ func (e *CollisionError) Error() string {
 // Later layers replace earlier ones at the same target, except
 // that consecutive fragments merge into one document; a fragment above a
 // plain file fails, two contributors within one layer fail with a
-// *CollisionError, and a template or fragment that fails to render fails the
+// *CollisionError, a merge target NAME.yaml beside any NAME.yml or the
+// reverse fails, and a template or fragment that fails to render fails the
 // whole build.
 func Build(req Request) (Plan, error) {
 	if err := requireDirectory(req.Target); err != nil {
@@ -224,6 +225,9 @@ func Build(req Request) (Plan, error) {
 		plan.Entries = append(plan.Entries, entry)
 	}
 	sort.Slice(plan.Entries, func(i, j int) bool { return plan.Entries[i].Target < plan.Entries[j].Target })
+	if err := rejectMixedYAMLSpellings(plan.Entries); err != nil {
+		return Plan{}, err
+	}
 	if err := validateTargets(req, plan.Entries); err != nil {
 		return Plan{}, err
 	}
@@ -246,6 +250,42 @@ func Build(req Request) (Plan, error) {
 		plan.Entries[i].Status = status
 	}
 	return plan, nil
+}
+
+// rejectMixedYAMLSpellings fails when a merge target NAME.yaml has a sibling
+// entry NAME.yml or the reverse. The two spellings would render as separate
+// files, so fragments meant for one document would never meet.
+func rejectMixedYAMLSpellings(entries []Entry) error {
+	byTarget := make(map[string]Entry, len(entries))
+	for _, entry := range entries {
+		byTarget[entry.Target] = entry
+	}
+	for _, entry := range entries {
+		if entry.Kind != KindMerge {
+			continue
+		}
+		sibling, ok := alternateYAMLSpelling(entry.Target)
+		if !ok {
+			continue
+		}
+		if other, ok := byTarget[sibling]; ok {
+			return fmt.Errorf("%s:%s and %s:%s would render %s and %s as separate files; spell the YAML extension one way for one file",
+				entry.Source, entry.Path, other.Source, other.Path, entry.Target, other.Target)
+		}
+	}
+	return nil
+}
+
+// alternateYAMLSpelling returns target with .yaml swapped for .yml or the
+// reverse, and false when target has neither extension.
+func alternateYAMLSpelling(target string) (string, bool) {
+	switch filepath.Ext(target) {
+	case ".yaml":
+		return strings.TrimSuffix(target, ".yaml") + ".yml", true
+	case ".yml":
+		return strings.TrimSuffix(target, ".yml") + ".yaml", true
+	}
+	return "", false
 }
 
 func validateTargets(req Request, entries []Entry) error {
@@ -436,7 +476,7 @@ type classification struct {
 
 // classify decides how a source file renders and where. A name holding
 // .olay. is a fragment NAME.olay.LAYER.EXT that merges into NAME.EXT, where
-// LAYER follows the layer grammar and EXT is json or toml; a name ending in
+// LAYER follows the layer grammar and EXT names a merge format; a name ending in
 // .tmpl is a template whose target drops the suffix; anything else is a
 // file. A malformed fragment name or a template name that is nothing but the
 // suffix is an error.
@@ -473,7 +513,7 @@ func classifyFragment(pkg, sourcePath, dir, stem, rest string) (classification, 
 		return classification{}, fmt.Errorf("%s: fragment layer: %w", sourcePath, err)
 	}
 	if _, ok := merge.FormatOf(ext); !ok {
-		return classification{}, fmt.Errorf("%s: fragment extension %q must be json or toml", sourcePath, ext)
+		return classification{}, fmt.Errorf("%s: fragment extension %q must be json, toml, yaml, or yml", sourcePath, ext)
 	}
 	return classification{kind: KindMerge, layer: layer, target: targetPath(pkg, dir+stem+"."+ext)}, nil
 }
