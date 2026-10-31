@@ -96,14 +96,12 @@ func splitDelimsDirective(text []byte) (body []byte, left, right string, err err
 }
 
 // newTemplate returns an empty template with overlay's options and
-// functions: a missing map key is an error, and env, envOr, fileExists,
-// files, hasLayer, join, quote, readFile, and shellQuote are available
-// beyond text/template's builtins. hasLayer reports whether its argument
-// is one of ctx.Layers, and files selects through ctx.Files.
+// functions: a missing map key is an error, and fileExists, files,
+// hasLayer, join, quote, readFile, and shellQuote are available beyond
+// text/template's builtins. hasLayer reports whether its argument is one
+// of ctx.Layers, and files selects through ctx.Files.
 func newTemplate(name string, ctx Context) *template.Template {
 	return template.New(name).Option("missingkey=error").Funcs(template.FuncMap{
-		"env":        env,
-		"envOr":      envOr,
 		"fileExists": fileExists,
 		"files":      func(patterns ...string) ([]string, error) { return files(ctx.Files, patterns) },
 		"hasLayer":   func(layer string) bool { return slices.Contains(ctx.Layers, layer) },
@@ -112,28 +110,6 @@ func newTemplate(name string, ctx Context) *template.Template {
 		"readFile":   readFile,
 		"shellQuote": shellQuote,
 	})
-}
-
-// env returns the environment variable name's value. An unset variable fails
-// the template, so a secret or path never silently renders empty; a variable
-// set to the empty string is set.
-func env(name string) (string, error) {
-	value, ok := os.LookupEnv(name)
-	if !ok {
-		return "", fmt.Errorf("env %q: variable is not set", name)
-	}
-	return value, nil
-}
-
-// envOr returns the environment variable name's value, or fallback when the
-// variable is unset. A variable set to the empty string returns the empty
-// string.
-func envOr(name, fallback string) string {
-	value, ok := os.LookupEnv(name)
-	if !ok {
-		return fallback
-	}
-	return value
 }
 
 // fileExists reports whether anything exists at path: a file, directory, or

@@ -141,12 +141,11 @@ key (<<), a key that is not a string, a duplicate key, a tag outside the
 core schema such as !!binary, or a second document in one fragment is an
 error.
 
-Fragment text is otherwise taken as written; an environment variable
-reaches a fragment only through a templated fragment and env or envOr. A
-fragment that does not parse, whose JSON root is not an object, or whose
-YAML root is not a mapping, or a concatenated fragment holding a NUL
-byte, fails the whole render, with --dry-run too, before anything is
-written; a fragment a later plain NAME.EXT replaces is never read.
+Fragment text is otherwise taken as written. A fragment that does not
+parse, whose JSON root is not an object, or whose YAML root is not a
+mapping, or a concatenated fragment holding a NUL byte, fails the whole
+render, with --dry-run too, before anything is written; a fragment a
+later plain NAME.EXT replaces is never read.
 
 Writing creates missing directories with mode 755, writes each file to a
 temporary .NAME.overlay-* in its final directory with the source's

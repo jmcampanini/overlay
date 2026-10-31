@@ -33,11 +33,13 @@ func testContext(t *testing.T) Context {
 
 func TestRenderExposesEveryContextField(t *testing.T) {
 	ctx := testContext(t)
+	ctx.Values = map[string]any{"paths": map[string]any{"code": "/home/me/code"}}
 	text := `home={{ .Home }}
 hostname={{ .Hostname }}
 layers={{ range .Layers }}{{ . }};{{ end }}
 os={{ .OS }}
 sources={{ range .Sources }}{{ .Name }}={{ .Path }};{{ end }}
+values={{ .Values.paths.code }}
 `
 
 	got, err := Render("fields", []byte(text), ctx)
@@ -46,7 +48,8 @@ sources={{ range .Sources }}{{ .Name }}={{ .Path }};{{ end }}
 	}
 
 	want := "home=/home/me\nhostname=wintermute.local\nlayers=base;personal;local;\nos=linux\nsources=" +
-		"dotfiles-base=" + ctx.Sources[0].Path + ";dotfiles-personal=" + ctx.Sources[1].Path + ";\n"
+		"dotfiles-base=" + ctx.Sources[0].Path + ";dotfiles-personal=" + ctx.Sources[1].Path + ";\n" +
+		"values=/home/me/code\n"
 	if string(got) != want {
 		t.Errorf("Render() =\n%s\nwant\n%s", got, want)
 	}
@@ -61,8 +64,6 @@ func TestRenderFunctions(t *testing.T) {
 	if err := os.WriteFile(multiline, []byte("one\ntwo\r\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("OVERLAY_TEST_SECRET", "hunter2")
-	t.Setenv("OVERLAY_TEST_EMPTY", "")
 	dir := t.TempDir()
 	link := filepath.Join(t.TempDir(), "link")
 	if err := os.Symlink(present, link); err != nil {
@@ -84,11 +85,6 @@ func TestRenderFunctions(t *testing.T) {
 		{name: "fileExists dangling symlink", text: `{{ fileExists "` + dangling + `" }}`, want: "false"},
 		{name: "fileExists absent", text: `{{ fileExists "` + filepath.Join(dir, "missing") + `" }}`, want: "false"},
 		{name: "fileExists does not expand tilde", text: `{{ fileExists "~/` + filepath.Base(present) + `" }}`, want: "false"},
-		{name: "env set", text: `{{ env "OVERLAY_TEST_SECRET" }}`, want: "hunter2"},
-		{name: "env set to empty", text: `[{{ env "OVERLAY_TEST_EMPTY" }}]`, want: "[]"},
-		{name: "envOr set", text: `{{ envOr "OVERLAY_TEST_SECRET" "fallback" }}`, want: "hunter2"},
-		{name: "envOr set to empty keeps the empty value", text: `[{{ envOr "OVERLAY_TEST_EMPTY" "fallback" }}]`, want: "[]"},
-		{name: "envOr unset", text: `{{ envOr "OVERLAY_TEST_UNSET" "fallback" }}`, want: "fallback"},
 		{name: "readFile strips trailing newlines", text: `{{ readFile "` + present + `" }}`, want: "x"},
 		{name: "readFile keeps inner newlines", text: `{{ readFile "` + multiline + `" }}`, want: "one\ntwo"},
 		{name: "readFile quoted", text: `{{ readFile "` + present + `" | printf "%q" }}`, want: `"x"`},
@@ -141,7 +137,6 @@ func TestRenderFailures(t *testing.T) {
 		{name: "parse error", text: `{{ if .Home }}unclosed`, want: "unexpected EOF"},
 		{name: "unknown field", text: `{{ .Target }}`, want: "can't evaluate field Target"},
 		{name: "unknown function", text: `{{ now }}`, want: `function "now" not defined`},
-		{name: "env unset", text: `{{ env "OVERLAY_TEST_UNSET" }}`, want: `env "OVERLAY_TEST_UNSET": variable is not set`},
 		{name: "missing map key", text: `{{ index .Lookup "nope" }}`, want: "can't evaluate field Lookup"},
 		{name: "join with a non-list", text: `{{ join "," .Home }}`, want: "wrong type for value"},
 		{name: "readFile missing", text: `{{ readFile "` + filepath.Join(unreadable, "..", "missing") + `" }}`, want: "no such file"},
