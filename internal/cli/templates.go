@@ -30,9 +30,9 @@ Every template sees the same data:
              set is an error, and an optional one is guarded with
              {{ with index .Values "theme" }} ... {{ end }}
 
-Machine-specific input belongs in .Values; templates read nothing from
-the environment, so the same sources and values render the same files
-whatever shell started the render.
+Machine-specific input belongs in .Values. No function reads an
+environment variable, so a value a template needs is set in a values
+file rather than exported by the shell that starts the render.
 
 Beyond the text/template builtins, templates may call:
 
