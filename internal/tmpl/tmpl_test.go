@@ -33,11 +33,13 @@ func testContext(t *testing.T) Context {
 
 func TestRenderExposesEveryContextField(t *testing.T) {
 	ctx := testContext(t)
+	ctx.Values = map[string]any{"paths": map[string]any{"code": "/home/me/code"}}
 	text := `home={{ .Home }}
 hostname={{ .Hostname }}
 layers={{ range .Layers }}{{ . }};{{ end }}
 os={{ .OS }}
 sources={{ range .Sources }}{{ .Name }}={{ .Path }};{{ end }}
+values={{ .Values.paths.code }}
 `
 
 	got, err := Render("fields", []byte(text), ctx)
@@ -46,7 +48,8 @@ sources={{ range .Sources }}{{ .Name }}={{ .Path }};{{ end }}
 	}
 
 	want := "home=/home/me\nhostname=wintermute.local\nlayers=base;personal;local;\nos=linux\nsources=" +
-		"dotfiles-base=" + ctx.Sources[0].Path + ";dotfiles-personal=" + ctx.Sources[1].Path + ";\n"
+		"dotfiles-base=" + ctx.Sources[0].Path + ";dotfiles-personal=" + ctx.Sources[1].Path + ";\n" +
+		"values=/home/me/code\n"
 	if string(got) != want {
 		t.Errorf("Render() =\n%s\nwant\n%s", got, want)
 	}
@@ -61,8 +64,6 @@ func TestRenderFunctions(t *testing.T) {
 	if err := os.WriteFile(multiline, []byte("one\ntwo\r\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ctx := testContext(t)
-	ctx.Values = map[string]any{"paths": map[string]any{"code": "/home/me/code"}}
 	dir := t.TempDir()
 	link := filepath.Join(t.TempDir(), "link")
 	if err := os.Symlink(present, link); err != nil {
@@ -84,7 +85,6 @@ func TestRenderFunctions(t *testing.T) {
 		{name: "fileExists dangling symlink", text: `{{ fileExists "` + dangling + `" }}`, want: "false"},
 		{name: "fileExists absent", text: `{{ fileExists "` + filepath.Join(dir, "missing") + `" }}`, want: "false"},
 		{name: "fileExists does not expand tilde", text: `{{ fileExists "~/` + filepath.Base(present) + `" }}`, want: "false"},
-		{name: "values", text: `{{ .Values.paths.code }}`, want: "/home/me/code"},
 		{name: "readFile strips trailing newlines", text: `{{ readFile "` + present + `" }}`, want: "x"},
 		{name: "readFile keeps inner newlines", text: `{{ readFile "` + multiline + `" }}`, want: "one\ntwo"},
 		{name: "readFile quoted", text: `{{ readFile "` + present + `" | printf "%q" }}`, want: `"x"`},
@@ -110,7 +110,7 @@ func TestRenderFunctions(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Render(tt.name, []byte(tt.text), ctx)
+			got, err := Render(tt.name, []byte(tt.text), testContext(t))
 
 			if err != nil {
 				t.Fatalf("Render(%q) error = %v", tt.text, err)
