@@ -311,7 +311,7 @@ func TestRenderFailures(t *testing.T) {
 		}, want: "fragment dotfiles-base:bash/dot-claude/settings.olay.base.json: parse JSON"},
 		{name: "templated fragment that fails to execute", setup: func(t *testing.T, f renderFixture) []string {
 			t.Helper()
-			writeFixtureFile(t, filepath.Join(baseSourcePath(t, f), "bash", "dot-claude", "settings.olay.base.json.tmpl"), "{\"token\": \"{{ env \"OVERLAY_TEST_UNSET_TOKEN\" }}\"}\n", 0o644)
+			writeFixtureFile(t, filepath.Join(baseSourcePath(t, f), "bash", "dot-claude", "settings.olay.base.json.tmpl"), "{\"token\": \"{{ readFile \"/nonexistent/overlay-test-token\" }}\"}\n", 0o644)
 			return []string{"--dry-run"}
 		}, want: "fragment dotfiles-base:bash/dot-claude/settings.olay.base.json.tmpl: render template: dotfiles-base:bash/dot-claude/settings.olay.base.json.tmpl:1:"},
 		{name: "fragment above a whole file", setup: func(t *testing.T, f renderFixture) []string {
@@ -396,10 +396,11 @@ func TestRenderMergesFragmentsAndShowsEveryFragment(t *testing.T) {
 	writeFixtureFile(t, filepath.Join(base, "claude", "dot-claude", "settings.olay.base.json"), "{\"permissions\": {\"deny\": [\"Read(a)\"]}, \"model\": \"opus\"}\n", 0o644)
 	writeFixtureFile(t, filepath.Join(base, "claude", "dot-claude", "settings.olay.work.json"), "{\"model\": \"inactive\"}\n", 0o644)
 	writeFixtureFile(t, filepath.Join(personal, "overlay.toml"), "[layers.personal]\npackages = [\"ssh\", \"claude\"]\n", 0o644)
-	writeFixtureFile(t, filepath.Join(personal, "claude", "dot-claude", "settings.olay.personal.json.tmpl"), "{\"permissions\": {\"deny\": [\"Read(b)\"]}, \"env\": {\"URL\": \"{{ env \"OVERLAY_TEST_URL\" }}\", \"HOME\": \"{{ .Home }}\"}}\n", 0o600)
-	t.Setenv("OVERLAY_TEST_URL", "http://proxy")
+	writeFixtureFile(t, filepath.Join(personal, "claude", "dot-claude", "settings.olay.personal.json.tmpl"), "{\"permissions\": {\"deny\": [\"Read(b)\"]}, \"env\": {\"URL\": \"{{ .Values.proxy }}\", \"HOME\": \"{{ .Home }}\"}}\n", 0o600)
+	valuesPath := filepath.Join(t.TempDir(), "values.toml")
+	writeFixtureFile(t, valuesPath, `proxy = "http://proxy"`+"\n", 0o644)
 
-	out, errOut, err := executeForTest(t, "render", "--config", f.configPath)
+	out, errOut, err := executeForTest(t, "render", "--config", f.configPath, "--values", valuesPath)
 	if err != nil {
 		t.Fatalf("render error = %v, stderr = %s", err, errOut)
 	}
@@ -416,7 +417,7 @@ func TestRenderMergesFragmentsAndShowsEveryFragment(t *testing.T) {
 		t.Errorf("settings.json mode = %v (%v), want 600, the bits every fragment has", info, err)
 	}
 
-	out, errOut, err = executeForTest(t, "render", "--config", f.configPath, "--dry-run", "--json")
+	out, errOut, err = executeForTest(t, "render", "--config", f.configPath, "--values", valuesPath, "--dry-run", "--json")
 	if err != nil {
 		t.Fatalf("render --json error = %v, stderr = %s", err, errOut)
 	}

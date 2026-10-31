@@ -78,9 +78,9 @@ func TestTemplatesTopicDocumentsEveryFunctionAndTheDirective(t *testing.T) {
 
 	for _, want := range []string{
 		"\n  .Layers ", "\n  .Sources ", "\n  .Home ", "\n  .OS ", "\n  .Hostname ", "\n  .Values ",
-		"\n  env NAME ", "\n  envOr NAME DEF ", "\n  fileExists PATH ", "\n  files PATTERN... ", "\n  hasLayer NAME ",
+		"\n  fileExists PATH ", "\n  files PATTERN... ", "\n  hasLayer NAME ",
 		"\n  join SEP LIST ", "\n  quote S ", "\n  readFile PATH ", "\n  shellQuote S ",
-		"overlay:delims LEFT RIGHT",
+		"overlay:delims LEFT RIGHT", "Machine-specific input belongs in .Values",
 	} {
 		if !strings.Contains(help, want) {
 			t.Errorf("templates help missing %q:\n%s", want, help)

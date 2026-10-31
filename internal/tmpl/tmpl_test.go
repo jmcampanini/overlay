@@ -61,8 +61,8 @@ func TestRenderFunctions(t *testing.T) {
 	if err := os.WriteFile(multiline, []byte("one\ntwo\r\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("OVERLAY_TEST_SECRET", "hunter2")
-	t.Setenv("OVERLAY_TEST_EMPTY", "")
+	ctx := testContext(t)
+	ctx.Values = map[string]any{"paths": map[string]any{"code": "/home/me/code"}}
 	dir := t.TempDir()
 	link := filepath.Join(t.TempDir(), "link")
 	if err := os.Symlink(present, link); err != nil {
@@ -84,11 +84,7 @@ func TestRenderFunctions(t *testing.T) {
 		{name: "fileExists dangling symlink", text: `{{ fileExists "` + dangling + `" }}`, want: "false"},
 		{name: "fileExists absent", text: `{{ fileExists "` + filepath.Join(dir, "missing") + `" }}`, want: "false"},
 		{name: "fileExists does not expand tilde", text: `{{ fileExists "~/` + filepath.Base(present) + `" }}`, want: "false"},
-		{name: "env set", text: `{{ env "OVERLAY_TEST_SECRET" }}`, want: "hunter2"},
-		{name: "env set to empty", text: `[{{ env "OVERLAY_TEST_EMPTY" }}]`, want: "[]"},
-		{name: "envOr set", text: `{{ envOr "OVERLAY_TEST_SECRET" "fallback" }}`, want: "hunter2"},
-		{name: "envOr set to empty keeps the empty value", text: `[{{ envOr "OVERLAY_TEST_EMPTY" "fallback" }}]`, want: "[]"},
-		{name: "envOr unset", text: `{{ envOr "OVERLAY_TEST_UNSET" "fallback" }}`, want: "fallback"},
+		{name: "values", text: `{{ .Values.paths.code }}`, want: "/home/me/code"},
 		{name: "readFile strips trailing newlines", text: `{{ readFile "` + present + `" }}`, want: "x"},
 		{name: "readFile keeps inner newlines", text: `{{ readFile "` + multiline + `" }}`, want: "one\ntwo"},
 		{name: "readFile quoted", text: `{{ readFile "` + present + `" | printf "%q" }}`, want: `"x"`},
@@ -114,7 +110,7 @@ func TestRenderFunctions(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Render(tt.name, []byte(tt.text), testContext(t))
+			got, err := Render(tt.name, []byte(tt.text), ctx)
 
 			if err != nil {
 				t.Fatalf("Render(%q) error = %v", tt.text, err)
@@ -141,7 +137,6 @@ func TestRenderFailures(t *testing.T) {
 		{name: "parse error", text: `{{ if .Home }}unclosed`, want: "unexpected EOF"},
 		{name: "unknown field", text: `{{ .Target }}`, want: "can't evaluate field Target"},
 		{name: "unknown function", text: `{{ now }}`, want: `function "now" not defined`},
-		{name: "env unset", text: `{{ env "OVERLAY_TEST_UNSET" }}`, want: `env "OVERLAY_TEST_UNSET": variable is not set`},
 		{name: "missing map key", text: `{{ index .Lookup "nope" }}`, want: "can't evaluate field Lookup"},
 		{name: "join with a non-list", text: `{{ join "," .Home }}`, want: "wrong type for value"},
 		{name: "readFile missing", text: `{{ readFile "` + filepath.Join(unreadable, "..", "missing") + `" }}`, want: "no such file"},

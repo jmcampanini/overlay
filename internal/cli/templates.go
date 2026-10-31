@@ -30,11 +30,12 @@ Every template sees the same data:
              set is an error, and an optional one is guarded with
              {{ with index .Values "theme" }} ... {{ end }}
 
+Machine-specific input belongs in .Values; templates read nothing from
+the environment, so the same sources and values render the same files
+whatever shell started the render.
+
 Beyond the text/template builtins, templates may call:
 
-  env NAME         the environment variable's value; an unset variable
-                   fails the render, and a variable set to "" is set
-  envOr NAME DEF   the environment variable's value, or DEF when unset
   fileExists PATH  true when anything exists at PATH (a file, directory,
                    or other entry, following symbolic links); PATH is used
                    as given, ~ is not expanded, and an error other than
@@ -88,7 +89,7 @@ stays in the output. For example, this fragment keeps Command K's own
 Quotes can stay in the file. accent = "{{ .Values.theme.colors.accent }}"
 renders a valid TOML, JSON, or YAML string whenever the value holds no
 quote, backslash, or control character, as a color never does. A path or
-an environment value may hold either, so quote one you do not control:
+a file's content may hold either, so quote one you do not control:
 path = {{ quote (print $code "/src") }}. with removes a repeated prefix,
 a variable names a value used more than once, and {{- or -}} trims the
 newline beside an action that produces no output:
@@ -98,7 +99,7 @@ newline beside an action that produces no output:
   text = "{{ .fg }}"
   {{- end }}
 
-  {{- $code := env "CODE_DIR" }}
+  {{- $code := .Values.paths.code }}
   path = "{{ $code }}/github.com/jmcampanini/dotfiles-base"
   launch_path = "{{ $code }}/github.com/jmcampanini/dotfiles-base"
 
